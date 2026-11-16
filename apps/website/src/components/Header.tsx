@@ -29,7 +29,7 @@ export default function Header() {
       }`}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
-        <a href="#" aria-label="EduSearch — início">
+        <a href="#" aria-label="EduSearch — início" className="shrink-0">
           <Wordmark />
         </a>
 

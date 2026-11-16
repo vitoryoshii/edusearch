@@ -1,13 +1,12 @@
-/**
- * Identificação tipográfica PROVISÓRIA do EduSearch.
- * Substituir pelo logotipo oficial quando os arquivos forem adicionados em assets/branding/.
- */
-export default function Wordmark({ inverted = false }: { inverted?: boolean }) {
+/** Logotipo oficial do EduSearch (original em assets/branding/logo-horizontal.png). */
+export default function Wordmark({ className = "h-8 sm:h-9" }: { className?: string }) {
   return (
-    <span
-      className={`text-xl font-bold tracking-tight ${inverted ? "text-white" : "text-profundo"}`}
-    >
-      Edu<span className={inverted ? "text-verde-claro" : "text-petroleo"}>Search</span>
-    </span>
+    <img
+      src="/brand/logo.webp"
+      alt="EduSearch"
+      width={498}
+      height={96}
+      className={`w-auto ${className}`}
+    />
   );
 }

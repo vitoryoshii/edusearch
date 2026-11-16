@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/branding/logo-horizontal.png" alt="EduSearch" width="420" />
+
 # EduSearch
 
 **Encontre o professor certo para você.**
@@ -130,7 +132,7 @@ edusearch/
 │   ├── web/            # Base do aplicativo React (em desenvolvimento)
 │   └── api/            # API Python/FastAPI
 ├── assets/
-│   └── branding/       # Identidade visual (paleta; logo oficial pendente)
+│   └── branding/       # Identidade visual oficial (logo, ícone, paleta)
 ├── docs/
 │   └── architecture.md # Arquitetura resumida
 ├── .env.example        # Variáveis de ambiente de exemplo (sem segredos)
@@ -214,7 +216,8 @@ A configuração está em [`apps/website/wrangler.toml`](apps/website/wrangler.t
 | API FastAPI com `GET /health` e CORS de desenvolvimento     | ✅ Implementado   |
 | Testes automatizados do `/health`                           | ✅ Implementado   |
 | Configuração de deploy do website no Cloudflare Pages       | ✅ Preparado      |
-| Logo e mockups oficiais no repositório                      | ⏳ Pendente       |
+| Logo e ícone oficiais aplicados no website e no app         | ✅ Implementado   |
+| Mockups aprovados no repositório                            | ⏳ Pendente       |
 | Banco, autenticação, matching, agenda, pagamentos           | 🗓️ Próximas fases |
 
 ## Participação no HackBrasil 2026

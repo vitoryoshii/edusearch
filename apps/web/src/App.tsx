@@ -4,9 +4,13 @@ export default function App() {
   return (
     <main className="flex min-h-screen items-center justify-center px-5">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-2xl font-bold tracking-tight text-profundo">
-          Edu<span className="text-petroleo">Search</span>
-        </p>
+        <img
+          src="/brand/logo.webp"
+          alt="EduSearch"
+          width={498}
+          height={96}
+          className="mx-auto h-10 w-auto"
+        />
         <span className="mt-6 inline-flex items-center gap-2 rounded-full bg-verde-claro px-3 py-1 text-xs font-medium text-esmeralda">
           <span className="h-1.5 w-1.5 rounded-full bg-esmeralda" aria-hidden="true" />
           Em desenvolvimento
