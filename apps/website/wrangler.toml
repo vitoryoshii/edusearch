@@ -1,0 +1,5 @@
+# Configuração do Cloudflare Pages (plano gratuito) para o website institucional.
+# Deploy manual: pnpm build:website && npx wrangler pages deploy apps/website/dist --project-name edusearch
+name = "edusearch"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-11-01"
