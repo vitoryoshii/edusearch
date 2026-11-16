@@ -1,0 +1,19 @@
+{
+  "name": "edusearch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EduSearch — Encontre o professor certo para você. Projeto HackBrasil 2026, Trilha 03.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:website": "pnpm --filter @edusearch/website dev",
+    "dev:web": "pnpm --filter @edusearch/web dev",
+    "build:website": "pnpm --filter @edusearch/website build",
+    "build:web": "pnpm --filter @edusearch/web build",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
