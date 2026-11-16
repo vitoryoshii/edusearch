@@ -2,6 +2,12 @@
 
 Guia de uso da marca EduSearch. Os arquivos ficam em [`assets/branding/`](../assets/branding/).
 
+> **Status da marca: PROVISÓRIA.**
+>
+> - A **referência visual temporária** é o logotipo horizontal [`assets/branding/logo-horizontal.png`](../assets/branding/logo-horizontal.png).
+> - Todas as demais variantes (versões escura e monocromáticas, empilhada, símbolos, ícones, favicons e prévia social) são **provisórias**. Foram derivadas desse logotipo e **ainda não foram aprovadas oficialmente**.
+> - A identidade definitiva depende dos arquivos vetoriais originais e da aprovação do time (ver [Pendências](#13-pendências)).
+
 ## 1. Apresentação
 
 | Elemento   | Definição oficial |
@@ -22,7 +28,7 @@ O símbolo combina um **capelo acadêmico** (educação, conquista) com uma **lu
 - **Lupa:** aro branco sobre o capelo, com lente no tom da marca. É o "Search" do nome.
 - **Detalhes verdes:** a borla e o cabo da lupa, em verde. Indicam progresso e resultado positivo.
 
-A referência oficial do símbolo é a versão presente em `assets/branding/logo-horizontal.png`. Todas as variantes foram derivadas dela.
+A referência visual **temporária** do símbolo é a versão presente em `assets/branding/logo-horizontal.png`. Todas as variantes provisórias foram derivadas dela.
 
 ## 3. Paleta de cores
 
@@ -38,34 +44,34 @@ A referência oficial do símbolo é a versão presente em `assets/branding/logo
 
 ## 4. Tipografia
 
-O kit de marca de referência (`references/edusearch-brand-kit-overview.png`) define:
+| Situação | Família | Onde |
+| -------- | ------- | ---- |
+| **Atual (em uso)** | **Inter** (open source, SIL OFL) | Website, aplicativo e prévia social |
+| Proposta em avaliação | Montserrat (títulos) + Open Sans (textos) | Sugerida no kit conceitual `references/edusearch-brand-kit-overview.png` |
 
-| Uso                        | Família        | Pesos          |
-| -------------------------- | -------------- | -------------- |
-| Títulos, destaques, botões | **Montserrat** | 600, 700, 800  |
-| Textos e conteúdo          | **Open Sans**  | 400, 500, 600  |
-
-Ambas são open source (SIL OFL). A implementação atual do website e do app usa **Inter**, e a prévia social também. Ver [Pendências](#13-pendências).
+**Inter continua sendo a tipografia das aplicações.** A padronização definitiva será decidida depois. Até lá, não troque a fonte das aplicações nem dos materiais.
 
 ## 5. Versões para modo claro e escuro
 
-| Fundo                                           | Logotipo recomendado         |
-| ----------------------------------------------- | ---------------------------- |
-| Claro (branco, `#F8FAFC`, `#E8F5F3`)            | `logo-primary`               |
-| Escuro (`#102E46`, `#146A7A`)                   | `logo-dark`                  |
-| Claro, impressão em 1 cor ou carimbo            | `logo-monochrome-dark`       |
-| Escuro ou fotografia escura, 1 cor              | `logo-monochrome-white`      |
+> Variantes **provisórias**. Use-as apenas como apoio enquanto não houver versões oficiais aprovadas. A referência visual é o logotipo horizontal.
 
-- **`logo-primary`:** versão colorida original.
+| Fundo                                           | Variante provisória          |
+| ----------------------------------------------- | ---------------------------- |
+| Claro (branco, `#F8FAFC`, `#E8F5F3`)            | `logo-horizontal.png` (referência) ou `logos/logo-primary.png` (recorte) |
+| Escuro (`#102E46`, `#146A7A`)                   | `logos/logo-dark.png`        |
+| Claro, impressão em 1 cor ou carimbo            | `logos/logo-monochrome-dark.png` |
+| Escuro ou fotografia escura, 1 cor              | `logos/logo-monochrome-white.png` |
+
+- **`logo-primary`:** é o próprio logotipo horizontal, apenas recortado.
 - **`logo-dark`:** símbolo e nome em branco, com os detalhes verdes (borla e cabo da lupa) preservados.
 - **Monocromáticas:** usam *knock-out*, em que as áreas brancas do símbolo (aro e brilho da lupa) ficam vazadas e deixam ver o fundo.
 
-Em páginas que suportam tema do sistema (como o README no GitHub), use `<picture>` com `prefers-color-scheme` para alternar entre `logo-primary` e `logo-dark`.
+O logotipo horizontal tem texto escuro e **não é legível em fundos escuros**. Para esses casos ainda não há versão aprovada.
 
 ## 6. Regras de aplicação
 
 - Prefira a versão **horizontal**. Use a **empilhada** quando a largura for limitada e o **símbolo** isolado quando o nome já estiver visível ou o espaço for quadrado (avatar, app, favicon).
-- Sempre redimensione **proporcionalmente**, a partir dos arquivos oficiais.
+- Sempre redimensione **proporcionalmente**, a partir dos arquivos de `assets/branding/`.
 - Garanta contraste adequado entre logotipo e fundo (ver seção 8).
 - Em fundos fotográficos, use uma versão monocromática sobre uma área uniforme da imagem.
 
@@ -102,21 +108,21 @@ Razões de contraste calculadas pela fórmula WCAG 2.x:
 Recomendações:
 
 - Texto em verde-esmeralda: apenas em tamanho grande ou acompanhado de ícone ou rótulo. Nunca use a cor como único indicador de estado.
-- Logotipo sobre fundo escuro: sempre `logo-dark` ou `logo-monochrome-white`. O `logo-primary` sobre `#102E46` fica ilegível.
+- Logotipo sobre fundo escuro: use `logo-dark` ou `logo-monochrome-white` (provisórios). O logotipo horizontal sobre `#102E46` fica ilegível.
 - Imagens do logotipo devem ter texto alternativo `alt="EduSearch"`.
 
 ## 9. Exemplos de utilização correta
 
-- `logo-primary` no header claro do website, com a área de proteção respeitada.
-- `logo-dark` no rodapé ou em seções com fundo `#102E46`.
-- `app-icon-*` (símbolo branco sobre o gradiente petróleo → azul profundo) como ícone de aplicativo.
-- `social-preview.png` como imagem Open Graph ao compartilhar o site.
-- `logo-monochrome-dark` em documentos impressos em uma cor.
+- `logo-horizontal.png` (referência temporária) no header claro do website, com a área de proteção respeitada.
+- `logo-dark` (provisório) no rodapé ou em seções com fundo `#102E46`.
+- `app-icon-*` (provisório; símbolo branco sobre o gradiente petróleo → azul profundo) como ícone de aplicativo.
+- `social-preview.png` (provisório) como imagem Open Graph ao compartilhar o site.
+- `logo-monochrome-dark` (provisório) em documentos impressos em uma cor.
 
 ## 10. Aplicações proibidas
 
 - ❌ Distorcer, esticar, inclinar ou rotacionar o logotipo.
-- ❌ Alterar as cores fora das variantes oficiais, ou aplicar gradientes, sombras, contornos ou brilhos adicionais.
+- ❌ Alterar as cores fora das variantes documentadas, ou aplicar gradientes, sombras, contornos ou brilhos adicionais.
 - ❌ Reorganizar os elementos (por exemplo, nome à esquerda do símbolo) ou alterar a proporção entre símbolo e nome.
 - ❌ Redesenhar o símbolo ou substituí-lo por outro capelo ou lupa.
 - ❌ Usar `logo-primary` sobre fundos escuros, ou `logo-dark` sobre fundos claros.
@@ -141,54 +147,68 @@ Padrão: `kebab-case`, em inglês, no formato `<tipo>-<variante>[-<tamanho>].<ex
 
 ### Arquivos disponíveis
 
-| Arquivo | Dimensões | Fundo | Origem |
+| Arquivo | Dimensões | Fundo | Status |
 | ------- | --------- | ----- | ------ |
-| `logo-horizontal.png` | 2172×724 | Transparente | **Original oficial** (alta resolução, com área de respiro) |
-| `icon.png` | 1254×1254 | Transparente | **Original oficial**, versão alternativa do símbolo (ver pendências) |
-| `logo-horizontal-dark.png` | 2172×724 | Transparente | Derivado: versão para fundos escuros, mesmo canvas do original |
-| `logos/logo-primary.png` | 1895×365 | Transparente | Derivado: recorte do original |
-| `logos/logo-dark.png` | 1895×365 | Transparente | Derivado: branco + detalhes verdes |
-| `logos/logo-monochrome-dark.png` | 1895×365 | Transparente | Derivado: `#102E46`, knock-out |
-| `logos/logo-monochrome-white.png` | 1895×365 | Transparente | Derivado: `#FFFFFF`, knock-out |
-| `logos/logo-stacked.png` | 1393×630 | Transparente | Derivado: símbolo acima do nome (proposta, requer aprovação) |
-| `logos/symbol-primary.png` | 461×365 | Transparente | Derivado: símbolo recortado |
-| `logos/symbol-white.png` | 461×365 | Transparente | Derivado: símbolo branco, knock-out |
-| `icons/app-icon-512.png` / `-192.png` | 512 / 192 | Cantos transparentes | Símbolo branco sobre gradiente oficial |
-| `icons/app-icon-maskable-512.png` | 512×512 | Opaco (sangrado) | Símbolo dentro do círculo seguro de 80% (com folga) |
-| `icons/apple-touch-icon.png` | 180×180 | Opaco | O iOS aplica os cantos arredondados |
-| `icons/favicon-16.png` / `-32.png` / `favicon.ico` | 16 / 32 / 16+32+48 | Cantos transparentes | Símbolo branco sobre gradiente |
-| `social/social-preview.png` | 1200×630 | Opaco | Logotipo, slogan e identificação do HackBrasil |
-| `references/*.png` | ~1448×1086 | — | Mockups e kits conceituais (somente referência) |
+| `logo-horizontal.png` | 2172×724 | Transparente | **Referência visual temporária** (original recebido) |
+| `icon.png` | 1254×1254 | Transparente | Provisório: original recebido, geometria diverge do logotipo |
+| `logo-horizontal-dark.png` | 2172×724 | Transparente | Provisório (derivado) |
+| `logos/logo-primary.png` | 1895×365 | Transparente | Provisório: recorte da referência |
+| `logos/logo-dark.png` | 1895×365 | Transparente | Provisório (derivado) |
+| `logos/logo-monochrome-dark.png` | 1895×365 | Transparente | Provisório (derivado) |
+| `logos/logo-monochrome-white.png` | 1895×365 | Transparente | Provisório (derivado) |
+| `logos/logo-stacked.png` | 1393×630 | Transparente | Provisório: proposta de composição, não aprovada |
+| `logos/symbol-primary.png` | 461×365 | Transparente | Provisório (derivado) |
+| `logos/symbol-white.png` | 461×365 | Transparente | Provisório (derivado) |
+| `icons/app-icon-512.png` / `-192.png` | 512 / 192 | Cantos transparentes | Provisório (derivado) |
+| `icons/app-icon-maskable-512.png` | 512×512 | Opaco (sangrado) | Provisório: símbolo dentro do círculo seguro de 80% |
+| `icons/apple-touch-icon.png` | 180×180 | Opaco | Provisório (derivado) |
+| `icons/favicon-16.png` / `-32.png` / `favicon.ico` | 16 / 32 / 16+32+48 | Cantos transparentes | Provisório: aguarda favicon simplificado |
+| `social/social-preview.png` | 1200×630 | Opaco | Provisório (composição com Inter) |
+| `references/*.png` | ~1448×1086 | — | Referências **conceituais** (preservadas sem alteração) |
 
-**Como os derivados foram gerados:** só recorte, escala e mapeamento de cor do original, sem redesenho. As proporções do símbolo e do nome são as do original.
+**Como os derivados foram gerados:** só recorte, escala e mapeamento de cor do logotipo horizontal, sem redesenho. As proporções do símbolo e do nome são as da referência.
 
 ### Mapeamento por aplicação
 
-> Mapeamento recomendado para as próximas fases. **Não foi aplicado nas aplicações nesta etapa.**
+> Mapeamento **sugerido** para as próximas fases, com assets provisórios. **Não foi aplicado nas aplicações nesta etapa.**
 
 | Aplicação | Uso | Asset |
 | --------- | --- | ----- |
-| README / GitHub | Logo do topo (tema claro / escuro) | `logos/logo-primary.png` / `logos/logo-dark.png` |
-| GitHub | *Social preview* do repositório (Settings) | `social/social-preview.png` |
-| `apps/website` | Header e rodapé claros | `logos/logo-primary.png` (convertido para WebP) |
-| `apps/website` | Seções de fundo escuro | `logos/logo-dark.png` |
-| `apps/website` | Favicon | `icons/favicon.ico`, `icons/favicon-32.png` |
-| `apps/website` | Open Graph (`og:image`) | `social/social-preview.png` |
-| `apps/web` (PWA) | `manifest.webmanifest` → `icons` | `app-icon-192.png`, `app-icon-512.png` (`purpose: any`), `app-icon-maskable-512.png` (`purpose: maskable`) |
-| `apps/web` | iOS / atalhos | `icons/apple-touch-icon.png` |
-| `apps/web` | Tela de login / splash | `logos/logo-stacked.png` (após aprovação) |
-| Apresentações / documentos | Capa e materiais | `logo-horizontal.png` / `logo-horizontal-dark.png` |
-| Avatares (redes, GitHub org) | Perfil | `icons/app-icon-512.png` |
+| README / GitHub | Logo do topo | `logo-horizontal.png` (referência temporária) |
+| GitHub | *Social preview* do repositório (Settings) | `social/social-preview.png` (provisório) |
+| `apps/website` | Header e rodapé claros | `logo-horizontal.png` (convertido para WebP, como já está em uso) |
+| `apps/website` | Seções de fundo escuro | `logos/logo-dark.png` (provisório) |
+| `apps/website` | Favicon | `icons/favicon.ico`, `icons/favicon-32.png` (provisórios) |
+| `apps/website` | Open Graph (`og:image`) | `social/social-preview.png` (provisório) |
+| `apps/web` (PWA) | `manifest.webmanifest` → `icons` | `app-icon-192.png`, `app-icon-512.png` (`purpose: any`), `app-icon-maskable-512.png` (`purpose: maskable`) (provisórios) |
+| `apps/web` | iOS / atalhos | `icons/apple-touch-icon.png` (provisório) |
+| Apresentações / documentos | Capa e materiais | `logo-horizontal.png` |
 
-Estado atual das aplicações, que não foi alterado nesta etapa: o website e o app usam `public/brand/logo.webp` e favicons gerados na fase anterior a partir de `logo-horizontal.png` e `icon.png`.
+Estado atual das aplicações, que não foi alterado nesta etapa: o website e o app usam `public/brand/logo.webp` (gerado a partir de `logo-horizontal.png`), favicons gerados a partir de `icon.png` e a fonte Inter.
 
 ## 13. Pendências
 
-| Pendência | Motivo | Necessário |
-| --------- | ------ | ---------- |
-| **Logotipos e símbolos em SVG** (`logo-primary.svg`, `logo-dark.svg`, `logo-monochrome-*.svg`, `logo-stacked.svg`, `symbol-*.svg`, `favicon.svg`) | Não existe original vetorial. Vetorizar o PNG produziria uma recriação aproximada, que não deve ser tratada como equivalente oficial. | Arquivo-fonte vetorial (SVG, AI, PDF ou Figma) do designer |
-| **Divergência do símbolo** | `icon.png` tem a borla à direita, branca e com contorno; `logo-horizontal.png` tem a borla à esquerda e verde. Os mockups também variam. | Definição de qual geometria é a oficial. Os derivados atuais seguem o `logo-horizontal.png` |
-| **Favicon simplificado** | Em 16 px o símbolo completo perde legibilidade. O kit sugere uma versão simplificada, que não existe como arquivo. | Versão simplificada do símbolo, de preferência em SVG |
-| **Logo empilhado** | Gerado com a proporção do horizontal; no kit o símbolo aparece maior. | Aprovação ou arquivo oficial |
-| **Tipografia** | O kit define Montserrat + Open Sans; o website e o app usam Inter. | Decisão do time antes de alinhar as aplicações |
-| **Mockups** | Contêm dados fictícios e elementos fora do escopo aprovado (Next.js, "EduSearch Pay", armazenamento em nuvem). | Manter como referência conceitual; atualizar se houver nova versão |
+| # | Pendência | Situação | Necessário para resolver |
+| - | --------- | -------- | ------------------------ |
+| 1 | **Logotipos e símbolos em SVG vetorial** (`logo-primary.svg`, `logo-dark.svg`, `logo-monochrome-dark.svg`, `logo-monochrome-white.svg`, `logo-stacked.svg`, `symbol-primary.svg`, `symbol-white.svg`) | Não existe original vetorial. **Nenhum SVG foi criado**: vetorizar o PNG produziria uma recriação aproximada, que não deve ser apresentada como oficial. | Arquivo-fonte vetorial (SVG, AI, PDF ou Figma) do designer |
+| 2 | **Favicon** (`favicon.svg` e versão simplificada) | Os favicons PNG/ICO atuais são provisórios. Em 16 px o símbolo completo perde legibilidade; o kit conceitual sugere uma versão simplificada que não existe como arquivo. | Símbolo simplificado, de preferência em SVG |
+| 3 | **Logo empilhado** | `logo-stacked.png` é uma proposta provisória com a proporção do logotipo horizontal. No kit conceitual o símbolo aparece maior. | Aprovação do time ou arquivo oficial |
+| 4 | **Divergência do símbolo** | `icon.png` tem a borla à direita, branca e com contorno; `logo-horizontal.png` tem a borla à esquerda e verde. | Definição da geometria oficial (os derivados seguem o `logo-horizontal.png`) |
+| 5 | **Tipografia definitiva** | Inter segue em uso. Montserrat + Open Sans são apenas uma proposta do kit. | Decisão do time |
+| 6 | **Inconsistências dos mockups** | Ver detalhamento abaixo. | Manter como referência conceitual; atualizar se houver nova versão |
+
+### Inconsistências dos mockups conceituais
+
+Os arquivos em `assets/branding/references/` são preservados **sem alteração** como referências conceituais. Onde divergem do projeto, **prevalece a documentação**:
+
+| O mockup mostra | Definição oficial do projeto |
+| --------------- | ---------------------------- |
+| "App (PWA) — Next.js" na arquitetura | Frontend em **React + Vite + TypeScript** |
+| "EduSearch Pay" como gateway de pagamentos | Gateway planejado: **AbacatePay** (Pix, split e repasse) |
+| "Armazenamento Cloud (Drive/S3)" | Fora do escopo aprovado atual |
+| Professores, fotos, avaliações, preços e progresso | **Dados fictícios e ilustrativos**, sem professores reais nem métricas |
+| Variações do símbolo (borla à direita, só o capelo sem lupa) | Referência temporária: símbolo do `logo-horizontal.png` |
+| Subtítulo "Sistema de Busca Educacional" e slogan "Conectamos você ao aprendizado certo" | Slogan oficial: **"Encontre o professor certo para você."** |
+| Tipografia Montserrat + Open Sans | Tipografia atual: **Inter** |
+| Split "Professor 90% / Plataforma 10%" | Coerente com a **hipótese** comercial de 10% (ainda não validada) |
+

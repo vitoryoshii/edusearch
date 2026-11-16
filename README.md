@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logos/logo-dark.png" />
-  <img src="assets/branding/logos/logo-primary.png" alt="EduSearch" width="420" />
-</picture>
+<img src="assets/branding/logo-horizontal.png" alt="EduSearch" width="420" />
 
 # EduSearch
 
@@ -95,7 +92,7 @@ Uma plataforma em que:
 
 ## Prévia visual (conceitual)
 
-> **Mockups conceituais.** As imagens abaixo representam a direção visual aprovada e **não são telas do produto implementado**. Nomes, fotos, avaliações, preços e progresso exibidos são **fictícios e ilustrativos**.
+> **Mockups conceituais.** As imagens abaixo são referências de direção visual e **não são telas do produto implementado**. Nomes, fotos, avaliações, preços e progresso exibidos são **fictícios e ilustrativos**.
 >
 > Onde os mockups divergem do projeto, vale a documentação: a arquitetura aprovada usa **React + Vite** (não Next.js), o gateway de pagamentos planejado é a **AbacatePay** (o rótulo "EduSearch Pay" é apenas ilustrativo) e armazenamento em nuvem não faz parte do escopo atual.
 
@@ -151,9 +148,12 @@ Detalhes em [`docs/architecture.md`](docs/architecture.md).
 | Nome     | **EduSearch** |
 | Slogan   | *Encontre o professor certo para você.* |
 | Símbolo  | Capelo acadêmico combinado com uma lupa: educação + busca |
+| Tipografia atual | Inter (padronização definitiva em avaliação) |
 | Cores    | Azul-petróleo `#146A7A` · Azul profundo `#102E46` · Verde-esmeralda `#14836E` · Verde-claro `#E8F5F3` · Branco-gelo `#F8FAFC` |
 
-Guia completo, variantes e regras de uso em [`docs/branding.md`](docs/branding.md). Arquivos em [`assets/branding/`](assets/branding/).
+> **Identidade provisória.** O logotipo horizontal ([`assets/branding/logo-horizontal.png`](assets/branding/logo-horizontal.png)) é a referência visual temporária. As demais variantes (escura, monocromáticas, empilhada, ícones e favicons) são **provisórias** e ainda não foram aprovadas. Versões vetoriais oficiais estão pendentes.
+
+Guia, variantes provisórias, regras de uso e pendências em [`docs/branding.md`](docs/branding.md). Arquivos em [`assets/branding/`](assets/branding/).
 
 ## Estrutura do repositório
 
@@ -250,9 +250,10 @@ A configuração está em [`apps/website/wrangler.toml`](apps/website/wrangler.t
 | Testes automatizados do `/health`                           | ✅ Implementado   |
 | Configuração de deploy do website no Cloudflare Pages       | ✅ Preparado      |
 | Logo e ícone oficiais aplicados no website e no app         | ✅ Implementado   |
-| Sistema de marca (variantes PNG, ícones PWA, guia)          | ✅ Preparado      |
-| Mockups conceituais aprovados no repositório                | ✅ Adicionado     |
-| Logotipos vetoriais (SVG) oficiais                          | ⏳ Pendente       |
+| Guia de identidade visual (`docs/branding.md`)              | ✅ Documentado    |
+| Variantes de marca, ícones PWA e favicons (PNG)             | ⚠️ Provisório     |
+| Mockups conceituais no repositório (referência)             | ✅ Adicionado     |
+| Logotipos vetoriais (SVG), favicon simplificado, logo empilhado | ⏳ Pendente   |
 | Banco, autenticação, matching, agenda, pagamentos           | 🗓️ Próximas fases |
 
 ## Participação no HackBrasil 2026
