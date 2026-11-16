@@ -1,40 +1,58 @@
 # Branding — EduSearch
 
-Arquivos originais da identidade visual. **Não edite os originais**; gere versões otimizadas a partir deles.
+Arquivos oficiais da marca EduSearch. Regras de uso, contraste, tamanhos mínimos e mapeamento por aplicação em **[`docs/branding.md`](../../docs/branding.md)**.
 
-## Arquivos
+> **Não edite os originais** (`logo-horizontal.png`, `icon.png`). Gere versões a partir deles.
 
-| Arquivo               | Descrição                                     |
-| --------------------- | --------------------------------------------- |
-| `logo-horizontal.png` | Logotipo oficial (ícone + "EduSearch"), fundo transparente |
-| `icon.png`            | Ícone oficial (capelo + lupa), 1254×1254 px, fundo transparente |
+## Estrutura
 
-O logotipo usa texto escuro: aplique-o sobre fundos claros (branco-gelo, branco, verde-claro).
+```text
+assets/branding/
+├── logo-horizontal.png        # ORIGINAL oficial, alta resolução (2172×724)
+├── logo-horizontal-dark.png   # Versão para fundos escuros, mesmo canvas do original
+├── icon.png                   # ORIGINAL oficial, versão alternativa do símbolo (1254×1254)
+├── logos/
+│   ├── logo-primary.png           # Colorido, fundos claros
+│   ├── logo-dark.png              # Fundos escuros (branco + detalhes verdes)
+│   ├── logo-monochrome-dark.png   # 1 cor: azul profundo
+│   ├── logo-monochrome-white.png  # 1 cor: branco
+│   ├── logo-stacked.png           # Símbolo acima do nome (requer aprovação)
+│   ├── symbol-primary.png         # Símbolo colorido
+│   └── symbol-white.png           # Símbolo branco
+├── icons/
+│   ├── app-icon-192.png
+│   ├── app-icon-512.png
+│   ├── app-icon-maskable-512.png
+│   ├── apple-touch-icon.png
+│   ├── favicon-16.png
+│   ├── favicon-32.png
+│   └── favicon.ico                # 16 + 32 + 48
+├── social/
+│   └── social-preview.png         # 1200×630 (Open Graph / GitHub)
+└── references/                    # Mockups e kits CONCEITUAIS (somente referência)
+    ├── edusearch-mobile-app-mockup.png
+    ├── edusearch-product-design-overview.png
+    ├── edusearch-brand-kit-overview.png
+    └── edusearch-brand-applications.png
+```
 
-## Versões derivadas usadas nos apps
-
-Geradas a partir dos originais e salvas em `apps/website/public` e `apps/web/public`:
-
-- `brand/logo.webp` — logo recortado, 498×96 px (exibido a ~32–36 px de altura)
-- `favicon.ico` (16/32/48), `favicon-32.png`
-- `apple-touch-icon.png` — 180×180 px, fundo branco
-- `og-image.png` — 1200×630 px para compartilhamento (somente website)
-
-## Nome oficial
-
-**EduSearch** — não utilizar EduMatch, EduMeet ou Aulevo.
+Todos os PNG de logotipo e símbolo têm fundo transparente. Os ícones maskable, apple-touch e a prévia social são opacos, como exigem as plataformas.
 
 ## Paleta oficial
 
-| Cor             | Hex       | Uso                                     |
-| --------------- | --------- | --------------------------------------- |
-| Azul-petróleo   | `#146A7A` | Cor principal: botões, links, destaques |
-| Azul profundo   | `#102E46` | Títulos, textos fortes, fundos escuros  |
-| Verde-esmeralda | `#14836E` | Estados positivos e detalhes            |
-| Verde-claro     | `#E8F5F3` | Fundos suaves de destaque               |
-| Branco-gelo     | `#F8FAFC` | Fundo geral                             |
+| Cor             | Hex       |
+| --------------- | --------- |
+| Azul-petróleo   | `#146A7A` |
+| Azul profundo   | `#102E46` |
+| Verde-esmeralda | `#14836E` |
+| Verde-claro     | `#E8F5F3` |
+| Branco-gelo     | `#F8FAFC` |
 
-## Pendente
+## Pendências de material original
 
-- Versão do logotipo para fundos escuros (texto claro), se o time desejar usá-la.
-- Mockups aprovados.
+- **Arquivos SVG** (`logos/*.svg`, `icons/favicon.svg`): não há original vetorial. Os SVG **não foram criados**, para não apresentar uma vetorização aproximada como oficial.
+- **Geometria do símbolo:** `icon.png` e `logo-horizontal.png` divergem (posição e cor da borla). Os derivados seguem o `logo-horizontal.png`.
+- **Favicon simplificado** para 16 px.
+- **Aprovação** do `logo-stacked.png`.
+
+Detalhes em [`docs/branding.md` → Pendências](../../docs/branding.md#13-pendências).

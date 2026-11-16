@@ -1,12 +1,15 @@
 <div align="center">
 
-<img src="assets/branding/logo-horizontal.png" alt="EduSearch" width="420" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logos/logo-dark.png" />
+  <img src="assets/branding/logos/logo-primary.png" alt="EduSearch" width="420" />
+</picture>
 
 # EduSearch
 
 **Encontre o professor certo para você.**
 
-Marketplace educacional inteligente que conecta estudantes a professores por meio de recomendações personalizadas.
+Marketplace educacional inteligente que conecta alunos e professores por meio de recomendações personalizadas.
 
 [![HackBrasil 2026](https://img.shields.io/badge/HackBrasil-2026-146A7A)](#participação-no-hackbrasil-2026)
 [![Trilha 03](https://img.shields.io/badge/Trilha_03-Acesso_à_Educação-14836E)](#participação-no-hackbrasil-2026)
@@ -25,21 +28,23 @@ Marketplace educacional inteligente que conecta estudantes a professores por mei
 4. [Público-alvo](#público-alvo)
 5. [Diferenciais e inovação](#diferenciais-e-inovação)
 6. [Funcionalidades planejadas](#funcionalidades-planejadas)
-7. [Modelo de negócio](#modelo-de-negócio)
-8. [Stack tecnológica](#stack-tecnológica)
-9. [Arquitetura resumida](#arquitetura-resumida)
-10. [Estrutura do repositório](#estrutura-do-repositório)
-11. [Como executar localmente](#como-executar-localmente)
-12. [Deploy do website (Cloudflare Pages)](#deploy-do-website-cloudflare-pages)
-13. [Status do desenvolvimento](#status-do-desenvolvimento)
-14. [Participação no HackBrasil 2026](#participação-no-hackbrasil-2026)
-15. [Licença](#licença)
+7. [Prévia visual (conceitual)](#prévia-visual-conceitual)
+8. [Modelo de negócio](#modelo-de-negócio)
+9. [Stack tecnológica](#stack-tecnológica)
+10. [Arquitetura resumida](#arquitetura-resumida)
+11. [Identidade visual](#identidade-visual)
+12. [Estrutura do repositório](#estrutura-do-repositório)
+13. [Como executar localmente](#como-executar-localmente)
+14. [Deploy do website (Cloudflare Pages)](#deploy-do-website-cloudflare-pages)
+15. [Status do desenvolvimento](#status-do-desenvolvimento)
+16. [Participação no HackBrasil 2026](#participação-no-hackbrasil-2026)
+17. [Licença](#licença)
 
 ---
 
 ## Sobre o projeto
 
-O **EduSearch** é um marketplace educacional que conecta estudantes a professores com base em recomendações personalizadas. Em vez de escolher um professor apenas por disciplina ou preço, o estudante descreve o que precisa aprender e a plataforma, com apoio de inteligência artificial, sugere professores compatíveis com sua **necessidade de aprendizagem, disponibilidade, orçamento e metodologia de ensino preferida**.
+O **EduSearch** é um marketplace educacional inteligente que conecta alunos e professores por meio de recomendações personalizadas. Em vez de escolher um professor apenas por disciplina ou preço, o estudante descreve o que precisa aprender e a plataforma, com apoio de inteligência artificial, sugere professores compatíveis com sua **necessidade de aprendizagem, disponibilidade, orçamento e metodologia de ensino preferida**.
 
 ## Problema identificado
 
@@ -88,6 +93,22 @@ Uma plataforma em que:
 | Pagamentos Pix com AbacatePay                   | Planejado    |
 | Split de pagamento e repasse aos professores    | Planejado    |
 
+## Prévia visual (conceitual)
+
+> **Mockups conceituais.** As imagens abaixo representam a direção visual aprovada e **não são telas do produto implementado**. Nomes, fotos, avaliações, preços e progresso exibidos são **fictícios e ilustrativos**.
+>
+> Onde os mockups divergem do projeto, vale a documentação: a arquitetura aprovada usa **React + Vite** (não Next.js), o gateway de pagamentos planejado é a **AbacatePay** (o rótulo "EduSearch Pay" é apenas ilustrativo) e armazenamento em nuvem não faz parte do escopo atual.
+
+<p align="center">
+  <img src="assets/branding/references/edusearch-mobile-app-mockup.png" alt="Mockup conceitual do aplicativo móvel do EduSearch" width="860" />
+  <br /><em>Conceito do aplicativo móvel: login com Google, busca, assistente com IA, perfil do professor e aulas.</em>
+</p>
+
+<p align="center">
+  <img src="assets/branding/references/edusearch-product-design-overview.png" alt="Visão geral conceitual do design de produto do EduSearch" width="860" />
+  <br /><em>Visão geral conceitual do produto: telas web e mobile, paleta e fluxo de split de pagamento (hipótese de 10%).</em>
+</p>
+
 ## Modelo de negócio
 
 - **Cadastro gratuito** para estudantes e professores no marketplace.
@@ -123,6 +144,17 @@ App React (web) ──HTTPS──▶ API FastAPI ──▶ Supabase (PostgreSQL 
 
 Detalhes em [`docs/architecture.md`](docs/architecture.md).
 
+## Identidade visual
+
+| Elemento | Definição |
+| -------- | --------- |
+| Nome     | **EduSearch** |
+| Slogan   | *Encontre o professor certo para você.* |
+| Símbolo  | Capelo acadêmico combinado com uma lupa: educação + busca |
+| Cores    | Azul-petróleo `#146A7A` · Azul profundo `#102E46` · Verde-esmeralda `#14836E` · Verde-claro `#E8F5F3` · Branco-gelo `#F8FAFC` |
+
+Guia completo, variantes e regras de uso em [`docs/branding.md`](docs/branding.md). Arquivos em [`assets/branding/`](assets/branding/).
+
 ## Estrutura do repositório
 
 ```text
@@ -132,9 +164,10 @@ edusearch/
 │   ├── web/            # Base do aplicativo React (em desenvolvimento)
 │   └── api/            # API Python/FastAPI
 ├── assets/
-│   └── branding/       # Identidade visual oficial (logo, ícone, paleta)
+│   └── branding/       # Marca: logos, ícones, prévia social e referências
 ├── docs/
-│   └── architecture.md # Arquitetura resumida
+│   ├── architecture.md # Arquitetura resumida
+│   └── branding.md     # Guia de identidade visual
 ├── .env.example        # Variáveis de ambiente de exemplo (sem segredos)
 ├── .gitignore
 ├── LICENSE             # MIT
@@ -217,7 +250,9 @@ A configuração está em [`apps/website/wrangler.toml`](apps/website/wrangler.t
 | Testes automatizados do `/health`                           | ✅ Implementado   |
 | Configuração de deploy do website no Cloudflare Pages       | ✅ Preparado      |
 | Logo e ícone oficiais aplicados no website e no app         | ✅ Implementado   |
-| Mockups aprovados no repositório                            | ⏳ Pendente       |
+| Sistema de marca (variantes PNG, ícones PWA, guia)          | ✅ Preparado      |
+| Mockups conceituais aprovados no repositório                | ✅ Adicionado     |
+| Logotipos vetoriais (SVG) oficiais                          | ⏳ Pendente       |
 | Banco, autenticação, matching, agenda, pagamentos           | 🗓️ Próximas fases |
 
 ## Participação no HackBrasil 2026
