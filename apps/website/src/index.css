@@ -1,33 +1,5 @@
 @import "tailwindcss";
+@import "@edusearch/ui/theme.css";
 
-@theme {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-
-  --color-petroleo: #146a7a;
-  --color-petroleo-dark: #0f5663;
-  --color-profundo: #102e46;
-  --color-esmeralda: #14836e;
-  --color-verde-claro: #e8f5f3;
-  --color-gelo: #f8fafc;
-}
-
-@layer base {
-  html {
-    scroll-behavior: smooth;
-    scroll-padding-top: 5rem;
-  }
-
-  body {
-    @apply bg-gelo font-sans text-slate-700 antialiased;
-  }
-
-  :focus-visible {
-    @apply outline-2 outline-offset-2 outline-petroleo;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-}
+/* Componentes do design system compartilhado */
+@source "../../../packages/ui/src";
