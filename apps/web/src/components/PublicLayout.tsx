@@ -5,7 +5,9 @@ import { LoadingState, Logo } from "@edusearch/ui";
 /** Layout das telas públicas (apresentação, login, cadastro, escolha de perfil). */
 export function PublicLayout() {
   const { pathname } = useLocation();
-  useEffect(() => window.scrollTo(0, 0), [pathname]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
 
   return (
     <div className="flex min-h-dvh flex-col">

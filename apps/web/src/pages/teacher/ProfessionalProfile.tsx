@@ -20,7 +20,9 @@ function ProfileForm({ initial, onSaved }: { initial: TeacherProfile; onSaved: (
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
-  useEffect(() => setDirty(JSON.stringify(form) !== JSON.stringify(initial)), [form, initial]);
+  useEffect(() => {
+    setDirty(JSON.stringify(form) !== JSON.stringify(initial));
+  }, [form, initial]);
 
   const set = <K extends keyof TeacherProfile>(k: K, v: TeacherProfile[K]) => setForm((f) => ({ ...f, [k]: v }));
 
