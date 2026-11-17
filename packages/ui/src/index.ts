@@ -12,12 +12,16 @@ export {
 export { Button, IconButton, buttonClasses, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
 export { Spinner } from "./components/Spinner";
 export {
+  Checkbox,
   Field,
   Input,
+  PasswordInput,
   Select,
   Textarea,
   controlClasses,
+  type CheckboxProps,
   type InputProps,
+  type PasswordInputProps,
   type SelectOption,
   type SelectProps,
   type TextareaProps,
@@ -40,4 +44,5 @@ export { Tabs, type TabItem } from "./components/Tabs";
 export { ToastProvider, useToast, type ToastInput, type ToastTone } from "./components/Toast";
 export { EmptyState, ErrorState, LoadingState } from "./components/States";
 export { Logo } from "./components/Logo";
+export { GoogleButton, GoogleGLogo, type GoogleButtonProps } from "./components/GoogleButton";
 export * from "./components/icons";
