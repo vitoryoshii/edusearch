@@ -174,7 +174,9 @@ export function AppShell({ role }: { role: Role }) {
           className="mx-auto w-full max-w-5xl flex-1 px-4 pt-6 pb-28 outline-none sm:px-6 lg:px-10 lg:pt-10 lg:pb-16"
         >
           <Suspense fallback={<LoadingState label="Carregando tela…" />}>
-            <Outlet />
+            <div key={location.pathname} className="animate-fade-in">
+              <Outlet />
+            </div>
           </Suspense>
         </main>
       </div>

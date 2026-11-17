@@ -5,6 +5,7 @@ import type { Lesson } from "../lib/api/types";
 import { subjectName } from "../lib/catalog";
 import { dataSource } from "../lib/data/source";
 import { formatDateShort, formatTime } from "../lib/format";
+import { DemoNotice } from "./DemoNotice";
 import { LessonCard } from "./LessonCard";
 
 /**
@@ -72,11 +73,6 @@ export function LessonTabs({
                     <Button size="sm" variant="ghost" onClick={() => setToCancel(l)}>
                       Cancelar
                     </Button>
-                    {!l.meetingUrl && (
-                      <span className="basis-full text-xs text-fg-muted">
-                        O link da videochamada ficará disponível após a integração com o Google Meet.
-                      </span>
-                    )}
                   </>
                 )
               }
@@ -91,7 +87,16 @@ export function LessonTabs({
       id: "proximas",
       label: "Próximas",
       count: upcoming.length,
-      content: list(upcoming, { title: "Nenhuma aula agendada", description: "As próximas aulas aparecerão aqui." }, true),
+      content: (
+        <>
+          {upcoming.length > 0 && (
+            <DemoNotice className="mb-4">
+              O botão “Entrar na aula” será liberado quando a integração com o Google Meet gerar o link de cada aula.
+            </DemoNotice>
+          )}
+          {list(upcoming, { title: "Nenhuma aula agendada", description: "As próximas aulas aparecerão aqui." }, true)}
+        </>
+      ),
     },
     {
       id: "concluidas",

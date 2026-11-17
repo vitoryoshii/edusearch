@@ -57,7 +57,7 @@ export default function TeacherDashboard() {
                   icon={WalletIcon}
                   label="Recebimentos previstos"
                   value={formatMoney(dash.expectedMonthCents)}
-                  hint="Líquido, após comissão (hipótese de 10%)"
+                  hint="Valor líquido estimado"
                 />
               </div>
 

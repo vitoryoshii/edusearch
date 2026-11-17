@@ -47,19 +47,18 @@ export default function Progress() {
 
             <section aria-labelledby="anotacoes">
               <SectionTitle id="anotacoes">Anotações dos professores</SectionTitle>
-              <ol className="relative space-y-4 border-l border-line pl-6">
-                {p.notes.map((n) => (
-                  <li key={n.id} className="relative">
-                    <span aria-hidden="true" className="absolute top-1.5 -left-[1.82rem] h-3 w-3 rounded-full border-2 border-surface bg-primary" />
-                    <Card padding="sm">
-                      <p className="text-xs text-fg-muted">
+              <Card padding="none">
+                <ol className="divide-y divide-line">
+                  {p.notes.map((n) => (
+                    <li key={n.id} className="px-5 py-4 sm:px-6">
+                      <p className="text-xs font-medium text-fg-muted">
                         <time dateTime={n.date}>{formatDateShort(n.date)}</time> · {subjectName(n.subject)} · {n.teacherName}
                       </p>
                       <p className="mt-1.5 text-sm leading-relaxed text-fg">{n.text}</p>
-                    </Card>
-                  </li>
-                ))}
-              </ol>
+                    </li>
+                  ))}
+                </ol>
+              </Card>
             </section>
           </div>
         )}

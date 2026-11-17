@@ -43,8 +43,8 @@ export default function Earnings() {
                 <EmptyState icon={<WalletIcon />} title="Nenhum recebimento no período" description="Os valores aparecerão após as primeiras aulas." />
               ) : (
                 <>
-                  {/* Tabela no desktop */}
-                  <Card padding="none" className="hidden overflow-hidden md:block">
+                  {/* Tabela em telas largas */}
+                  <Card padding="none" className="hidden overflow-x-auto xl:block">
                     <table className="w-full text-left text-sm">
                       <caption className="sr-only">Recebimentos por aula</caption>
                       <thead className="bg-surface-muted text-fg-muted">
@@ -78,8 +78,8 @@ export default function Earnings() {
                     </table>
                   </Card>
 
-                  {/* Lista no mobile */}
-                  <ul className="grid gap-3 md:hidden">
+                  {/* Lista em telas menores */}
+                  <ul className="grid gap-3 md:grid-cols-2 xl:hidden">
                     {e.items.map((i) => (
                       <li key={i.id}>
                         <Card padding="sm">
