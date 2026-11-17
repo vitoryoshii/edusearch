@@ -1,67 +1,70 @@
 import { Link } from "react-router";
-import { ArrowRightIcon, Badge, CalendarIcon, SearchIcon, SparkleIcon, TrendIcon, buttonClasses } from "@edusearch/ui";
+import { ArrowRightIcon, ChevronRightIcon, SparkleIcon, buttonClasses } from "@edusearch/ui";
 import { homeFor, useSession } from "../../app/session";
+import { AuthShell, BrandPanel } from "../../components/AuthShell";
 
-const highlights = [
-  { icon: SparkleIcon, title: "Matching pedagógico", text: "Recomendações a partir do seu objetivo, nível e jeito de aprender." },
-  { icon: SearchIcon, title: "Busca com filtros", text: "Disciplina, nível, metodologia, horários e orçamento." },
-  { icon: CalendarIcon, title: "Agendamento simples", text: "Escolha o horário e confirme em poucos passos." },
-  { icon: TrendIcon, title: "Evolução visível", text: "Metas e anotações dos professores em um só lugar." },
-];
-
+/**
+ * Boas-vindas.
+ * Desktop: o painel institucional carrega o título (h1); a coluna da direita
+ * concentra as ações. Mobile: título curto + ações, sem introdução extensa.
+ */
 export default function Welcome() {
   const { session } = useSession();
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-12 px-5 py-8 sm:px-8 lg:grid-cols-[1.1fr_1fr] lg:py-16">
-      <div>
-        <Badge tone="demo">Versão de demonstração</Badge>
-        <h1 className="mt-5 text-4xl leading-tight font-bold tracking-tight text-balance text-fg-strong sm:text-5xl">
+    <AuthShell panel={<BrandPanel headingLevel="h1" />}>
+      {/* Mensagem principal no mobile/tablet (no desktop ela está no painel) */}
+      <div className="lg:hidden">
+        <h1 className="text-[2rem] leading-[1.12] font-bold tracking-tight text-balance text-fg-strong sm:text-4xl">
           Encontre o professor certo para você.
         </h1>
-        <p className="mt-5 max-w-lg text-lg leading-relaxed text-fg">
-          O EduSearch conecta estudantes e professores com recomendações personalizadas. Explore as telas do produto com
-          dados fictícios.
+        <p className="mt-3 text-base leading-relaxed text-fg sm:text-lg">
+          Aprenda no seu ritmo com professores compatíveis com seus objetivos.
         </p>
-
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          {session ? (
-            <Link to={homeFor(session.role)} className={buttonClasses({ size: "lg" })}>
-              Continuar como {session.name}
-              <ArrowRightIcon className="h-5 w-5" />
-            </Link>
-          ) : (
-            <>
-              <Link to="/cadastro" className={buttonClasses({ size: "lg" })}>
-                Criar conta
-              </Link>
-              <Link to="/entrar" className={buttonClasses({ variant: "secondary", size: "lg" })}>
-                Já tenho conta
-              </Link>
-            </>
-          )}
-        </div>
-        {!session && (
-          <p className="mt-4 text-sm text-fg-muted">
-            Prefere só explorar?{" "}
-            <Link to="/perfil-de-acesso" className="font-medium text-link underline-offset-4 hover:underline">
-              Entrar direto na demonstração
-            </Link>
-          </p>
-        )}
       </div>
 
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {highlights.map((h) => (
-          <li key={h.title} className="rounded-card border border-line bg-surface p-5 shadow-card">
-            <span className="flex h-10 w-10 items-center justify-center rounded-control bg-primary-soft text-link">
-              <h.icon className="h-5 w-5" />
-            </span>
-            <p className="mt-4 font-semibold text-fg-strong">{h.title}</p>
-            <p className="mt-1 text-sm leading-relaxed text-fg-muted">{h.text}</p>
-          </li>
-        ))}
-      </ul>
-    </div>
+      <div className="hidden lg:block">
+        <h2 className="text-2xl font-semibold tracking-tight text-fg-strong">Comece por aqui</h2>
+        <p className="mt-2 text-fg-muted">Crie sua conta ou explore o aplicativo com dados de demonstração.</p>
+      </div>
+
+      <div className="mt-8 flex flex-col gap-3">
+        {session && (
+          <Link to={homeFor(session.role)} className={buttonClasses({ size: "lg", fullWidth: true })}>
+            Continuar como {session.name}
+            <ArrowRightIcon className="h-5 w-5" />
+          </Link>
+        )}
+        <Link
+          to="/cadastro"
+          className={buttonClasses({ size: "lg", fullWidth: true, variant: session ? "secondary" : "primary" })}
+        >
+          Começar agora
+        </Link>
+        <Link to="/entrar" className={buttonClasses({ size: "lg", fullWidth: true, variant: "secondary" })}>
+          Já tenho uma conta
+        </Link>
+      </div>
+
+      <div className="my-7 flex items-center gap-3 text-xs text-fg-muted" aria-hidden="true">
+        <span className="h-px flex-1 bg-line" />
+        ou
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
+      <Link
+        to="/perfil-de-acesso"
+        className="group flex min-h-16 items-center gap-4 rounded-card border border-line bg-surface px-4 py-3 transition-[border-color,box-shadow] duration-150 hover:border-line-strong hover:shadow-card"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-primary-soft text-link">
+          <SparkleIcon className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold text-fg-strong">Explorar demonstração</span>
+          <span className="block text-sm text-fg-muted">Entre como aluno ou professor, sem cadastro.</span>
+        </span>
+        <ChevronRightIcon className="h-5 w-5 shrink-0 text-fg-muted transition-transform duration-150 group-hover:translate-x-0.5" />
+      </Link>
+    </AuthShell>
   );
 }

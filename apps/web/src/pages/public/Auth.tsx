@@ -1,136 +1,181 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
-import { Button, Divider, Input, LockIcon, MailIcon, UserIcon } from "@edusearch/ui";
+import { Badge, Button, Checkbox, CheckIcon, GoogleButton, Input, PasswordInput, cn } from "@edusearch/ui";
 import { useSession } from "../../app/session";
-import { AuthCard } from "../../components/PublicLayout";
-import { DemoNotice } from "../../components/DemoNotice";
+import { AuthShell } from "../../components/AuthShell";
+import { AUTH_PROVIDERS } from "../../lib/auth/providers";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const MIN_PASSWORD = 8;
 
-type Errors = Partial<Record<"name" | "email" | "password" | "terms", string>>;
+type FieldName = "name" | "email" | "password" | "terms";
+type Values = { name: string; email: string; password: string; terms: boolean };
+type Errors = Partial<Record<FieldName, string>>;
 
-function GoogleButton() {
-  return (
-    <Button variant="secondary" fullWidth disabled aria-describedby="google-em-breve">
-      Continuar com Google
-      <span id="google-em-breve" className="text-xs font-normal text-fg-muted">
-        (em breve)
-      </span>
-    </Button>
-  );
+function validate(v: Values, signup: boolean): Errors {
+  const e: Errors = {};
+  if (signup && v.name.trim().length < 2) e.name = "Informe seu nome.";
+  if (!v.email.trim()) e.email = "Informe seu e-mail.";
+  else if (!EMAIL_RE.test(v.email.trim())) e.email = "Confira o e-mail. Exemplo: nome@email.com";
+  if (!v.password) e.password = "Informe sua senha.";
+  else if (signup && v.password.length < MIN_PASSWORD) e.password = `Use pelo menos ${MIN_PASSWORD} caracteres.`;
+  if (signup && !v.terms) e.terms = "Aceite os termos para continuar.";
+  return e;
 }
 
 /**
- * Login e cadastro de DEMONSTRAÇÃO: validam o formulário no navegador e
- * seguem para a escolha de perfil. Nenhum dado é enviado ou armazenado;
- * senhas são descartadas. Autenticação real: Supabase Auth + Google (futuro).
+ * Login e cadastro em MODO DEMONSTRAÇÃO.
+ * - Validação no navegador (ao sair do campo e ao enviar).
+ * - Nada é enviado nem armazenado; a senha fica só no estado do formulário
+ *   e é descartada ao navegar. Nenhuma conta é criada.
+ * - O botão do Google aparece desabilitado até a integração real
+ *   (Supabase Auth + Google OAuth, ver src/lib/auth/providers.ts).
  */
 function AuthForm({ mode }: { mode: "login" | "signup" }) {
+  const signup = mode === "signup";
   const navigate = useNavigate();
   const { setPendingName } = useSession();
-  const [errors, setErrors] = useState<Errors>({});
+  const formRef = useRef<HTMLFormElement>(null);
+  const [values, setValues] = useState<Values>({ name: "", email: "", password: "", terms: false });
+  const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const signup = mode === "signup";
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const errors = validate(values, signup);
+  const visibleError = (f: FieldName) => (touched[f] || submitted ? errors[f] : undefined);
+  const errorCount = Object.keys(errors).length;
+
+  const set = <K extends keyof Values>(k: K, v: Values[K]) => setValues((s) => ({ ...s, [k]: v }));
+  const blur = (f: FieldName) => () => setTouched((t) => ({ ...t, [f]: true }));
+
+  const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    const name = String(form.get("name") ?? "").trim();
-    const email = String(form.get("email") ?? "").trim();
-    const password = String(form.get("password") ?? "");
-    const next: Errors = {};
-    if (signup && name.length < 2) next.name = "Informe seu nome.";
-    if (!EMAIL_RE.test(email)) next.email = "Informe um e-mail válido.";
-    if (signup ? password.length < 8 : password.length === 0)
-      next.password = signup ? "A senha precisa ter pelo menos 8 caracteres." : "Informe sua senha.";
-    if (signup && !form.get("terms")) next.terms = "É preciso aceitar os termos para continuar.";
-    setErrors(next);
-    const firstInvalid = (["name", "email", "password", "terms"] as const).find((k) => next[k]);
-    if (firstInvalid) {
-      (e.currentTarget.elements.namedItem(firstInvalid) as HTMLElement | null)?.focus();
+    setSubmitted(true);
+    const first = (["name", "email", "password", "terms"] as const).find((k) => errors[k]);
+    if (first) {
+      (formRef.current?.elements.namedItem(first) as HTMLElement | null)?.focus();
       return;
     }
     setSubmitting(true);
-    setPendingName(signup ? name.split(" ")[0] : null);
-    window.setTimeout(() => navigate("/perfil-de-acesso"), 400);
+    setPendingName(signup ? values.name.trim().split(/\s+/)[0] : null);
+    window.setTimeout(() => navigate("/perfil-de-acesso"), 350);
   };
 
+  const passwordOk = values.password.length >= MIN_PASSWORD;
+
   return (
-    <AuthCard>
-      <h1 className="text-2xl font-semibold text-fg-strong">{signup ? "Crie sua conta" : "Entre no EduSearch"}</h1>
-      <p className="mt-1.5 text-sm text-fg-muted">
-        {signup ? "Leva menos de um minuto." : "Bom ver você de novo."}
+    <AuthShell>
+      <Badge tone="demo">Modo demonstração</Badge>
+      <h1 className="mt-4 text-[1.75rem] leading-tight font-semibold tracking-tight text-fg-strong">
+        {signup ? "Crie sua conta" : "Entre na sua conta"}
+      </h1>
+      <p className="mt-2 text-fg-muted">
+        {signup
+          ? "Leva menos de um minuto para começar a encontrar professores."
+          : "Bom ver você de novo. Continue de onde parou."}
       </p>
 
-      <div className="mt-6">
-        <GoogleButton />
-      </div>
-      <div className="my-6 flex items-center gap-3 text-xs text-fg-muted">
-        <Divider className="flex-1" />
-        ou com e-mail
-        <Divider className="flex-1" />
+      <div className="mt-8">
+        <GoogleButton available={AUTH_PROVIDERS.google.available} aria-describedby="google-status" />
+        <p id="google-status" className="mt-2 text-center text-xs text-fg-muted">
+          {AUTH_PROVIDERS.google.statusMessage}
+        </p>
       </div>
 
-      <form noValidate onSubmit={onSubmit} className="space-y-4">
+      <div className="my-6 flex items-center gap-3 text-xs text-fg-muted" aria-hidden="true">
+        <span className="h-px flex-1 bg-line" />
+        ou continue com e-mail
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
+      <form ref={formRef} noValidate onSubmit={onSubmit} className="space-y-5" aria-describedby="aviso-demo">
         {signup && (
-          <Input name="name" label="Nome" autoComplete="name" leftIcon={<UserIcon />} required error={errors.name} />
+          <Input
+            name="name"
+            label="Nome"
+            autoComplete="name"
+            autoCapitalize="words"
+            required
+            value={values.name}
+            error={visibleError("name")}
+            onChange={(e) => set("name", e.target.value)}
+            onBlur={blur("name")}
+          />
         )}
         <Input
           name="email"
           type="email"
           label="E-mail"
-          autoComplete="email"
+          autoComplete={signup ? "email" : "username"}
           inputMode="email"
-          leftIcon={<MailIcon />}
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="nome@email.com"
           required
-          error={errors.email}
+          value={values.email}
+          error={visibleError("email")}
+          onChange={(e) => set("email", e.target.value)}
+          onBlur={blur("email")}
         />
-        <Input
-          name="password"
-          type="password"
-          label="Senha"
-          autoComplete={signup ? "new-password" : "current-password"}
-          leftIcon={<LockIcon />}
-          required
-          hint={signup ? "Mínimo de 8 caracteres." : undefined}
-          error={errors.password}
-        />
+        <div>
+          <PasswordInput
+            name="password"
+            label="Senha"
+            autoComplete={signup ? "new-password" : "current-password"}
+            required
+            minLength={signup ? MIN_PASSWORD : undefined}
+            value={values.password}
+            error={visibleError("password")}
+            onChange={(e) => set("password", e.target.value)}
+            onBlur={blur("password")}
+          />
+          {signup && !visibleError("password") && (
+            <p className={cn("mt-1.5 flex items-center gap-1.5 text-sm transition-colors", passwordOk ? "text-success-text" : "text-fg-muted")}>
+              <CheckIcon className={cn("h-4 w-4 transition-opacity", passwordOk ? "opacity-100" : "opacity-40")} />
+              Pelo menos {MIN_PASSWORD} caracteres
+              <span className="sr-only">{passwordOk ? "(atendido)" : "(pendente)"}</span>
+            </p>
+          )}
+        </div>
         {signup && (
-          <div>
-            <label className="flex items-start gap-3 text-sm text-fg">
-              <input
-                type="checkbox"
-                name="terms"
-                aria-invalid={errors.terms ? true : undefined}
-                aria-describedby={errors.terms ? "termos-erro" : undefined}
-                className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--es-primary)]"
-              />
-              Li e aceito os Termos de Uso e a Política de Privacidade (em elaboração).
-            </label>
-            {errors.terms && (
-              <p id="termos-erro" className="mt-1.5 text-sm text-danger-text">
-                {errors.terms}
-              </p>
-            )}
-          </div>
+          <Checkbox
+            name="terms"
+            checked={values.terms}
+            onChange={(e) => set("terms", e.target.checked)}
+            error={visibleError("terms")}
+            label="Li e aceito os Termos de Uso e a Política de Privacidade (documentos em elaboração)."
+          />
         )}
+
+        {submitted && errorCount > 0 && (
+          <p role="alert" className="text-sm text-danger-text">
+            {errorCount === 1 ? "Revise o campo destacado." : `Revise os ${errorCount} campos destacados.`}
+          </p>
+        )}
+
         <Button type="submit" fullWidth size="lg" loading={submitting}>
-          {signup ? "Criar conta" : "Entrar"}
+          Continuar
         </Button>
+        <p id="aviso-demo" className="text-center text-xs leading-relaxed text-fg-muted">
+          Demonstração: {signup ? "nenhuma conta é criada" : "não há verificação de senha"} e nenhum dado é enviado ou
+          salvo.
+        </p>
       </form>
 
-      <DemoNotice className="mt-6">
-        Demonstração: os dados digitados não são enviados nem salvos. A autenticação real (Google) será integrada em
-        breve.
-      </DemoNotice>
-
-      <p className="mt-6 text-center text-sm text-fg-muted">
-        {signup ? "Já tem conta? " : "Ainda não tem conta? "}
-        <Link to={signup ? "/entrar" : "/cadastro"} className="font-medium text-link underline-offset-4 hover:underline">
-          {signup ? "Entrar" : "Criar conta"}
-        </Link>
-      </p>
-    </AuthCard>
+      <div className="mt-8 space-y-3 border-t border-line pt-6 text-center text-sm">
+        <p className="text-fg-muted">
+          {signup ? "Já tem uma conta? " : "Ainda não tem conta? "}
+          <Link to={signup ? "/entrar" : "/cadastro"} className="font-semibold text-link underline-offset-4 hover:underline">
+            {signup ? "Entrar" : "Criar conta"}
+          </Link>
+        </p>
+        <p>
+          <Link to="/perfil-de-acesso" className="font-medium text-fg underline-offset-4 hover:text-link hover:underline">
+            Explorar a demonstração sem cadastro
+          </Link>
+        </p>
+      </div>
+    </AuthShell>
   );
 }
 

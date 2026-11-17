@@ -1,8 +1,17 @@
 import { Suspense, useEffect } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { LoadingState, Logo } from "@edusearch/ui";
+import { ArrowLeftIcon, LoadingState, Logo } from "@edusearch/ui";
 
-/** Layout das telas públicas (apresentação, login, cadastro, escolha de perfil). */
+/** Suspense para telas carregadas sob demanda sem layout próprio. */
+export function SuspenseOutlet() {
+  return (
+    <Suspense fallback={<LoadingState label="Carregando…" className="min-h-dvh" />}>
+      <Outlet />
+    </Suspense>
+  );
+}
+
+/** Layout simples para telas públicas intermediárias (ex.: escolha de perfil). */
 export function PublicLayout() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -10,10 +19,17 @@ export function PublicLayout() {
   }, [pathname]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="mx-auto flex h-16 w-full max-w-6xl items-center px-5 sm:px-8">
+    <div className="flex min-h-dvh flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <header className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between gap-4 px-5 sm:h-20 sm:px-8">
         <Link to="/" aria-label="EduSearch — início" className="rounded-md">
           <Logo className="h-8" />
+        </Link>
+        <Link
+          to="/"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2 text-sm font-medium text-fg-muted transition-colors hover:text-link"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Início
         </Link>
       </header>
       <main id="conteudo-principal" className="flex flex-1 flex-col">
@@ -21,18 +37,7 @@ export function PublicLayout() {
           <Outlet />
         </Suspense>
       </main>
-      <footer className="px-5 py-6 text-center text-xs text-fg-muted">
-        EduSearch · Projeto HackBrasil 2026 · Versão de demonstração
-      </footer>
-    </div>
-  );
-}
-
-/** Contêiner centralizado para formulários públicos. */
-export function AuthCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 items-start justify-center px-4 pt-4 pb-12 sm:items-center sm:pt-0">
-      <div className="w-full max-w-md rounded-panel border border-line bg-surface p-6 shadow-raised sm:p-8">{children}</div>
+      <footer className="px-5 py-6 text-center text-xs text-fg-muted">HackBrasil 2026 · Versão de demonstração</footer>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { lazy } from "react";
 import { createBrowserRouter, type RouteObject } from "react-router";
 import { AppShell } from "../components/AppShell";
-import { PublicLayout } from "../components/PublicLayout";
+import { PublicLayout, SuspenseOutlet } from "../components/PublicLayout";
 import { ErrorScreen, RouteError } from "../components/RouteError";
 import { RequireRole } from "./session";
 
@@ -67,13 +67,17 @@ const routes: RouteObject[] = [
     errorElement: <RouteError />,
     children: [
       {
-        element: <PublicLayout />,
+        // Boas-vindas, login e cadastro usam o AuthShell (painel institucional no desktop).
+        element: <SuspenseOutlet />,
         children: [
           { index: true, element: <Welcome /> },
           { path: "entrar", element: <Login /> },
           { path: "cadastro", element: <Signup /> },
-          { path: "perfil-de-acesso", element: <ChooseRole /> },
         ],
+      },
+      {
+        element: <PublicLayout />,
+        children: [{ path: "perfil-de-acesso", element: <ChooseRole /> }],
       },
       {
         path: "aluno",
