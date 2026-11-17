@@ -11,13 +11,13 @@ import { registerServiceWorker } from "./pwa/register";
 
 /** Atualiza o título da aba a cada navegação (anunciado por leitores de tela). */
 function useDocumentTitle() {
-  useEffect(
-    () =>
-      router.subscribe((state) => {
-        document.title = `${titleFor(state.location.pathname)} · EduSearch`;
-      }),
-    [],
-  );
+  useEffect(() => {
+    // subscribe devolve a função de cancelamento: retorno explícito.
+    const unsubscribe = router.subscribe((state) => {
+      document.title = `${titleFor(state.location.pathname)} · EduSearch`;
+    });
+    return unsubscribe;
+  }, []);
   useEffect(() => {
     document.title = `${titleFor(window.location.pathname)} · EduSearch`;
   }, []);
