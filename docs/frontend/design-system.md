@@ -65,7 +65,10 @@ O tema é o atributo `data-theme` no `<html>`, aplicado antes da renderização 
 | `Skeleton`, `LoadingState` | `role="status"` com texto para leitores de tela. |
 | `Toast` / `useToast` | Região `aria-live="polite"`, fechamento manual, até 3 simultâneos. |
 | `EmptyState`, `ErrorState` | `ErrorState` usa `role="alert"` e oferece "Tentar novamente". |
-| `Logo` | Troca o logotipo claro/escuro pelo tema (`logo.webp` / `logo-dark.webp`). |
+| `Logo` | `variant="full"` (símbolo + nome) ou `"symbol"` (compacto). `surface="auto"` troca a versão pelo tema; `"dark"`/`"light"` fixam a versão pelo fundo. Use `decorative` quando o nome já está visível. |
+| `GoogleButton`, `GoogleGLogo` | Botão "Continuar com o Google" conforme as diretrizes oficiais (ver abaixo). Com `available={false}`, usa o estado desabilitado do Material com `aria-disabled` e continua focável. |
+| `PasswordInput` | Campo de senha com mostrar/ocultar (`aria-pressed`, alvo de 44px) e sem autocorreção. |
+| `Checkbox` | Checkbox nativo estilizado, com erro ligado por `aria-describedby`. |
 | Ícones | Traço 1.75px, `aria-hidden` por padrão. |
 
 ### Regras
@@ -75,13 +78,42 @@ O tema é o atributo `data-theme` no `<html>`, aplicado antes da renderização 
 - Grids de uma coluna no mobile devem usar `grid-cols-1` (`minmax(0,1fr)`) para não estourar a largura.
 - Sem gradientes fortes, glassmorphism ou ilustrações decorativas.
 
+## Botão do Google
+
+Implementado em `packages/ui/src/components/GoogleButton.tsx`, seguindo https://developers.google.com/identity/branding-guidelines:
+
+| Item | Especificação aplicada |
+| ---- | ---------------------- |
+| Texto | "Continuar com o Google" (equivalente pt-BR de *Continue with Google*) |
+| Tema claro | Fundo `#FFFFFF`, borda interna 1px `#747775`, texto `#1F1F1F` |
+| Tema escuro | Fundo `#131314`, borda interna 1px `#8E918F`, texto `#E3E3E3` |
+| Tipografia | 14/20, peso médio; família `Google Sans` → `Roboto` → Inter (fallback) |
+| Espaçamento | 12px antes do G, 10px entre o G e o texto, 12px após o texto; G com 20px |
+| Altura | 44px (escala permitida, mantendo a proporção), para o alvo de toque |
+| G | Marca multicolorida padrão, sem alterar cor, tamanho relativo ou geometria |
+
+- **Estado atual:** desabilitado (`available={false}`), com a mensagem "O acesso com Google estará disponível após a integração." O botão não executa nenhum fluxo, não solicita escopos e não simula tokens.
+- **Pendência:** a Google Sans não é carregada pelo app. Usa a fonte do sistema se estiver instalada; senão, Roboto ou Inter. Na integração real, use o botão renderizado pelo SDK Google Identity Services ou carregue a fonte. O SVG do G pode ser trocado pelo arquivo do pacote oficial (`signin-assets.zip`).
+
+## Microinterações
+
+- Botões: transição de cor e deslocamento de 1px ao pressionar. Quando desabilitados, ficam com 55% de opacidade e sem eventos de ponteiro.
+- Cards interativos: realce de borda e sombra leve no hover e no foco.
+- Entrada de tela: `animate-fade-in` no app e `animate-slide-up` nas telas de acesso, entre 160 e 200ms.
+- Validação: o requisito de senha passa a "atendido" em tempo real. Os erros aparecem ao sair do campo ou ao enviar.
+- Tudo é anulado por `prefers-reduced-motion`.
+
 ## Logos e ícones
 
 | Uso | Arquivo | Origem |
 | --- | ------- | ------ |
 | Logo em fundo claro | `public/brand/logo.webp` | `assets/branding/logo-horizontal.png` (referência temporária) |
 | Logo em fundo escuro | `public/brand/logo-dark.webp` | `assets/branding/logos/logo-dark.png` (provisório), apenas reescalado |
+| Símbolo compacto (claro) | `public/brand/symbol.webp` (152×120) | `assets/branding/logos/symbol-primary.png` (provisório), apenas reescalado |
+| Símbolo compacto (escuro) | `public/brand/symbol-dark.webp` (152×120) | `assets/branding/logos/symbol-white.png` (provisório), apenas reescalado |
 | Favicons e apple-touch | `public/favicon*.{ico,png}`, `apple-touch-icon.png` | `assets/branding/icons/` (provisórios) |
 | Ícones PWA | `apps/web/public/icons/app-icon-{192,512,maskable-512}.png` | `assets/branding/icons/` (provisórios) |
 
-Nenhum símbolo foi redesenhado. As pendências de marca (SVG oficial, favicon simplificado) seguem em [`docs/branding.md`](../branding.md).
+O painel institucional das telas de acesso fica sobre o azul profundo nos dois temas e usa sempre `logo-dark`. Nenhum símbolo foi redesenhado.
+
+**Pendências de branding (sem mudança):** SVG oficial do logotipo e do símbolo, favicon simplificado para 16px, aprovação do `logo-stacked` (não usado no app enquanto não for aprovado) e definição da geometria do símbolo (`icon.png` × `logo-horizontal.png`). Todos os derivados continuam provisórios. As pendências de marca (SVG oficial, favicon simplificado) seguem em [`docs/branding.md`](../branding.md).

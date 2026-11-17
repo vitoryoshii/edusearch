@@ -36,6 +36,30 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
 - Ao navegar: título da aba atualizado, rolagem ao topo e foco no conteúdo principal. Link "Pular para o conteúdo" disponível.
 - Rotas inexistentes mostram a tela 404. Falhas de carregamento de chunk sugerem recarregar.
 
+## Telas de acesso (Fase 2.1)
+
+- **Layout `AuthShell`:**
+  - Desktop (≥ 1024px): painel institucional sobre o azul profundo (logo, slogan e três pontos de valor) ao lado da coluna de acesso.
+  - Mobile: só a coluna, com o logo no topo e respeitando as safe areas do PWA.
+- **Boas-vindas (`/`):**
+  - Ações: *Começar agora* (cadastro), *Já tenho uma conta* (login) e *Explorar demonstração* (escolha de perfil).
+  - Desktop: o título "Encontre o professor certo para você." fica no painel, e a coluna mostra "Comece por aqui".
+  - Com sessão ativa, aparece "Continuar como …".
+- **Login (`/entrar`) e cadastro (`/cadastro`):**
+  - Selo "Modo demonstração" e botão do Google desabilitado, com aviso discreto.
+  - `autocomplete` adequado: `username` e `current-password` no login; `name`, `email` e `new-password` no cadastro.
+  - Senha com mostrar/ocultar. No cadastro, o indicador "Pelo menos 8 caracteres" muda em tempo real.
+  - Validação ao sair do campo e ao enviar: o foco vai ao primeiro campo inválido e um alerta informa quantos campos revisar.
+  - O botão "Continuar" leva à escolha de perfil. O texto deixa claro que nenhuma conta é criada e nenhum dado é enviado.
+- **Escolha de perfil (`/perfil-de-acesso`):** layout simples, com logo e link "Início".
+
+### Restrições da autenticação demonstrativa
+
+- Não há OAuth, tokens, escopos nem chamadas ao Google ou ao Supabase.
+- A senha existe só no estado do formulário e nunca é persistida.
+- A sessão de demonstração guarda apenas `{ role, name }` no `sessionStorage`.
+- Ponto de integração futura: `src/lib/auth/providers.ts` (`AUTH_PROVIDERS.google.available`, `signInWithGoogle`) e `setAccessTokenProvider` em `src/lib/api/client.ts`.
+
 ## Estados de cada tela
 
 Todas as leituras passam por `useAsync` + `AsyncContent`: **carregando** (esqueleto ou spinner), **erro** (mensagem e "Tentar novamente"), **vazio** (orientação e ação) e **conteúdo**.
@@ -62,6 +86,16 @@ Ex.: `/aluno/buscar?demo=vazio`.
   - Para invalidar, incremente `VERSION`.
 - `public/_headers` (Cloudflare Pages): `sw.js` e `index.html` sem cache, `/assets/*` imutável, cabeçalhos de segurança.
 
+## Proteção contra regressões
+
+- `pnpm --filter @edusearch/web lint` (`scripts/check-effects.mjs`): falha se algum `useEffect`/`useLayoutEffect` tiver corpo de expressão ou for `async`. O build do app roda essa checagem antes do `tsc`.
+- `pnpm --filter @edusearch/web smoke [url]` (`scripts/smoke.mjs`): abre 24 rotas no Chrome headless e falha em caso de erro de console, exceção, tela de erro de rota, estado de erro inesperado ou rolagem horizontal. A URL padrão é `http://localhost:5190`. Rode contra o **servidor de desenvolvimento** para cobrir o React StrictMode.
+
+```bash
+pnpm --filter @edusearch/web dev -- --port 5190
+pnpm --filter @edusearch/web smoke
+```
+
 ## Organização do código
 
 ```text
@@ -69,6 +103,7 @@ src/
 ├── app/            router, sessão de demonstração, tema
 ├── components/     AppShell, PageHeader, AsyncContent, TeacherCard, LessonCard, LessonTabs, SettingsPanel...
 ├── lib/
+│   ├── auth/       providers.ts (ponto de integração Supabase + Google; hoje indisponível)
 │   ├── api/        client.ts (HTTP), types.ts (modelos do frontend)
 │   ├── data/       source.ts (interface), mock/ (fixtures + adapter), http/ (adapter real)
 │   ├── hooks/      useAsync, useAction

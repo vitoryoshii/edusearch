@@ -1,4 +1,4 @@
-# QA — frontend (Fase 2)
+# QA — frontend
 
 Executado em 17/11/2026 sobre os builds de produção (`vite preview`).
 
@@ -46,3 +46,40 @@ Verificações manuais incluídas no código: navegação por teclado em abas, m
 ## Capturas
 
 Em [`screenshots/`](screenshots/): website (desktop, mobile e escuro), telas do aluno e do professor em 375, 768 e 1440 px, e estados de erro e vazio.
+
+---
+
+## Fase 2.1 — Premium UI/UX e experiência de login (17/11/2026)
+
+### Execuções
+
+| Verificação | Resultado |
+| ----------- | --------- |
+| `pnpm -r typecheck` | ✅ |
+| `pnpm -r build` (inclui `check-effects` no app) | ✅ |
+| `check-effects` | ✅ Também validado reintroduzindo o bug do `scrollTo`: a checagem falha, como esperado. |
+| Smoke em **dev** (`localhost:5190`, StrictMode), 24 rotas | ✅ 0 erros. Com o bug reintroduzido: ❌ 39 problemas detectados. |
+| Smoke em **produção** (`vite preview`), 24 rotas | ✅ 0 erros |
+| axe-core WCAG 2.2 AA nas telas de acesso: 4 rotas × 320/375/390/768/1024/1440 × claro/escuro (48 renderizações) | ✅ 0 violações, 0 overflow, 0 erros de console |
+| axe-core no aluno: 8 rotas × 375/1024/1440 × claro/escuro (48) | ✅ 0 violações |
+| axe-core no professor: 6 rotas × 375/1024/1440 × claro/escuro (36) | ✅ 0 violações |
+| Validação do cadastro (envio vazio, claro e escuro) | ✅ foco no 1º campo inválido, alerta "Revise os 4 campos destacados.", 4 campos com `aria-invalid`, 0 violações |
+
+### Encontrado e corrigido
+
+- A tabela de recebimentos era cortada em 1024px, porque a largura útil é menor que a tabela. Agora a tabela aparece só a partir de 1280px; abaixo disso, vira uma lista em duas colunas.
+- `main.tsx` usava um efeito com retorno implícito (válido, mas ambíguo). Passou a usar `return` explícito, atendendo à regra.
+
+### Bundles
+
+As telas de acesso continuam leves: `Auth` 4,9 KB, `AuthShell` 2,8 KB e `Welcome` 2,5 KB, sem gzip. Nenhuma dependência nova.
+
+### Capturas
+
+Em [`screenshots/fase-2.1/`](screenshots/fase-2.1/):
+
+- Comparativos antes/depois: `comparativo-login-*` e `comparativo-boas-vindas-*`.
+- Login em claro e escuro (desktop e mobile).
+- Cadastro: desktop, 320px e validação (claro e escuro).
+- Boas-vindas: desktop e mobile, claro e escuro.
+- Escolha de perfil (390px), aulas do aluno (mobile), início do aluno (escuro) e recebimentos (1024px).
