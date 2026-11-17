@@ -28,7 +28,7 @@
   /* Texto */
   --es-fg-strong: #102e46;
   --es-fg: #334155;
-  --es-fg-muted: #64748b;
+  --es-fg-muted: #5b6b7f;
 
   /* Bordas */
   --es-line: #e2e8f0;
@@ -192,6 +192,11 @@
   ::selection {
     background-color: var(--es-primary-soft);
     color: var(--es-fg-strong);
+  }
+
+  /* Fieldsets têm min-width: min-content por padrão e quebram rolagens horizontais internas. */
+  fieldset {
+    min-width: 0;
   }
 
   dialog::backdrop {

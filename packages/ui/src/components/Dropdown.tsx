@@ -20,10 +20,13 @@ export function Dropdown({
   items,
   align = "end",
   triggerClassName,
+  triggerHasText = false,
 }: {
   trigger: ReactNode;
-  /** Rótulo acessível do botão. */
+  /** Rótulo acessível do menu (e do botão, se ele não tiver texto visível). */
   label: string;
+  /** Use quando o gatilho já mostra texto: o nome acessível vem do conteúdo visível (WCAG 2.5.3). */
+  triggerHasText?: boolean;
   items: DropdownItem[];
   align?: "start" | "end";
   triggerClassName?: string;
@@ -72,7 +75,7 @@ export function Dropdown({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={label}
+        aria-label={triggerHasText ? undefined : label}
         className={cn(
           "inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-control text-fg-strong transition-colors hover:bg-surface-muted",
           triggerClassName,
