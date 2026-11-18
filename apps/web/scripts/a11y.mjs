@@ -97,7 +97,7 @@ async function run() {
   await expect("motivos e pontos de atenção são listas (lidos como itens)", `document.querySelectorAll("main article ul li").length >= 4`);
 
   /* ---------- Aluno: abas e diálogos em Minhas aulas ---------- */
-  await b.go(base + "/aluno/aulas", 1500);
+  await b.go(base + "/aluno/aulas?view=lista", 1500);
   await until(`document.querySelectorAll("main article").length > 0`, "aulas");
   await focusOn(`document.querySelector('[role="tab"][aria-selected="true"]')`);
   await b.press("ArrowRight");
@@ -153,12 +153,56 @@ async function run() {
   await until(`document.querySelectorAll("main article").length > 0`, "recomendações (escuro)");
   await b.evaluate(`document.querySelector("details").open = true`);
   await axe("Recomendações expandidas (tema escuro)");
-  await b.go(base + "/aluno/aulas", 1500);
+  await b.go(base + "/aluno/aulas?view=lista", 1500);
   await until(`document.querySelectorAll("main article").length > 0`, "aulas (escuro)");
   await b.evaluate(`document.querySelector("main article button[aria-label^='Detalhes']").click()`);
   await until(`!!document.querySelector("dialog[open]")`, "detalhes (escuro)");
   await sleep(400); // espera a animação de entrada (opacidade) terminar antes de medir contraste
   await axe("Diálogo de detalhes (tema escuro)");
+
+  /* ---------- Fase 2.3: calendário, checkout, aula online e benefícios ---------- */
+  await b.viewport(1440);
+  await b.go(base + "/aluno/aulas", 1500);
+  await until(`!!document.querySelector('[role="radiogroup"]')`, "calendário");
+  await axe("Calendário semanal do aluno");
+  // Controle segmentado: setas trocam a opção selecionada
+  await focusOn(`document.querySelector('[role="radiogroup"][aria-label="Período do calendário"] [aria-checked="true"]')`);
+  await b.press("ArrowRight");
+  await expect("seta no controle segmentado seleciona Mês", `document.activeElement?.getAttribute("role") === "radio" && document.activeElement.textContent.includes("Mês") && document.activeElement.getAttribute("aria-checked") === "true"`);
+  await until(`!!document.querySelector('[role="group"][aria-label^="Dias de"]')`, "grade do mês");
+  await axe("Calendário mensal do aluno");
+  await focusOn(`document.querySelector('[data-day][aria-pressed="true"]')`);
+  const day = await b.evaluate(`document.activeElement.dataset.day`);
+  await b.press("ArrowDown");
+  await expect("seta para baixo na grade avança 7 dias e mantém o foco", `document.activeElement?.dataset.day !== ${JSON.stringify(day)} && document.activeElement.getAttribute("aria-pressed") === "true"`);
+  await expect("dias da grade têm nome acessível com quantidade de aulas", `/aulas?|sem aulas/.test(document.activeElement?.getAttribute("aria-label") || "")`);
+
+  await b.go(base + "/aluno/aulas/l-1", 1500);
+  await until(`document.body.innerText.includes("Google Meet")`, "aula online");
+  await axe("Aula online (sem link do Meet)");
+  await expect("sem link do Meet não há botão de entrada", `![...document.querySelectorAll("a")].some((a) => a.href.includes("meet.google.com"))`);
+  await expect("botões ilustrativos de microfone/câmera informam o estado (aria-pressed)", `document.querySelectorAll('main button[aria-pressed]').length >= 2`);
+
+  await b.evaluate(`(async () => { const ds = window.__edusearchDemo.dataSource; const s = await ds.listTeacherSlots("t-marina"); const l = await ds.createBooking({ teacherId: "t-marina", slotId: s[0].id, subject: "matematica" }); await ds.createCheckout(l.id); window.__pendingLesson = l.id; })()`);
+  const pendingId = await b.evaluate("window.__pendingLesson");
+  await b.go(base + `/aluno/pagamento/${pendingId}`, 1800);
+  await until(`document.body.innerText.includes("QR Code simulado")`, "checkout");
+  await axe("Checkout Pix (aguardando pagamento)");
+  await expect("QR Code simulado tem nome acessível de não pagável", `!!document.querySelector('[role="img"][aria-label*="não pagável"]')`);
+  await expect("campo Pix Copia e Cola tem rótulo", `!!document.querySelector('input[readonly]')?.labels?.[0]?.textContent.includes("Pix Copia e Cola")`);
+
+  await b.viewport(375, { dark: true });
+  await b.go(base + `/aluno/pagamento/${pendingId}`, 1800);
+  await until(`document.body.innerText.includes("QR Code simulado")`, "checkout escuro");
+  await axe("Checkout Pix (mobile, tema escuro)");
+  await b.viewport(1440);
+
+  await b.evaluate(session("teacher", ", teacherId: 't-marina'"));
+  for (const r of ["/professor/beneficios", "/professor/agenda", "/professor/recebimentos"]) {
+    await b.go(base + r, 1800);
+    await axe(`Professor ${r}`);
+  }
+  await b.evaluate(session("student"));
 
   /* ---------- Professor: seletor em Configurações ---------- */
   await b.viewport(1440);
