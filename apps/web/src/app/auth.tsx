@@ -217,7 +217,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
   if (status === "loading") return <LoadingState label="Verificando sua sessão…" className="min-h-dvh" />;
   if (status !== "signedIn") {
-    return <Navigate to={`/entrar?next=${encodeURIComponent(sanitizeNext(location.pathname))}`} replace />;
+    return <Navigate to={`/?next=${encodeURIComponent(sanitizeNext(location.pathname))}`} replace />;
   }
   return <>{children}</>;
 }

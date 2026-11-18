@@ -11,6 +11,10 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
   /** Client ID OAuth (Web) do Google — público. NUNCA o Client Secret. */
   readonly VITE_GOOGLE_CLIENT_ID?: string;
+  /** URL pública (https) dos Termos de Uso — definir só quando publicados. */
+  readonly VITE_LEGAL_TERMS_URL?: string;
+  /** URL pública (https) da Política de Privacidade — definir só quando publicada. */
+  readonly VITE_LEGAL_PRIVACY_URL?: string;
 }
 
 interface ImportMeta {

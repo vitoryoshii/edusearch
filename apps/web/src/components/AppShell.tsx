@@ -100,7 +100,7 @@ export function AppShell({ role }: { role: ShellMode }) {
       icon: <LogoutIcon />,
       tone: "danger" as const,
       onSelect: () => {
-        void auth.signOut().then(() => navigate("/entrar", { replace: true }));
+        void auth.signOut().then(() => navigate("/", { replace: true }));
       },
     },
   ];

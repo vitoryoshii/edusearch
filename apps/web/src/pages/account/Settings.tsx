@@ -37,7 +37,7 @@ export default function AccountSettings() {
     setLeaving(true);
     await signOut();
     toast({ tone: "success", title: "Você saiu da sua conta", description: "A sessão foi encerrada neste dispositivo." });
-    navigate("/entrar", { replace: true });
+    navigate("/", { replace: true });
   };
 
   return (
