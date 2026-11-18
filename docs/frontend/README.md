@@ -6,6 +6,7 @@ Documentação da frente de frontend (Fase 2): design system, website institucio
 | --------- | -------- |
 | [design-system.md](design-system.md) | Tokens, temas, componentes e regras de uso do `@edusearch/ui` |
 | [app.md](app.md) | Telas, navegação, dados de demonstração e PWA do `apps/web` |
+| [calendar-meet-payments.md](calendar-meet-payments.md) | **Fase 2.3**: calendário, aula online, checkout Pix, comissão de 15% e incentivos — o que é demonstrativo e o que depende do backend |
 | [demo-journey.md](demo-journey.md) | **Jornada de demonstração ponta a ponta**: roteiro para avaliadores, regras de reserva, matching, estado e testes |
 | [api-integration.md](api-integration.md) | Camada de dados, cliente HTTP e **necessidades de integração** com a API |
 | [qa.md](qa.md) | Resultado de build, typecheck, acessibilidade, responsividade e CI |

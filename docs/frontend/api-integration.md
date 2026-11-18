@@ -53,3 +53,23 @@ Telas ──▶ dataSource (interface DataSource, src/lib/data/source.ts)
 - Moeda: centavos inteiros.
 - CORS: incluir as origens de produção do app.
 - Rotas autenticadas: `Authorization: Bearer <jwt do Supabase>`. O front já tem o ponto de injeção.
+
+## Fase 2.3 — Agenda, Meet, pagamentos e incentivos (necessidades, sem contrato definido)
+
+Os métodos abaixo já existem na interface `DataSource`. No adapter HTTP eles lançam `not_implemented` até existir o contrato oficial. Comportamento esperado e regras de demonstração: [calendar-meet-payments.md](calendar-meet-payments.md).
+
+| # | Necessidade | Método do `DataSource` | Observações para o contrato |
+| - | ----------- | ---------------------- | --------------------------- |
+| 18 | Detalhe de uma aula (aluno ou professor) | `getLesson` | Autorização pelo JWT: o aluno vê as próprias aulas, o professor as dele |
+| 19 | Reserva nasce aguardando pagamento | `createBooking` | Status `pending_payment`; o horário fica reservado enquanto houver cobrança válida |
+| 20 | Criar cobrança Pix | `createCheckout` | **Idempotente**. Devolve `expiresAt`, `pix.qrCodeImageUrl` e `pix.copyPasteCode` vindos da AbacatePay. A chave do gateway fica só no backend |
+| 21 | Consultar cobrança | `getCheckout` | Status atualizado por webhook no backend; o front consulta a cada 3 s com a cobrança aberta (ou via push no futuro) |
+| 22 | Expiração e cancelamento | `getCheckout`, `cancelLesson` | Expirar ou cancelar libera o horário. Pagamento confirmado + cancelamento exige política de reembolso |
+| 23 | Recebimentos | `getEarnings` | Comissão em basis points; valores em centavos; `gatewayFeeCents` **separado** (null enquanto desconhecido); status financeiro sem "repassado" até existir repasse |
+| 24 | Comissão e incentivos | `getCommissionProgram` | Comissão padrão e atual calculadas no backend; metas verificáveis; benefícios só com regras aprovadas |
+| 25 | Indicações | `getReferralProgram` | Código e link gerados no backend; validação de qualificação, **bloqueio de autoindicação**, antifraude, estornos e elegibilidade |
+| 26 | Bloqueios de agenda | `listBlockedDates`, `setDateBlocked` | Datas locais `YYYY-MM-DD` com fuso do professor; aulas já marcadas não são removidas |
+| 27 | Google Agenda | `getCalendarConnection`, `syncLessonToCalendar` | OAuth e criação de eventos no backend; o front só exibe o estado (`not_synced`, `pending`, `synced`, `failed`) |
+| 28 | Google Meet | (campo `meeting` da aula) | `joinUrl` criado pelo backend (Google Meet API). O front só exibe `https://meet.google.com/xxx-xxxx-xxx` |
+
+**Somente demonstração (não existem na API):** `simulatePayment`, `setCalendarConnection` e `resetDemoData`. O frontend esconde as ações correspondentes quando o adapter não os oferece.
