@@ -15,9 +15,10 @@ import {
 } from "@edusearch/ui";
 import { DemoNotice } from "../../components/DemoNotice";
 import { PageHeader, SectionTitle } from "../../components/PageHeader";
-import { describeError } from "../../lib/api/client";
+import { ApiError, describeError } from "../../lib/api/client";
 import type { Teacher, TimeSlot } from "../../lib/api/types";
 import { subjectName } from "../../lib/catalog";
+import { DEMO_TEACHER_ID } from "../../lib/demo";
 import { dataSource } from "../../lib/data/source";
 import { formatDateLong, formatMoney, formatTimeRange } from "../../lib/format";
 
@@ -31,7 +32,8 @@ export default function BookingSummary() {
   const [subject, setSubject] = useState(teacher?.subjects[0] ?? "");
   const [topic, setTopic] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; conflict: boolean } | null>(null);
+  const [done, setDone] = useState(false);
 
   if (!teacher || !slot) {
     return (
@@ -55,11 +57,20 @@ export default function BookingSummary() {
     setSubmitting(true);
     setError(null);
     try {
-      await dataSource.createBooking({ teacherId: teacher.id, slotId: slot.id, subject, topic: topic.trim() || undefined });
-      toast({ tone: "success", title: "Aula agendada", description: "Confira os detalhes em Minhas aulas." });
-      navigate("/aluno/aulas", { replace: true });
+      const lesson = await dataSource.createBooking({ teacherId: teacher.id, slotId: slot.id, subject, topic: topic.trim() || undefined });
+      setDone(true);
+      toast({
+        tone: "success",
+        title: "Aula reservada",
+        description:
+          teacher.id === DEMO_TEACHER_ID
+            ? "Ela também aparece na agenda da professora (visão do professor na demonstração)."
+            : "Confira os detalhes em Minhas aulas.",
+      });
+      // replace: voltar no navegador não reabre o resumo de uma reserva já feita.
+      navigate("/aluno/aulas", { replace: true, state: { highlight: lesson.id } });
     } catch (e) {
-      setError(describeError(e));
+      setError({ message: describeError(e), conflict: e instanceof ApiError && e.status === 409 });
       setSubmitting(false);
     }
   };
@@ -135,11 +146,27 @@ export default function BookingSummary() {
             Pagamento via Pix (AbacatePay) ainda não integrado. Nenhuma cobrança será feita.
           </DemoNotice>
           {error && (
-            <p role="alert" className="mt-4 rounded-control bg-danger-soft px-3 py-2 text-sm text-danger-text">
-              {error}
-            </p>
+            <div role="alert" className="mt-4 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger-text">
+              <p>{error.message}</p>
+              {error.conflict && (
+                <Link
+                  to={`/aluno/professores/${teacher.id}/agendar`}
+                  replace
+                  className="mt-1.5 inline-flex min-h-9 items-center font-semibold underline underline-offset-4"
+                >
+                  Escolher outro horário
+                </Link>
+              )}
+            </div>
           )}
-          <Button fullWidth size="lg" className="mt-5" loading={submitting} onClick={confirm}>
+          <Button
+            fullWidth
+            size="lg"
+            className="mt-5"
+            loading={submitting}
+            disabled={done || error?.conflict}
+            onClick={confirm}
+          >
             Confirmar agendamento
           </Button>
           <p className="mt-3 text-center text-xs text-fg-muted">Agendamento de demonstração.</p>

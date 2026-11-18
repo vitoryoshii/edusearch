@@ -1,30 +1,36 @@
 import { useState } from "react";
-import { Button, Dialog, EmptyState, Tabs, VideoIcon, useToast, type TabItem } from "@edusearch/ui";
+import { Badge, Button, Dialog, EmptyState, Tabs, VideoIcon, useToast, type TabItem } from "@edusearch/ui";
 import { describeError } from "../lib/api/client";
 import type { Lesson } from "../lib/api/types";
 import { subjectName } from "../lib/catalog";
 import { dataSource } from "../lib/data/source";
-import { formatDateShort, formatTime } from "../lib/format";
+import { STATUS_LABELS, formatDateLong, formatDateShort, formatMoney, formatTime, formatTimeRange } from "../lib/format";
 import { DemoNotice } from "./DemoNotice";
 import { LessonCard } from "./LessonCard";
 
+const canCancel = (l: Lesson) => l.status === "scheduled" && new Date(l.start).getTime() > Date.now();
+
 /**
- * Lista de aulas em abas (próximas / concluídas / canceladas), com
+ * Lista de aulas em abas (próximas / concluídas / canceladas), com detalhes e
  * cancelamento confirmado em diálogo. Usada por aluno e professor.
+ * `highlightId` destaca uma aula recém-reservada.
  */
 export function LessonTabs({
   lessons,
   perspective,
   onChange,
   emptyAction,
+  highlightId,
 }: {
   lessons: Lesson[];
   perspective: "student" | "teacher";
   onChange: (lessons: Lesson[]) => void;
   emptyAction?: React.ReactNode;
+  highlightId?: string;
 }) {
   const toast = useToast();
   const [toCancel, setToCancel] = useState<Lesson | null>(null);
+  const [details, setDetails] = useState<Lesson | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const now = Date.now();
 
@@ -40,8 +46,12 @@ export function LessonTabs({
     try {
       const updated = await dataSource.cancelLesson(toCancel.id);
       onChange(lessons.map((l) => (l.id === updated.id ? updated : l)));
-      toast({ title: "Aula cancelada", description: "Demonstração: ninguém foi notificado." });
+      toast({
+        title: "Aula cancelada",
+        description: "O horário voltou a ficar disponível. Demonstração: ninguém foi notificado.",
+      });
       setToCancel(null);
+      setDetails(null);
     } catch (e) {
       toast({ tone: "error", title: "Não foi possível cancelar", description: describeError(e) });
     } finally {
@@ -49,36 +59,48 @@ export function LessonTabs({
     }
   };
 
-  const list = (items: Lesson[], empty: { title: string; description: string }, withActions = false) =>
+  const person = (l: Lesson) => (perspective === "student" ? l.teacherName : l.studentName);
+
+  const list = (items: Lesson[], empty: { title: string; description: string }, upcomingList = false) =>
     items.length === 0 ? (
-      <EmptyState {...empty} action={withActions ? emptyAction : undefined} />
+      <EmptyState {...empty} action={upcomingList ? emptyAction : undefined} />
     ) : (
       <ul className="grid gap-3">
-        {items.map((l) => (
-          <li key={l.id}>
-            <LessonCard
-              lesson={l}
-              perspective={perspective}
-              actions={
-                withActions && (
+        {items.map((l) => {
+          const isNew = l.id === highlightId;
+          return (
+            <li key={l.id} className={isNew ? "animate-slide-up" : undefined}>
+              <LessonCard
+                lesson={l}
+                perspective={perspective}
+                highlight={isNew}
+                badge={isNew ? <Badge tone="success">Nova reserva</Badge> : undefined}
+                actions={
                   <>
-                    <Button
-                      size="sm"
-                      leftIcon={<VideoIcon className="h-4 w-4" />}
-                      disabled={!l.meetingUrl}
-                      title={l.meetingUrl ? undefined : "O link do Google Meet será gerado quando a integração estiver ativa."}
-                    >
-                      Entrar na aula
+                    {upcomingList && (
+                      <Button
+                        size="sm"
+                        leftIcon={<VideoIcon className="h-4 w-4" />}
+                        disabled={!l.meetingUrl}
+                        title={l.meetingUrl ? undefined : "O link será gerado após a integração com o Google Meet."}
+                      >
+                        Entrar na aula
+                      </Button>
+                    )}
+                    <Button size="sm" variant="secondary" onClick={() => setDetails(l)} aria-label={`Detalhes da aula de ${subjectName(l.subject)} em ${formatDateShort(l.start)}`}>
+                      Detalhes
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setToCancel(l)}>
-                      Cancelar
-                    </Button>
+                    {canCancel(l) && (
+                      <Button size="sm" variant="ghost" onClick={() => setToCancel(l)}>
+                        Cancelar
+                      </Button>
+                    )}
                   </>
-                )
-              }
-            />
-          </li>
-        ))}
+                }
+              />
+            </li>
+          );
+        })}
       </ul>
     );
 
@@ -115,6 +137,54 @@ export function LessonTabs({
   return (
     <>
       <Tabs label="Filtrar aulas por situação" items={items} />
+
+      <Dialog
+        open={details !== null}
+        onClose={() => setDetails(null)}
+        title={details ? `${subjectName(details.subject)} · ${STATUS_LABELS[details.status]}` : "Detalhes da aula"}
+        variant="sheet"
+        footer={
+          details && (
+            <>
+              {canCancel(details) && (
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    setToCancel(details);
+                    setDetails(null);
+                  }}
+                >
+                  Cancelar aula
+                </Button>
+              )}
+              <Button variant="secondary" onClick={() => setDetails(null)}>
+                Fechar
+              </Button>
+            </>
+          )
+        }
+      >
+        {details && (
+          <dl className="divide-y divide-line text-sm">
+            {[
+              [perspective === "student" ? "Professor" : "Aluno", person(details)],
+              ["Data", formatDateLong(details.start)],
+              ["Horário", formatTimeRange(details.start, details.end)],
+              ["Tema", details.topic || "Não informado"],
+              ["Valor", formatMoney(details.priceCents)],
+              ["Videochamada", details.meetingUrl ? details.meetingUrl : "Link pendente (integração com o Google Meet)"],
+              ["Pagamento", "Não cobrado (demonstração)"],
+              ["Código da reserva", details.id],
+            ].map(([k, v]) => (
+              <div key={k} className="grid gap-0.5 py-2.5 sm:grid-cols-[9rem_1fr]">
+                <dt className="text-fg-muted">{k}</dt>
+                <dd className="font-medium break-words text-fg-strong">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </Dialog>
+
       <Dialog
         open={toCancel !== null}
         onClose={() => !cancelling && setToCancel(null)}
@@ -122,7 +192,7 @@ export function LessonTabs({
         title="Cancelar esta aula?"
         description={
           toCancel
-            ? `${subjectName(toCancel.subject)} · ${formatDateShort(toCancel.start)}, ${formatTime(toCancel.start)}. Esta ação não pode ser desfeita.`
+            ? `${subjectName(toCancel.subject)} · ${formatDateShort(toCancel.start)}, ${formatTime(toCancel.start)}. O horário volta a ficar disponível.`
             : undefined
         }
         footer={
