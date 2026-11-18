@@ -115,6 +115,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [apply, client]);
 
+  // Estado da sessão (só o status, sem dados) para estilos e diagnóstico dos testes.
+  useEffect(() => {
+    document.documentElement.dataset.auth = status;
+  }, [status]);
+
   // JWT do SUPABASE (nunca o ID token do Google) para a futura API FastAPI.
   useEffect(() => {
     if (status !== "signedIn") return;

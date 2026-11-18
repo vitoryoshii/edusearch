@@ -48,24 +48,41 @@ function GisButton({ next }: { next: string }) {
   // Muda a cada nova tentativa: gera novo nonce e redesenha o botão.
   const [attempt, setAttempt] = useState(0);
 
+  /*
+   * O resultado de um login em andamento pertence ao COMPONENTE, não a uma
+   * renderização do botão. Redesenhar o botão (troca de tema, nova tentativa)
+   * não pode descartar a resposta do Supabase — só a desmontagem descarta.
+   */
+  const mounted = useRef(false);
   useEffect(() => {
-    let active = true;
-    const stopListening = setCredentialListener((response) => {
-      if (!active) return; // resposta atrasada após desmontagem: descartada
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    return setCredentialListener((response) => {
+      if (!mounted.current) return; // resposta atrasada após desmontagem: descartada
       setPhase("signing");
       setFailure(null);
       signInWithGoogleCredential(response.credential).then((result) => {
-        if (!active) return;
+        if (!mounted.current) return;
         if (result.ok) {
           endDemo(); // a conta real não herda a sessão fictícia da aba
           navigate(next, { replace: true });
           return;
         }
         setFailure(result.failure);
-        setAttempt((n) => n + 1);
+        setPhase("ready");
+        setAttempt((n) => n + 1); // novo nonce para a próxima tentativa
       });
     });
+  }, [signInWithGoogleCredential, endDemo, navigate, next]);
 
+  // Desenha (ou redesenha) o botão oficial: nova tentativa ou troca de tema.
+  useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const gis = await loadGis();
@@ -84,7 +101,8 @@ function GisButton({ next }: { next: string }) {
           width,
           locale: "pt-BR",
         });
-        setPhase("ready");
+        // Se um login estiver em andamento, continua mostrando "Entrando…".
+        setPhase((p) => (p === "signing" ? p : "ready"));
       } catch {
         if (!active) return;
         setFailure("gis_unavailable");
@@ -94,9 +112,8 @@ function GisButton({ next }: { next: string }) {
 
     return () => {
       active = false;
-      stopListening();
     };
-  }, [attempt, resolved, next, prepareNonce, signInWithGoogleCredential, endDemo, navigate]);
+  }, [attempt, resolved, prepareNonce]);
 
   if (status === "signedIn") {
     return (
