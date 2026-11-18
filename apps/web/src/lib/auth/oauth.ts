@@ -1,171 +1,207 @@
 /**
- * Regras puras do fluxo OAuth (sem React, sem Supabase, sem `window`).
- * Testadas em scripts/unit.test.mjs.
+ * Regras puras do login Google via Google Identity Services (GIS) + Supabase
+ * (sem React, sem SDKs, sem `window`). Testadas em scripts/unit.test.mjs.
  *
- * Segurança:
- * - O destino pós-login (`next`) é sempre um caminho RELATIVO da própria
- *   origem e dentro de uma lista de prefixos permitidos (evita open redirect).
- * - Antes de ir ao Google, o app grava uma "intenção" com um valor aleatório
- *   (`nonce`) e o horário. O callback só troca o código pela sessão se essa
- *   intenção existir, for recente e coincidir com o `nonce` devolvido na URL
- *   de retorno. Isso complementa o PKCE do Supabase (code_verifier), que já
- *   impede que um código interceptado seja trocado em outro navegador.
- * - Os tokens do provedor (Google) nunca são persistidos no navegador.
+ * Protocolo de nonce (documentado pelo Supabase para signInWithIdToken):
+ *   1. o app gera um nonce ALEATÓRIO (Web Crypto, 256 bits);
+ *   2. envia ao Google apenas o HASH SHA-256 em hexadecimal (`nonce` do GIS);
+ *   3. o Google devolve um ID token cujo claim `nonce` é esse hash;
+ *   4. o app envia ao Supabase o token + o nonce ORIGINAL; o Supabase calcula
+ *      o hash e confere com o claim. Assim, um ID token capturado não pode ser
+ *      reaproveitado sem o nonce original, que nunca sai da memória da aba.
+ *
+ * O ID token do Google nunca é gravado, registrado em log nem colocado em URL.
  */
 
-/** Escopos básicos de login. NÃO incluir Google Agenda neste fluxo. */
+/**
+ * Escopos do login. O GIS (ID token) concede somente estes — não há como
+ * pedir Google Agenda, Meet, Drive ou Gmail neste fluxo.
+ */
 export const GOOGLE_LOGIN_SCOPES = ["openid", "email", "profile"] as const;
-
-/** Rota de retorno do OAuth (precisa estar na allowlist de Redirect URLs do Supabase). */
-export const AUTH_CALLBACK_PATH = "/auth/callback";
 
 /** Área da conta real (separada da demonstração). */
 export const ACCOUNT_HOME = "/conta";
 
-/** Prefixos aceitos como destino após o login real. */
-const ALLOWED_NEXT_PREFIXES = [ACCOUNT_HOME];
+/** Validade de um nonce emitido (tempo máximo entre exibir o botão e concluir). */
+export const NONCE_MAX_AGE_MS = 10 * 60 * 1000;
 
-/** Validade da intenção de login (ida e volta ao Google). */
-export const INTENT_MAX_AGE_MS = 10 * 60 * 1000;
+/** Emissores aceitos pelo Google para ID tokens. */
+const GOOGLE_ISSUERS = new Set(["https://accounts.google.com", "accounts.google.com"]);
 
-/** Normaliza o destino pós-login. Qualquer valor suspeito vira ACCOUNT_HOME. */
+/** Normaliza o destino pós-login: só caminhos internos de /conta. */
 export function sanitizeNext(next: unknown): string {
   if (typeof next !== "string" || next.length === 0 || next.length > 200) return ACCOUNT_HOME;
-  // Só caminhos absolutos da própria origem: "/x", nunca "//host", "/\host", "http:" etc.
   if (!next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return ACCOUNT_HOME;
-  // Sem caracteres de controle e sem esquemas embutidos.
   if (/[\u0000-\u001f\u007f]/.test(next) || /^\/[a-z][a-z0-9+.-]*:/i.test(next)) return ACCOUNT_HOME;
   const path = next.split(/[?#]/)[0] ?? "";
   if (path.split("/").some((seg) => seg === "..")) return ACCOUNT_HOME;
-  const allowed = ALLOWED_NEXT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
-  return allowed ? next : ACCOUNT_HOME;
+  return path === ACCOUNT_HOME || path.startsWith(`${ACCOUNT_HOME}/`) ? next : ACCOUNT_HOME;
 }
 
-export type LoginIntent = { nonce: string; next: string; createdAt: number };
+/* --------------------------------- Nonce --------------------------------- */
 
-/** Gera um valor aleatório URL-safe (16 bytes). */
-export function randomNonce(cryptoImpl: Pick<Crypto, "getRandomValues"> = globalThis.crypto): string {
-  const bytes = cryptoImpl.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+type CryptoLike = Pick<Crypto, "getRandomValues"> & { subtle: Pick<SubtleCrypto, "digest"> };
+
+const toHex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+function toBase64Url(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function createIntent(next: unknown, now: number, nonce: string): LoginIntent {
-  return { nonce, next: sanitizeNext(next), createdAt: now };
+/** SHA-256 em hexadecimal minúsculo (formato esperado pelo Supabase). */
+export async function sha256Hex(value: string, cryptoImpl: CryptoLike = globalThis.crypto): Promise<string> {
+  const digest = await cryptoImpl.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return toHex(new Uint8Array(digest));
 }
 
-/** Lê a intenção gravada (JSON) com validação de forma. */
-export function parseIntent(raw: string | null): LoginIntent | null {
-  if (!raw) return null;
+export type NoncePair = { raw: string; hashed: string };
+
+/** Nonce de 256 bits (base64url) e seu hash SHA-256 (hex). */
+export async function createNonce(cryptoImpl: CryptoLike = globalThis.crypto): Promise<NoncePair> {
+  const raw = toBase64Url(cryptoImpl.getRandomValues(new Uint8Array(32)));
+  return { raw, hashed: await sha256Hex(raw, cryptoImpl) };
+}
+
+/**
+ * Guarda os nonces emitidos SOMENTE em memória e entrega cada um uma única vez.
+ * Indexado pelo hash (que volta no claim `nonce` do ID token).
+ */
+export class NonceVault {
+  private readonly entries = new Map<string, { raw: string; issuedAt: number }>();
+  private readonly maxAgeMs: number;
+
+  constructor(maxAgeMs = NONCE_MAX_AGE_MS) {
+    this.maxAgeMs = maxAgeMs;
+  }
+
+  remember(pair: NoncePair, now: number) {
+    this.prune(now);
+    this.entries.set(pair.hashed, { raw: pair.raw, issuedAt: now });
+  }
+
+  /** Devolve o nonce original e o invalida. `null` se desconhecido, expirado ou já usado. */
+  consume(hashed: unknown, now: number): string | null {
+    if (typeof hashed !== "string") return null;
+    const entry = this.entries.get(hashed);
+    this.entries.delete(hashed);
+    this.prune(now);
+    if (!entry || now - entry.issuedAt > this.maxAgeMs) return null;
+    return entry.raw;
+  }
+
+  clear() {
+    this.entries.clear();
+  }
+
+  get size() {
+    return this.entries.size;
+  }
+
+  private prune(now: number) {
+    for (const [k, v] of this.entries) if (now - v.issuedAt > this.maxAgeMs) this.entries.delete(k);
+  }
+}
+
+/* ------------------------------ ID token (JWT) ------------------------------ */
+
+export type GoogleIdClaims = {
+  iss?: unknown;
+  aud?: unknown;
+  exp?: unknown;
+  nonce?: unknown;
+  sub?: unknown;
+};
+
+/** Decodifica o payload do JWT SEM validar assinatura (quem valida é o Supabase). */
+export function decodeJwtPayload(token: unknown): GoogleIdClaims | null {
+  if (typeof token !== "string" || token.length > 8192) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((p) => !/^[A-Za-z0-9_-]+$/.test(p))) return null;
   try {
-    const v = JSON.parse(raw) as Partial<LoginIntent>;
-    if (typeof v.nonce !== "string" || !/^[0-9a-f]{32}$/.test(v.nonce)) return null;
-    if (typeof v.createdAt !== "number" || !Number.isFinite(v.createdAt)) return null;
-    return { nonce: v.nonce, next: sanitizeNext(v.next), createdAt: v.createdAt };
+    const b64 = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
+    const json = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4))) as unknown;
+    return json && typeof json === "object" && !Array.isArray(json) ? (json as GoogleIdClaims) : null;
   } catch {
     return null;
   }
 }
 
-/** URL absoluta de retorno, com o nonce da intenção. */
-export function buildRedirectTo(origin: string, nonce: string): string {
-  const url = new URL(AUTH_CALLBACK_PATH, origin);
-  url.searchParams.set("s", nonce);
-  return url.toString();
-}
-
-/** Códigos de falha exibidos na tela de callback/login. */
-export type AuthFailure =
-  | "access_denied"
-  | "provider_error"
-  | "missing_code"
-  | "invalid_state"
-  | "expired_state"
-  | "exchange_failed"
-  | "not_allowed"
-  | "disabled"
-  | "network";
-
-export type CallbackParams =
-  | { kind: "code"; code: string; state: string | null }
-  | { kind: "error"; failure: AuthFailure; detail: string | null };
-
 /**
- * Interpreta a URL de retorno. Erros podem vir na query (`?error=`) ou no
- * fragmento (`#error=`), dependendo do ponto em que o fluxo falhou.
+ * Pré-verificação local da credencial recebida do GIS. NÃO é a fronteira de
+ * segurança (o Supabase valida assinatura, emissor, público e nonce), mas
+ * evita enviar ao servidor algo claramente inválido ou de outra tentativa.
  */
-export function parseCallback(search: string, hash: string): CallbackParams {
-  const q = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  const h = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
-  const error = q.get("error") ?? h.get("error");
-  if (error) {
-    const description = q.get("error_description") ?? h.get("error_description");
-    const code = q.get("error_code") ?? h.get("error_code");
-    return { kind: "error", failure: classifyProviderError(error, code, description), detail: description?.slice(0, 300) ?? null };
-  }
-  const code = q.get("code");
-  if (!code || !/^[A-Za-z0-9._~-]{8,512}$/.test(code)) return { kind: "error", failure: "missing_code", detail: null };
-  return { kind: "code", code, state: q.get("s") };
+export function checkCredential(
+  token: unknown,
+  opts: { clientId: string; now: number },
+): { ok: true; hashedNonce: string } | { ok: false; failure: "invalid_token" | "invalid_nonce" } {
+  const claims = decodeJwtPayload(token);
+  if (!claims) return { ok: false, failure: "invalid_token" };
+  if (typeof claims.iss !== "string" || !GOOGLE_ISSUERS.has(claims.iss)) return { ok: false, failure: "invalid_token" };
+  if (claims.aud !== opts.clientId) return { ok: false, failure: "invalid_token" };
+  if (typeof claims.exp !== "number" || claims.exp * 1000 <= opts.now) return { ok: false, failure: "invalid_token" };
+  if (typeof claims.nonce !== "string" || !/^[0-9a-f]{64}$/.test(claims.nonce)) return { ok: false, failure: "invalid_nonce" };
+  return { ok: true, hashedNonce: claims.nonce };
 }
 
-function classifyProviderError(error: string, code: string | null, description: string | null): AuthFailure {
-  if (error === "access_denied" && !/signup|not allowed|hook/i.test(`${code ?? ""} ${description ?? ""}`)) return "access_denied";
-  if (/signup_disabled|user_not_allowed|not allowed|hook/i.test(`${code ?? ""} ${description ?? ""}`)) return "not_allowed";
+/* --------------------------------- Falhas --------------------------------- */
+
+export type AuthFailure =
+  | "invalid_token"
+  | "invalid_nonce"
+  | "not_allowed"
+  | "network"
+  | "gis_unavailable"
+  | "provider_error"
+  | "session_expired";
+
+/** Classifica o erro devolvido pelo Supabase em signInWithIdToken. */
+export function classifySupabaseError(error: { message?: unknown; code?: unknown; status?: unknown; name?: unknown } | null | undefined): AuthFailure {
+  const text = `${String(error?.code ?? "")} ${String(error?.message ?? "")} ${String(error?.name ?? "")}`.toLowerCase();
+  if (/nonce/.test(text)) return "invalid_nonce";
+  if (/signup|not allowed|hook|user_banned|email_address_not_authorized/.test(text)) return "not_allowed";
+  if (/fetch|network|retryable/.test(text) || error?.status === 0) return "network";
+  if (/id token|id_token|bad_jwt|jwt|token|audience|issuer|expired/.test(text)) return "invalid_token";
   return "provider_error";
 }
 
-/** Confere a intenção gravada contra o `s` devolvido na URL. */
-export function verifyIntent(intent: LoginIntent | null, state: string | null, now: number): AuthFailure | null {
-  if (!intent || !state || intent.nonce !== state) return "invalid_state";
-  if (now - intent.createdAt > INTENT_MAX_AGE_MS || now < intent.createdAt - 60_000) return "expired_state";
-  return null;
-}
-
-/** Mensagens em português para cada falha (sem detalhes técnicos sensíveis). */
+/** Mensagens em português (sem detalhes técnicos sensíveis). */
 export const FAILURE_MESSAGES: Record<AuthFailure, { title: string; description: string }> = {
-  access_denied: {
-    title: "Acesso cancelado",
-    description: "Você cancelou o login com o Google. Nenhum dado foi compartilhado.",
+  invalid_token: {
+    title: "Não foi possível validar sua conta Google",
+    description: "A credencial recebida é inválida ou expirou. Tente entrar novamente.",
   },
-  provider_error: {
-    title: "O Google não concluiu o login",
-    description: "O provedor recusou ou interrompeu o acesso. Tente novamente em instantes.",
-  },
-  missing_code: {
-    title: "Retorno de login incompleto",
-    description: "Não recebemos o código de autorização. Inicie o login novamente pelo botão do Google.",
-  },
-  invalid_state: {
-    title: "Não foi possível validar este login",
-    description:
-      "Este retorno não corresponde a um login iniciado neste navegador. Por segurança, inicie o login novamente.",
-  },
-  expired_state: {
-    title: "O login expirou",
-    description: "Demorou mais de 10 minutos para concluir. Inicie o login novamente.",
-  },
-  exchange_failed: {
-    title: "Não foi possível concluir o login",
-    description: "O código de autorização é inválido ou já foi usado. Inicie o login novamente.",
+  invalid_nonce: {
+    title: "Login não confirmado por segurança",
+    description: "Esta resposta não corresponde à tentativa de login desta página. Tente entrar novamente.",
   },
   not_allowed: {
     title: "Conta não liberada para testes",
-    description:
-      "O cadastro real está restrito a usuários de teste autorizados. Use a demonstração ou fale com a equipe EduSearch.",
-  },
-  disabled: {
-    title: "Login real indisponível",
-    description: "O login com Google ainda não está habilitado neste ambiente. Você pode explorar a demonstração.",
+    description: "O acesso real está restrito a usuários de teste autorizados. Você pode explorar a demonstração.",
   },
   network: {
     title: "Sem conexão com o servidor de login",
-    description: "Verifique sua conexão e tente novamente.",
+    description: "Verifique sua internet e tente novamente.",
+  },
+  gis_unavailable: {
+    title: "Login do Google indisponível",
+    description: "Não foi possível carregar o botão do Google. Verifique sua conexão ou bloqueadores e tente de novo.",
+  },
+  provider_error: {
+    title: "Não foi possível concluir o login",
+    description: "O serviço de login recusou a solicitação. Tente novamente em instantes.",
+  },
+  session_expired: {
+    title: "Sua sessão expirou",
+    description: "Por segurança, entre novamente com o Google.",
   },
 };
 
 /**
- * Remove tokens do provedor (Google) antes de persistir a sessão.
- * O Supabase inclui `provider_token`/`provider_refresh_token` na sessão logo
- * após o OAuth; o app não precisa deles (Google Agenda será via backend).
+ * Remove tokens do provedor (Google) antes de persistir a sessão do Supabase.
+ * No fluxo de ID token eles não costumam vir, mas a regra vale para qualquer fluxo.
  */
 export function stripProviderTokens(serialized: string): string {
   try {
@@ -177,40 +213,4 @@ export function stripProviderTokens(serialized: string): string {
   } catch {
     return serialized;
   }
-}
-
-/** Dados básicos exibidos na conta (somente exibição — nunca usados para autorização). */
-export type AccountIdentity = {
-  id: string;
-  email: string | null;
-  name: string;
-  avatarUrl: string | null;
-  provider: string;
-  emailVerified: boolean;
-};
-
-type UserLike = {
-  id: string;
-  email?: string | null;
-  email_confirmed_at?: string | null;
-  app_metadata?: { provider?: unknown } | null;
-  user_metadata?: Record<string, unknown> | null;
-};
-
-/** Converte o usuário do Supabase em dados de exibição. */
-export function toIdentity(user: UserLike): AccountIdentity {
-  const meta = user.user_metadata ?? {};
-  const str = (k: string) => (typeof meta[k] === "string" && (meta[k] as string).trim() ? (meta[k] as string).trim() : null);
-  const email = user.email ?? str("email");
-  const name = str("full_name") ?? str("name") ?? (email ? email.split("@")[0]! : "Usuário");
-  const avatar = str("avatar_url") ?? str("picture");
-  return {
-    id: user.id,
-    email,
-    name: name.slice(0, 80),
-    // Só aceita fotos servidas por HTTPS do Google (evita URLs arbitrárias no <img>).
-    avatarUrl: avatar && /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\//i.test(avatar) ? avatar : null,
-    provider: typeof user.app_metadata?.provider === "string" ? user.app_metadata.provider : "desconhecido",
-    emailVerified: Boolean(user.email_confirmed_at),
-  };
 }

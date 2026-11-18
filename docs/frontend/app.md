@@ -50,7 +50,7 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
   - Desktop: o título "Encontre o professor certo para você." fica no painel, e a coluna mostra "Comece por aqui".
   - Com sessão ativa, aparece "Continuar como …".
 - **Login (`/entrar`) e cadastro (`/cadastro`):**
-  - Selo "Modo demonstração". Botão oficial "Continuar com o Google": desabilitado na versão pública; no ambiente restrito de testes faz login **real** (ver [auth-integration.md](auth-integration.md)).
+  - Selo "Modo demonstração". Botão oficial "Continuar com o Google": desabilitado na versão pública; no ambiente restrito de testes vira o botão oficial do Google Identity Services e faz login **real** (ver [auth-integration.md](auth-integration.md)).
   - `autocomplete` adequado: `username` e `current-password` no login; `name`, `email` e `new-password` no cadastro.
   - Senha com mostrar/ocultar. No cadastro, o indicador "Pelo menos 8 caracteres" muda em tempo real.
   - Validação ao sair do campo e ao enviar: o foco vai ao primeiro campo inválido e um alerta informa quantos campos revisar.
@@ -59,7 +59,7 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
 
 ### Restrições da autenticação demonstrativa
 
-- O formulário de e-mail e senha não autentica. O login real (Google via Supabase Auth) é separado, só existe com `VITE_AUTH_GOOGLE_ENABLED=true` e leva à área `/conta` — ver [auth-integration.md](auth-integration.md).
+- O formulário de e-mail e senha não autentica. O login real (Google via Supabase Auth) é separado, só existe com `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` e `VITE_GOOGLE_CLIENT_ID` configuradas e leva à área `/conta` (início, Meu perfil, Configurações) — ver [auth-integration.md](auth-integration.md).
 - A senha existe só no estado do formulário e nunca é persistida.
 - A sessão de demonstração guarda apenas `{ role, name }` no `sessionStorage`.
 - A sessão real nunca reutiliza a sessão nem os dados da demonstração; ao entrar com a conta real, a sessão de demonstração da aba é encerrada.
@@ -120,7 +120,7 @@ src/
 ├── components/     AppShell, PageHeader, AsyncContent, TeacherCard, LessonCard, LessonTabs, SettingsPanel...
 ├── lib/
 │   ├── demo.ts     identidades fictícias (Ana, professor padrão) e chave da sessão
-│   ├── auth/       config.ts, supabase.ts (cliente único, sob demanda), oauth.ts (regras puras), providers.ts
+│   ├── auth/       config.ts, gis.ts (Google Identity Services), supabase.ts (cliente único), oauth.ts (nonce e regras), profile.ts
 │   ├── api/        client.ts (HTTP), types.ts (modelos do frontend)
 │   ├── data/       source.ts (interface), mock/ (fixtures + adapter), http/ (adapter real)
 │   ├── hooks/      useAsync, useAction

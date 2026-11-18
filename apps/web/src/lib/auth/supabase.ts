@@ -6,12 +6,12 @@ import { stripProviderTokens } from "./oauth";
  * Cliente Supabase centralizado (único no app).
  *
  * Carregado sob demanda (import dinâmico): quem só usa a demonstração não
- * baixa o SDK. Configuração:
- * - flowType "pkce": o código de autorização só vale junto do code_verifier
- *   guardado neste navegador.
- * - detectSessionInUrl false: a troca do código é feita explicitamente na
- *   rota /auth/callback, depois de validar a intenção de login (ver oauth.ts).
- * - storage: localStorage com remoção dos tokens do Google antes de gravar.
+ * baixa o SDK. O login usa `signInWithIdToken` (ID token do Google Identity
+ * Services), sem redirecionar o navegador para *.supabase.co.
+ * - detectSessionInUrl false: o app não processa sessões vindas na URL.
+ * - autoRefreshToken: o JWT de acesso é renovado; se a renovação falhar, o
+ *   SDK emite SIGNED_OUT e o app mostra "sessão expirada".
+ * - storage: localStorage, removendo tokens de provedor antes de gravar.
  */
 let clientPromise: Promise<SupabaseClient> | null = null;
 
@@ -44,7 +44,6 @@ export function getSupabase(): Promise<SupabaseClient> {
   clientPromise ??= import("@supabase/supabase-js").then(({ createClient }) =>
     createClient(AUTH_CONFIG.supabaseUrl, AUTH_CONFIG.publishableKey, {
       auth: {
-        flowType: "pkce",
         detectSessionInUrl: false,
         persistSession: true,
         autoRefreshToken: true,

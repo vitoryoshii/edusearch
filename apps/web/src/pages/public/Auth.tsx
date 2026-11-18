@@ -1,10 +1,11 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { AlertIcon, Badge, Button, Checkbox, CheckIcon, GoogleButton, Input, PasswordInput, cn } from "@edusearch/ui";
+import { AlertIcon, Badge, Button, Checkbox, CheckIcon, Input, PasswordInput, cn } from "@edusearch/ui";
 import { useAuth } from "../../app/auth";
 import { useSession } from "../../app/session";
 import { AuthShell } from "../../components/AuthShell";
-import { ACCOUNT_HOME, FAILURE_MESSAGES, sanitizeNext } from "../../lib/auth/oauth";
+import { GoogleSignIn } from "../../components/GoogleSignIn";
+import { FAILURE_MESSAGES } from "../../lib/auth/oauth";
 import { AUTH_PROVIDERS } from "../../lib/auth/providers";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -25,66 +26,18 @@ function validate(v: Values, signup: boolean): Errors {
   return e;
 }
 
-/**
- * Botão oficial "Continuar com o Google".
- * - Ambiente de testes: inicia o OAuth real (escopos openid, email, profile).
- * - Versão pública: desabilitado, com a explicação ligada por aria-describedby.
- */
-function GoogleSignIn() {
-  const { status, identity, signInWithGoogle } = useAuth();
-  const [params] = useSearchParams();
-  const [state, setState] = useState<"idle" | "redirecting" | "error">("idle");
-  const enabled = AUTH_PROVIDERS.google.available;
-  const next = sanitizeNext(params.get("next") ?? ACCOUNT_HOME);
-
-  if (enabled && status === "signedIn" && identity) {
-    return (
-      <div className="mt-8 rounded-card border border-line bg-surface-muted p-4 text-sm" role="status">
-        <p className="text-fg">
-          Você já entrou com o Google como <strong className="font-semibold text-fg-strong">{identity.email ?? identity.name}</strong>.
-        </p>
-        <Link to={next} className="mt-2 inline-flex min-h-11 items-center font-semibold text-link underline-offset-4 hover:underline">
-          Ir para minha conta
-        </Link>
-      </div>
-    );
-  }
-
-  const start = async () => {
-    setState("redirecting");
-    try {
-      await signInWithGoogle(next);
-      // Sucesso: o navegador está indo para o Google; mantemos o estado de carregamento.
-    } catch {
-      setState("error");
-    }
-  };
-
+/** Aviso de sessão expirada (vindo do AuthProvider; some após um novo login). */
+function SessionNotice() {
+  const { notice } = useAuth();
+  if (notice !== "session_expired") return null;
+  const msg = FAILURE_MESSAGES.session_expired;
   return (
-    <div className="mt-8">
-      {enabled && (
-        <p className="mb-3 flex justify-center">
-          <Badge tone="primary">Acesso real · ambiente de testes</Badge>
-        </p>
-      )}
-      <GoogleButton
-        available={enabled && status !== "loading"}
-        label="Continuar com o Google"
-        aria-describedby="google-status"
-        aria-busy={state === "redirecting" || undefined}
-        disabled={state === "redirecting"}
-        onClick={start}
-        data-testid="google-signin"
-      />
-      <p id="google-status" className="mt-2 text-center text-xs text-fg-muted" role={state === "idle" ? undefined : "status"}>
-        {state === "redirecting" ? "Abrindo o login do Google…" : AUTH_PROVIDERS.google.statusMessage}
-      </p>
-      {state === "error" && (
-        <p role="alert" className="mt-2 flex items-start justify-center gap-1.5 text-center text-sm text-danger-text">
-          <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
-          {FAILURE_MESSAGES.network.description}
-        </p>
-      )}
+    <div role="alert" className="mt-6 flex items-start gap-2.5 rounded-card bg-warning-soft px-4 py-3 text-sm">
+      <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-warning-text" />
+      <span>
+        <strong className="block font-semibold text-fg-strong">{msg.title}</strong>
+        <span className="text-fg">{msg.description}</span>
+      </span>
     </div>
   );
 }
@@ -94,14 +47,15 @@ function GoogleSignIn() {
  * - Validação no navegador (ao sair do campo e ao enviar).
  * - Nada é enviado nem armazenado; a senha fica só no estado do formulário
  *   e é descartada ao navegar. Nenhuma conta é criada.
- * - O botão do Google faz login REAL (Supabase Auth) somente no ambiente
- *   restrito de testes (VITE_AUTH_GOOGLE_ENABLED=true); fora dele aparece
- *   desabilitado. O formulário de e-mail continua apenas demonstrativo.
+ * - O botão oficial do Google (GIS + Supabase Auth) faz login REAL somente no
+ *   ambiente de testes configurado; fora dele aparece desabilitado. O
+ *   formulário de e-mail continua apenas demonstrativo.
  */
 function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const signup = mode === "signup";
   const navigate = useNavigate();
   const { setPendingName } = useSession();
+  const [params] = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
   const [values, setValues] = useState<Values>({ name: "", email: "", password: "", terms: false });
   const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
@@ -142,7 +96,8 @@ function AuthForm({ mode }: { mode: "login" | "signup" }) {
           : "Bom ver você de novo. Continue de onde parou."}
       </p>
 
-      <GoogleSignIn />
+      <SessionNotice />
+      <GoogleSignIn next={params.get("next") ?? undefined} />
 
       <div className="my-6 flex items-center gap-3 text-xs text-fg-muted" aria-hidden="true">
         <span className="h-px flex-1 bg-line" />

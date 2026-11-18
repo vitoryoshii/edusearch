@@ -1,89 +1,96 @@
-# Autenticação real — Google OAuth via Supabase Auth (Fase 2.4)
+# Autenticação real — Google Identity Services + Supabase Auth (Fase 2.4)
 
-Este documento descreve o login **real** com Google no app PWA (`apps/web`), o que precisa ser configurado **manualmente** no Google Cloud e no Supabase, e o que ainda falta para abrir o cadastro ao público.
+Login com Google no app PWA (`apps/web`) **sem sair do domínio do app**: o botão oficial do Google Identity Services (GIS) devolve um ID token à própria página e o Supabase o valida com `signInWithIdToken`. Não há redirecionamento do navegador para `*.supabase.co`.
 
-> **Estado:** pronto para um **ambiente restrito de testes**. A versão pública continua só com a demonstração: o login real fica **desligado** enquanto `VITE_AUTH_GOOGLE_ENABLED` não for `true`.
+> **Estado:** pronto para um **ambiente restrito de testes**. O login real só é ativado quando as três variáveis públicas estão configuradas; sem elas (padrão), o app continua 100% demonstração.
 >
-> **O cadastro público NÃO está liberado.** Isso depende de: revisão de RLS, API de perfis com autorização no FastAPI, Termos de Uso e Política de Privacidade publicados e aprovação do responsável pelo produto.
+> **O cadastro público NÃO está liberado.** Depende de: controle de admissão no servidor (hook com allowlist), revisão de RLS, API de perfis com autorização no FastAPI, Termos de Uso e Política de Privacidade publicados e aprovação do responsável pelo produto. Um login do Google bem-sucedido **não** torna o app pronto para produção.
 
-## Visão geral do fluxo
+## Fluxo
 
 ```text
-/entrar ── "Continuar com o Google"
-   │  1. grava a intenção { nonce, next, createdAt } no sessionStorage
-   │  2. supabase.auth.signInWithOAuth({ provider: "google", scopes: "openid email profile",
-   │       redirectTo: <origem>/auth/callback?s=<nonce> })   ← PKCE (code_challenge S256)
-   ▼
-https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/authorize  →  Google (consentimento)
-   ▼
-https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/callback   (redirect URI registrada no Google)
-   ▼
-<origem>/auth/callback?code=…&s=<nonce>
-   │  3. lê e APAGA a intenção (uso único); confere nonce e validade (10 min)
-   │  4. supabase.auth.exchangeCodeForSession(code)  ← só funciona com o code_verifier deste navegador
-   │  5. remove código da barra de endereços; encerra a sessão de demonstração da aba
-   ▼
-/conta  (rota protegida: dados básicos, papel pretendido, conclusão do cadastro, sair)
+/entrar
+  1. Web Crypto gera um nonce de 256 bits (base64url) e seu SHA-256 (hex).
+     O nonce original fica só na memória da aba (cofre de uso único, 10 min).
+  2. google.accounts.id.initialize({ client_id, nonce: <hash>, ux_mode: "popup", auto_select: false })
+     google.accounts.id.renderButton(...)  → botão oficial "Continuar com o Google"
+  3. Usuário escolhe a conta no seletor do Google (popup/FedCM do próprio Google).
+  4. O GIS chama o callback com o ID token (claim nonce = <hash>).
+  5. Pré-checagem local: formato, emissor (accounts.google.com), público (= Client ID),
+     validade e nonce conhecido → o nonce original é retirado do cofre (uso único).
+  6. supabase.auth.signInWithIdToken({ provider: "google", token, nonce: <original> })
+     → POST https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/token?grant_type=id_token (fetch, sem navegação)
+     O Supabase valida assinatura, emissor, público e SHA-256(nonce) == claim.
+  7. Sessão do Supabase criada; a sessão demonstrativa da aba é encerrada (nada é migrado).
+  8. /conta → nome, e-mail e foto; "Concluir cadastro" quando aplicável.
 ```
+
+Escopos: o fluxo de ID token do GIS concede apenas **`openid`, `email` e `profile`**. Não há como pedir Google Agenda, Meet, Drive ou Gmail por ele — essas integrações terão consentimento próprio (no backend) em outra etapa.
 
 ## Arquivos
 
 | Arquivo | Papel |
 | ------- | ----- |
-| `apps/web/src/lib/auth/config.ts` | Lê as variáveis públicas; liga o login real só com a flag; **recusa chaves secretas** (`sb_secret_…` ou JWT `service_role`) |
-| `apps/web/src/lib/auth/supabase.ts` | Cliente Supabase **único**, carregado sob demanda (o SDK não é baixado por quem só usa a demonstração). `flowType: "pkce"`, `detectSessionInUrl: false`, armazenamento que **descarta tokens do Google** |
-| `apps/web/src/lib/auth/oauth.ts` | Regras puras e testadas: escopos, `redirectTo`, saneamento do destino (`next`), intenção/nonce, leitura do callback, mensagens de erro, identidade de exibição |
-| `apps/web/src/app/auth.tsx` | `AuthProvider`/`useAuth`: restauração da sessão, login, callback idempotente, logout, `RequireAuth`, papel pretendido (preferência local) e registro do JWT para a API |
-| `apps/web/src/pages/account/Callback.tsx` | Tela `/auth/callback` com carregamento e estados de erro |
-| `apps/web/src/pages/account/Account.tsx` | Tela `/conta` (sessão autenticada) |
-| `apps/web/src/pages/public/Auth.tsx` | Botão oficial "Continuar com o Google" (`GoogleButton` do `@edusearch/ui`, conforme as diretrizes de marca do Google) |
+| `apps/web/src/lib/auth/config.ts` | Lê as 3 variáveis públicas; ativa o login só com todas válidas; **recusa segredos** (`sb_secret_…`, JWT `service_role`, `GOCSPX-…`) |
+| `apps/web/src/lib/auth/gis.ts` | Carrega o script oficial do GIS **uma vez**; `initialize` **uma vez por nonce** (seguro no React StrictMode); repassa a credencial só ao componente montado |
+| `apps/web/src/lib/auth/oauth.ts` | Regras puras e testadas: nonce + SHA-256, cofre de uso único, pré-checagem do ID token, classificação de erros, mensagens, saneamento do destino |
+| `apps/web/src/lib/auth/profile.ts` | Modelo de apresentação `AuthenticatedProfile`, foto (Google x personalizada), dados da sessão |
+| `apps/web/src/lib/auth/supabase.ts` | Cliente Supabase **único**, carregado sob demanda (quem só usa a demonstração não baixa o SDK) |
+| `apps/web/src/app/auth.tsx` | `AuthProvider`/`useAuth`: restauração, login, logout, sessão expirada, `RequireAuth`, JWT para a API, papel provisório |
+| `apps/web/src/components/GoogleSignIn.tsx` | Botão oficial do GIS com estados de carregamento, entrada, erro e nova tentativa |
+| `apps/web/src/components/AppShell.tsx` | Modo `account`: cabeçalho, menu do usuário (avatar) e navegação da conta real, sem dados da demonstração |
+| `apps/web/src/components/AccountProfile.tsx` | Resumo do perfil, escolha de papel provisória e etapas de conclusão |
+| `apps/web/src/pages/account/{Dashboard,Profile,Settings}.tsx` | `/conta`, `/conta/perfil`, `/conta/configuracoes` |
+| `packages/ui/src/components/Display.tsx` | `Avatar`: foto circular centralizada, sem Referer, com volta às iniciais se a imagem falhar |
 
-## Variáveis de ambiente (públicas)
+```ts
+type AuthenticatedProfile = {
+  id: string;            // ID do usuário no Supabase (auth.users.id)
+  displayName: string;   // full_name → name → parte local do e-mail → "Sua conta"
+  email: string | null;
+  avatarUrl: string | null; // foto personalizada (futura) → avatar_url/picture do Google
+};
+```
 
-Copie `apps/web/.env.example` para `apps/web/.env` (o `.env` é ignorado pelo Git).
+## Variáveis de ambiente (todas públicas)
 
 | Variável | Valor | Observação |
 | -------- | ----- | ---------- |
-| `VITE_AUTH_GOOGLE_ENABLED` | `true` só no ambiente de testes | Padrão `false`. Sem ela o botão fica desabilitado e nenhum código do Supabase é carregado |
 | `VITE_SUPABASE_URL` | `https://pgltvnwdvatyihrozlvn.supabase.co` | Projeto `edusearch-db` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | chave **publicável** | *Project Settings → API Keys → Publishable key* (`sb_publishable_…`). A `anon` key legada também funciona. **Nunca** a `service_role`/`secret` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | chave publicável | *Project Settings → API Keys → Publishable key* (`sb_publishable_…`). **Nunca** a secret/`service_role` |
+| `VITE_GOOGLE_CLIENT_ID` | `…apps.googleusercontent.com` | Client ID OAuth do tipo **Aplicativo da Web**. **Nunca** o Client Secret (`GOCSPX-…`) |
 
-Todas as variáveis `VITE_*` vão para o bundle do navegador — por isso só valores públicos.
+Nunca coloque no frontend: Client Secret do Google, `service_role`/secret key do Supabase, chaves privadas ou credenciais do PostgreSQL. Variáveis `VITE_*` vão para o bundle do navegador; o CI falha se encontrar `GOCSPX-…` ou `sb_secret_…` nos bundles.
 
-**Cloudflare Pages:** defina as três variáveis **apenas no ambiente _Preview_** (ou em um projeto de testes separado). Deixe o ambiente _Production_ sem `VITE_AUTH_GOOGLE_ENABLED` — assim a versão pública não muda.
+**Local:** copie `apps/web/.env.example` para `apps/web/.env` (ignorado pelo Git), preencha e rode `pnpm --filter @edusearch/web exec vite --port 5190`.
 
-## Configuração manual pendente — Google Cloud (projeto EduSearch)
+**Cloudflare Pages** (*Settings → Environment variables*, por ambiente; o Vite embute os valores no build, então é preciso um novo deploy após alterar):
 
-Nenhum Client ID ou Client Secret foi criado ou versionado. Passos (console em *Google Auth Platform*):
+- **Preview** (ambiente de testes): as três variáveis. Use uma URL de preview **fixa** (ex.: alias da branch) e registre essa origem no Google Cloud.
+- **Production** (`app.edusearch.com.br`): **não** defina `VITE_GOOGLE_CLIENT_ID` até a aprovação. Sem ele, a produção continua só com a demonstração.
 
-1. **Branding:** nome do app "EduSearch", e-mail de suporte e e-mail do desenvolvedor. Evite enviar logo por enquanto (logo exige verificação da marca).
-   - **Domínios autorizados:** `pgltvnwdvatyihrozlvn.supabase.co` e o domínio do app de testes.
-   - Links de Política de Privacidade e Termos: obrigatórios **antes de publicar** o app (hoje em elaboração).
-2. **Público-alvo (Audience):** tipo **Externo**, status de publicação **Testing (em teste)**.
-   - Adicione cada conta autorizada em **Test users** (máx. 100). Em modo de teste, **somente essas contas conseguem concluir o login** — é a principal barreira do ambiente restrito.
-   - **Não** clique em "Publish app" sem aprovação.
-3. **Acesso a dados (Data access / escopos):** somente `openid`, `.../auth/userinfo.email` e `.../auth/userinfo.profile` (não sensíveis). **Não** adicione escopos do Google Calendar neste fluxo.
-4. **Clientes → Criar cliente OAuth:** tipo **Aplicativo da Web**, nome "EduSearch – Supabase Auth".
-   - **URIs de redirecionamento autorizados:** `https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/callback`
-   - Origens JavaScript: não são necessárias neste fluxo (o redirecionamento passa pelo Supabase). Se o console exigir, use as origens do app de testes.
-5. Copie o **Client ID** e o **Client Secret** diretamente para o Supabase (passo abaixo). Não cole em arquivos, issues, PRs ou chats.
+## Configuração pendente — Google Cloud (projeto EduSearch)
 
-## Configuração manual pendente — Supabase (`edusearch-db`)
+1. **Google Auth Platform → Público-alvo:** tipo **Externo**, status **Testing**. Adicione as contas autorizadas em **Test users**. Não publique o app sem aprovação.
+2. **Branding:** nome "EduSearch", e-mail de suporte, domínios autorizados `edusearch.com.br` (cobre `app.edusearch.com.br`). Links de Política de Privacidade e Termos são obrigatórios antes de publicar.
+3. **Acesso a dados:** somente `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile`.
+4. **Clientes → o cliente Web existente:**
+   - **Origens JavaScript autorizadas** (exatas, sem curingas):
+     - `https://app.edusearch.com.br` (somente quando a produção for aprovada)
+     - `http://localhost:5190` **e** `http://localhost` (o GIS exige as duas para desenvolvimento local)
+     - a URL fixa do preview de testes
+   - **URIs de redirecionamento:** não são usadas pelo GIS em modo popup. Se já existir `https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/callback` (fluxo anterior), pode permanecer.
+5. Copie apenas o **Client ID** para `VITE_GOOGLE_CLIENT_ID`. O Client Secret não é usado pelo frontend.
 
-1. **Authentication → Sign In / Providers → Google:** habilitar e colar Client ID e Client Secret do passo anterior.
-2. **Authentication → URL Configuration:**
-   - **Site URL:** a origem do ambiente de testes (ex.: `http://localhost:5174` no desenvolvimento). Ela é usada como destino quando o `redirectTo` não está na lista — e o app só conclui o login em `/auth/callback`.
-   - **Redirect URLs** (lista de permissões). O app envia `?s=<nonce>` no retorno, por isso use `**` no fim:
-     - `http://localhost:5174/auth/callback**`
-     - `https://<ambiente-de-testes>/auth/callback**` (ex.: a URL fixa do preview da branch no Cloudflare Pages)
-   - Evite curingas amplos (`https://*.pages.dev/**`): qualquer projeto do Pages poderia receber códigos de login.
-3. **Project Settings → API Keys:** use a **Publishable key** no frontend. A secret/service_role fica apenas no backend.
-4. **Restrição a usuários de teste (recomendado, no servidor):** além do modo "Testing" do Google, adicionar um **Before User Created Hook** que recuse e-mails fora de uma lista de testes. Sugestão para a equipe de backend revisar (não aplicada):
+## Configuração pendente — Supabase (`edusearch-db`)
+
+1. **Authentication → Sign In / Providers → Google:** habilitado; em **Client IDs** (IDs autorizados), inclua o Client ID Web acima — o Supabase recusa ID tokens emitidos para outros clientes. **Skip nonce check: desligado.** (O Client Secret só é necessário para o fluxo de redirecionamento.)
+2. **Project Settings → API Keys:** use a **Publishable key** no frontend.
+3. **Controle de admissão (obrigatório antes de abrir o cadastro).** O modo *Testing* do Google e qualquer lista na interface **não** impedem a criação de contas no Supabase por quem obtiver um ID token válido para o Client ID. Solicitar à equipe de backend um **Before User Created Hook** com allowlist. Sugestão para revisão (não aplicada — esta fase não cria migrations):
 
    ```sql
-   -- Tabela de e-mails autorizados (somente o backend/admin escreve nela)
    create table if not exists public.auth_test_allowlist (email text primary key);
-   alter table public.auth_test_allowlist enable row level security; -- sem políticas: nenhum acesso via API
+   alter table public.auth_test_allowlist enable row level security; -- sem políticas: invisível via API
 
    create or replace function public.hook_restrict_signup(event jsonb)
    returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -101,75 +108,91 @@ Nenhum Client ID ou Client Secret foi criado ou versionado. Passos (console em *
    grant select on public.auth_test_allowlist to supabase_auth_admin;
    ```
 
-   Depois: *Authentication → Hooks → Before User Created → Postgres function `hook_restrict_signup`*. A tela de callback mostra "Conta não liberada para testes" quando o retorno indica cadastro recusado.
-5. **Antes de abrir o cadastro:** revisar RLS de todas as tabelas expostas, criar a tabela de perfis com papel **definido pelo servidor** e publicar os documentos jurídicos.
+   Ativação: *Authentication → Hooks → Before User Created*. O app já mostra "Conta não liberada para testes" quando o Supabase recusa o cadastro.
+4. **Antes de abrir o cadastro:** revisar RLS de todas as tabelas expostas e criar o perfil com papel **definido pelo servidor**.
 
 ## Segurança
 
-| Regra | Como está implementado |
-| ----- | ---------------------- |
-| Sem segredos no navegador | Só URL e chave publicável. `config.ts` desliga o login se detectar chave secreta. Client Secret do Google fica só no Supabase |
-| Escopos mínimos | `openid email profile`; sem Google Agenda; sem `access_type=offline` (sem refresh token do Google) |
-| Tokens do Google não ficam no navegador | O armazenamento da sessão remove `provider_token` e `provider_refresh_token` antes de gravar. A integração com Google Agenda será feita pelo backend, com OAuth próprio |
-| PKCE | `flowType: "pkce"`: o código só é trocado com o `code_verifier` deste navegador |
-| Estado/CSRF do retorno | Intenção com nonce de 128 bits, uso único, validade de 10 min, conferida antes da troca do código |
-| Redirects | `redirectTo` sempre na própria origem (`/auth/callback`); destino pós-login (`next`) aceita apenas caminhos internos de `/conta` (sem `//`, `\`, esquemas, `..`). Allowlist do Supabase restrita |
-| Código fora da barra de endereços | O callback faz `history.replaceState` antes de qualquer outra coisa |
-| Autenticação ≠ autorização | O app só sabe **quem** é o usuário. Papel escolhido na tela é preferência local (`localStorage`, por usuário) e `user_metadata` é usado só para exibir nome/foto. **Nenhuma permissão** depende deles |
-| Foto de perfil | Só URLs `https://*.googleusercontent.com/`, com `referrerpolicy="no-referrer"` |
-| Service Worker | Requisições a outra origem (Supabase) e com `Authorization` nunca são cacheadas |
-| Demonstração separada | Sessão real em `localStorage['edusearch-auth']`; demo em `sessionStorage['edusearch-demo-session']`. Ao entrar com a conta real, a sessão de demonstração da aba é encerrada. Nada é migrado para o Supabase |
+| Regra | Implementação |
+| ----- | ------------- |
+| Sem segredos no navegador | Só URL, chave publicável e Client ID. `config.ts` desativa o login se detectar segredo; o CI procura segredos nos bundles |
+| Nonce | 256 bits via `crypto.getRandomValues`; o Google recebe o SHA-256 (hex), o Supabase recebe o original. Guardado só em memória, **uso único**, validade de 10 min; cada tentativa recebe um nonce novo |
+| ID token do Google | Nunca é gravado (local/sessionStorage), registrado em log nem colocado em URL. Só trafega no corpo do POST ao Supabase |
+| Reenvio de token | Um ID token já usado é recusado localmente (nonce consumido) antes de chegar ao Supabase |
+| Pré-checagem | Emissor, público (= Client ID), expiração e formato do nonce, para recusar cedo credenciais de outra origem. A validação de verdade (assinatura) é do Supabase |
+| StrictMode e respostas atrasadas | Script e `initialize` únicos por nonce; o callback só é entregue ao componente montado; respostas após desmontagem são descartadas; credenciais duplicadas durante uma troca são ignoradas |
+| Autenticação ≠ autorização | O app só sabe **quem** é o usuário. Papel escolhido é provisório (localStorage, por usuário) e `user_metadata` é usado só para exibir nome/foto. **Nenhuma permissão** depende deles |
+| JWT para APIs | O cliente HTTP envia o **access token do Supabase** (nunca o ID token do Google) |
+| Demonstração separada | Sessão real em `localStorage['edusearch-auth']`; demo em `sessionStorage['edusearch-demo-session']`. Ao entrar, a sessão demo da aba é encerrada; nada é migrado para o Supabase |
+| Logout | `signOut({ scope: "local" })` (revoga a sessão deste dispositivo), `disableAutoSelect()` do GIS, limpeza de nonces e do papel provisório |
+| Cabeçalhos | Se forem adicionados no futuro: `Cross-Origin-Opener-Policy: same-origin-allow-popups` (necessário ao popup do Google) e CSP com `script-src https://accounts.google.com/gsi/client`, `frame-src https://accounts.google.com/gsi/`, `connect-src https://accounts.google.com/gsi/ https://pgltvnwdvatyihrozlvn.supabase.co`, `style-src https://accounts.google.com/gsi/style`. O `Referrer-Policy: strict-origin-when-cross-origin` atual é compatível (o GIS exige o Referer de origem) |
 
-### Integração futura com o FastAPI
+## Sessão: restauração e expiração
 
-Com a sessão ativa, `AuthProvider` registra `setAccessTokenProvider` e o cliente HTTP envia `Authorization: Bearer <access_token do Supabase>`. A API deve:
+- A sessão do Supabase fica em `localStorage['edusearch-auth']`. Ao abrir o app, o SDK só é baixado se houver sessão gravada; a sessão é restaurada e **confirmada no servidor** (`getUser`).
+- O JWT de acesso é renovado automaticamente (`autoRefreshToken`).
+- Se o servidor recusar a sessão (revogada, usuário removido) ou a renovação falhar, o SDK emite `SIGNED_OUT`: o app limpa a sessão, leva a `/entrar?next=…` e mostra **"Sua sessão expirou"**.
+- Rotas `/conta/*` são protegidas por `RequireAuth` (carregamento → login com `next` saneado).
 
-- validar a assinatura pelo JWKS `https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/.well-known/jwks.json` (chaves assimétricas) ou pelo segredo JWT legado, **no servidor**;
-- conferir `iss = https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1`, `aud = authenticated` e `exp`;
-- usar `sub` como ID do usuário e obter o **papel** de uma tabela controlada pelo backend — nunca de `user_metadata` nem do corpo da requisição;
-- expor algo como `GET /me` e `PUT /me/profile` para a conclusão do cadastro (hoje o botão "Concluir perfil" fica bloqueado).
+## Avatar e dados do Google
+
+- Campos usados: `user.id`, `user.email`, `user_metadata.full_name | name`, `user_metadata.avatar_url | picture`.
+- Foto exibida no cabeçalho, no avatar do menu do usuário, no início da conta, em Meu perfil e em Configurações.
+- Regras: foto do Google só por HTTPS em `*.googleusercontent.com`; circular, `object-cover` centralizado, tamanho fixo (sem quebra de layout); `referrerpolicy="no-referrer"`; se falhar ao carregar, **iniciais**.
+- `resolveAvatar` dá prioridade a uma **foto personalizada** (futura) e nunca a sobrescreve com a do Google. A foto do Google não é copiada para o Storage e **não** comprova credenciais profissionais.
+
+## Integração futura com o FastAPI
+
+Com a sessão ativa, o `AuthProvider` registra `setAccessTokenProvider` e o cliente HTTP (`src/lib/api/client.ts`) envia `Authorization: Bearer <access_token do Supabase>`. Nenhum endpoint novo foi criado ou presumido no frontend. Responsabilidades do backend:
+
+- validar a assinatura do JWT (JWKS `https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/.well-known/jwks.json` ou segredo legado), `iss`, `aud = authenticated` e `exp`;
+- usar `sub` como ID do usuário e obter papel/privilégios de tabelas controladas pelo servidor — nunca de `user_metadata`, do corpo da requisição ou do ID token do Google;
+- validar a propriedade de cada recurso.
 
 ## Experiência
 
-- `/entrar` e `/cadastro`: botão oficial "Continuar com o Google" (G multicolorido e cores do guia de marca do Google, claro/escuro). No ambiente de testes aparece o selo **"Acesso real · ambiente de testes"**; o formulário de e-mail continua demonstrativo e é rotulado assim. Na versão pública o botão fica desabilitado com a explicação.
-- `/auth/callback`: carregamento ("Concluindo seu login…") e erros com título, explicação e ações (*Tentar novamente*, *Explorar a demonstração*):
+- `/entrar` e `/cadastro`: selo "Acesso real · ambiente de testes", esqueleto enquanto o GIS carrega, botão oficial (tema claro `outline`, escuro `filled_black`, texto "Continuar com o Google", pt-BR), estado "Entrando com sua conta Google…" e erros com `role="alert"`. O formulário de e-mail continua demonstrativo. Sem configuração, aparece o botão desabilitado do design system.
+- Cancelar o seletor do Google não gera erro: a tela continua como estava.
 
-  | Código | Quando |
-  | ------ | ------ |
-  | `access_denied` | Usuário cancelou no Google |
-  | `not_allowed` | Conta fora da lista de testes (hook/cadastro recusado) |
-  | `provider_error` | Erro do Google/Supabase |
-  | `missing_code` | Retorno sem código |
-  | `invalid_state` | Retorno sem login iniciado neste navegador ou nonce diferente |
-  | `expired_state` | Mais de 10 minutos entre ida e volta |
-  | `exchange_failed` | Código inválido/já usado |
-  | `network` | Sem conexão com o Supabase |
-  | `disabled` | Login real desligado neste ambiente |
+| Falha | Quando | Mensagem |
+| ----- | ------ | -------- |
+| `invalid_token` | Token malformado, de outro Client ID, expirado ou recusado pelo Supabase | "Não foi possível validar sua conta Google" |
+| `invalid_nonce` | Nonce desconhecido, expirado, reutilizado ou recusado pelo Supabase | "Login não confirmado por segurança" |
+| `not_allowed` | Cadastro recusado (hook/allowlist, cadastro desativado) | "Conta não liberada para testes" |
+| `network` | Falha de conexão com o Supabase | "Sem conexão com o servidor de login" |
+| `gis_unavailable` | Script do Google bloqueado ou indisponível | "Login do Google indisponível" + *Tentar carregar novamente* |
+| `provider_error` | Outros erros do serviço | "Não foi possível concluir o login" |
+| `session_expired` | Sessão revogada ou renovação falhou | "Sua sessão expirou" |
 
-- `/conta` (protegida por `RequireAuth`): selos **"Sessão autenticada"** e **"Ambiente de testes"**, nome, e-mail, foto, provedor, e-mail verificado; escolha do papel pretendido; checklist de conclusão (conta conectada, papel, perfil no servidor — pendente, documentos jurídicos — pendente); aviso de que a conta **não está habilitada para uso comercial**; *Sair*.
-- *Sair* encerra a sessão **deste dispositivo** (`signOut({ scope: "local" })`), limpa o papel local e volta para `/entrar`.
+- `/conta`: saudação, foto, nome e e-mail; **"Concluir cadastro"** enquanto não houver papel escolhido; aviso de que a conta **não está habilitada para uso comercial**.
+- `/conta/perfil`: foto grande, escolha **provisória** de papel (aluno/professor), etapas de conclusão (perfil no servidor e documentos jurídicos pendentes) e "Concluir perfil" bloqueado.
+- `/conta/configuracoes`: tema, conta e sessão, *Sair da conta*.
 
 ## Testes
 
-| Teste | Onde | O que cobre |
-| ----- | ---- | ----------- |
-| `pnpm --filter @edusearch/web test:unit` | local e CI | Escopos, `redirectTo`, saneamento de `next` (open redirect), nonce/intenção (válida, ausente, diferente, expirada, adulterada), leitura do callback (cancelado, não autorizado, erro no fragmento, sem código, código malformado), remoção de tokens do Google, identidade de exibição |
-| `scripts/auth.mjs` | **GitHub Actions** (job `checks`) | Navegador real contra dois servidores: versão pública (login desligado, sem requisições ao Supabase) e ambiente de testes com **Supabase falso interceptado** (nenhuma chamada real): botão, escopos, PKCE, `redirect_to`, todos os erros do callback, troca recusada, sucesso, dados na conta, ausência de `provider_token`, restauração, papel, logout (`scope=local`), proteção de rota e demonstração preservada |
-| `scripts/smoke.mjs` | CI | Inclui `/auth/callback` e `/conta` sem erros de console |
+| Teste | Onde | Cobertura |
+| ----- | ---- | --------- |
+| `pnpm --filter @edusearch/web test:unit` | local e CI | Escopos, destino, nonce (formato, SHA-256 conferido com `node:crypto`, unicidade), cofre (uso único, expiração), pré-checagem do token (emissor, Client ID, expiração, nonce), erros do Supabase, perfil (avatar presente/ausente, nome ausente, foto inválida, foto personalizada), sessão, remoção de tokens de provedor |
+| `scripts/auth.mjs` | **GitHub Actions** | Navegador real com **GIS e Supabase falsos** (só no teste): versão pública sem GIS/Supabase; inicialização única do GIS no StrictMode; nonce em hash; cancelamento; token inválido (cliente e servidor); nonce inválido; reenvio bloqueado; erro de rede; sucesso; nonce original conferido pelo servidor falso; ID token ausente de storage e URLs; avatar presente, ausente e quebrado; usuário sem perfil concluído; restauração; sessão revogada → aviso; logout e novo login; proteção de rotas; separação da demonstração; capturas em 390/1440 px, claro e escuro (artefato `screenshots-auth`) |
+| `scripts/smoke.mjs` | CI | Inclui `/conta` |
+| Varredura de segredos | CI | `GOCSPX-…` e `sb_secret_…` nos bundles |
 
-Para rodar o teste de navegador localmente (opcional; preferimos o CI):
+O CI **nunca** usa credenciais reais: os valores do servidor de testes são fictícios e todas as chamadas ao Google e ao Supabase são interceptadas.
 
-```bash
-pnpm --filter @edusearch/web exec vite --port 5190 &
-VITE_AUTH_GOOGLE_ENABLED=true VITE_SUPABASE_URL=https://edusearch-ci-fake.supabase.co \
-  VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_fake_key pnpm --filter @edusearch/web exec vite --port 5191 &
-node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191
-```
+## Passos para o teste real (manual)
 
-### Validação manual com o Google real (após a configuração)
+1. Concluir as configurações do Google Cloud e do Supabase acima e incluir sua conta em *Test users* (e na allowlist, se o hook estiver ativo).
+2. `apps/web/.env` com as três variáveis; `pnpm --filter @edusearch/web exec vite --port 5190`.
+3. `http://localhost:5190/entrar` → *Continuar com o Google* → escolher a conta → `/conta` com nome, e-mail e foto.
+4. Recarregar (sessão restaurada), abrir Meu perfil e Configurações, escolher um papel.
+5. *Sair da conta* → entrar novamente.
+6. Abrir a demonstração (`/perfil-de-acesso`) e confirmar que ela continua independente.
+7. Com uma conta fora da lista de testes, o acesso deve ser recusado.
 
-1. Configure Google Cloud e Supabase como acima e adicione sua conta em *Test users*.
-2. `apps/web/.env` com as três variáveis; `pnpm dev:web`.
-3. `/entrar` → *Continuar com o Google* → escolha a conta → deve abrir `/conta` com seus dados.
-4. Recarregue (sessão restaurada), escolha um papel, clique em *Sair*.
-5. Com uma conta **fora** da lista de testes, o Google deve bloquear o acesso (ou o hook, se configurado, deve levar a "Conta não liberada para testes").
+## Limitações atuais
+
+- Perfil e papel não são persistidos no servidor; "Concluir perfil" fica bloqueado.
+- Sem foto personalizada (a estrutura já prioriza uma futura foto própria).
+- O cancelamento do seletor do Google não gera evento (comportamento do GIS); a tela apenas permanece disponível.
+- O teste de navegador usa mocks; a validação ponta a ponta com o Google real depende das configurações externas.
+- Termos de Uso e Política de Privacidade ainda não publicados; cadastro público bloqueado.

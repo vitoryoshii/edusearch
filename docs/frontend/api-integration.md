@@ -27,7 +27,7 @@ Telas ──▶ dataSource (interface DataSource, src/lib/data/source.ts)
 
 | # | Tela | Dados necessários | Método do `DataSource` |
 | - | ---- | ----------------- | ---------------------- |
-| 1 | Login / cadastro | **Fase 2.4:** o front fala direto com o Supabase Auth (Google, PKCE) e envia o JWT à API via `setAccessTokenProvider`. A API deve validar o JWT (JWKS) e obter o papel do banco — ver [auth-integration.md](auth-integration.md). | `setAccessTokenProvider` |
+| 1 | Login / cadastro | **Fase 2.4:** o front obtém o ID token pelo Google Identity Services, cria a sessão com `signInWithIdToken` no Supabase Auth e envia o JWT **do Supabase** (nunca o ID token do Google) à API via `setAccessTokenProvider`. A API deve validar o JWT (JWKS) e obter o papel do banco — ver [auth-integration.md](auth-integration.md). | `setAccessTokenProvider` |
 | 2 | Escolha de perfil | Registrar papel aluno/professor do usuário autenticado (hoje só preferência local em `/conta`); sugestão: `GET /me`, `PUT /me/profile` | — (novo) |
 | 3 | Busca | Listar professores com filtros: texto, disciplina, nível, metodologia, período, valor máximo. Paginação. | `searchTeachers` |
 | 4 | Catálogo | Lista oficial de disciplinas, níveis e metodologias | `listSubjects` |

@@ -104,133 +104,166 @@ describe("Google Meet", () => {
   });
 });
 
-/* ------------------------- Autenticação (Google OAuth) ------------------------- */
+/* ------------- Autenticação (Google Identity Services + Supabase) ------------- */
+import { createHash, webcrypto } from "node:crypto";
 import {
   ACCOUNT_HOME,
   GOOGLE_LOGIN_SCOPES,
-  INTENT_MAX_AGE_MS,
-  buildRedirectTo,
-  createIntent,
-  parseCallback,
-  parseIntent,
-  randomNonce,
+  NONCE_MAX_AGE_MS,
+  NonceVault,
+  checkCredential,
+  classifySupabaseError,
+  createNonce,
+  decodeJwtPayload,
   sanitizeNext,
+  sha256Hex,
   stripProviderTokens,
-  toIdentity,
-  verifyIntent,
 } from "../src/lib/auth/oauth.ts";
+import { googlePhoto, resolveAvatar, toAuthenticatedProfile, toSessionInfo } from "../src/lib/auth/profile.ts";
 
-describe("login Google: escopos e redirecionamento", () => {
-  test("somente escopos básicos (sem Google Agenda)", () => {
+const CLIENT_ID = "1234567890-abcdefghijklmnop.apps.googleusercontent.com";
+const b64url = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const fakeIdToken = (claims) => `${b64url({ alg: "RS256", typ: "JWT" })}.${b64url(claims)}.assinatura`;
+const NOW = 1_800_000_000_000;
+
+describe("login Google: escopos e destino", () => {
+  test("somente escopos básicos (sem Agenda, Meet, Drive ou Gmail)", () => {
     assert.deepEqual([...GOOGLE_LOGIN_SCOPES], ["openid", "email", "profile"]);
-    assert.ok(!GOOGLE_LOGIN_SCOPES.some((s) => /calendar/i.test(s)));
-  });
-
-  test("redirectTo aponta para /auth/callback da própria origem, com o nonce", () => {
-    assert.equal(buildRedirectTo("https://app.edusearch.dev", "ab".repeat(16)), `https://app.edusearch.dev/auth/callback?s=${"ab".repeat(16)}`);
+    assert.ok(!GOOGLE_LOGIN_SCOPES.some((s) => /calendar|meet|drive|gmail/i.test(s)));
   });
 
   test("destino pós-login aceita apenas caminhos internos da conta", () => {
     assert.equal(sanitizeNext("/conta"), "/conta");
-    assert.equal(sanitizeNext("/conta/perfil?x=1"), "/conta/perfil?x=1");
-    for (const bad of [
-      "https://evil.com", "//evil.com", "/\evil.com", "/conta/../aluno", "javascript:alert(1)", "/javascript:x",
-      "/aluno", "/contas", "", null, undefined, 42, "/conta\n", "/" + "a".repeat(300),
-    ]) {
+    assert.equal(sanitizeNext("/conta/perfil"), "/conta/perfil");
+    for (const bad of ["https://evil.com", "//evil.com", "/\\evil.com", "/conta/../aluno", "javascript:alert(1)", "/aluno", "/contas", "", null, 42]) {
       assert.equal(sanitizeNext(bad), ACCOUNT_HOME, `deveria recusar ${JSON.stringify(bad)}`);
     }
   });
 });
 
-describe("login Google: estado (intenção) do OAuth", () => {
-  const nonce = randomNonce();
-  const now = 1_800_000_000_000;
-
-  test("nonce aleatório com 32 caracteres hexadecimais", () => {
-    assert.match(nonce, /^[0-9a-f]{32}$/);
-    assert.notEqual(randomNonce(), nonce);
+describe("login Google: nonce (Web Crypto + SHA-256)", () => {
+  test("nonce de 256 bits e hash SHA-256 em hexadecimal", async () => {
+    const { raw, hashed } = await createNonce(webcrypto);
+    assert.match(raw, /^[A-Za-z0-9_-]{43}$/);
+    assert.match(hashed, /^[0-9a-f]{64}$/);
+    assert.equal(hashed, createHash("sha256").update(raw).digest("hex"));
+    assert.equal(await sha256Hex("abc", webcrypto), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   });
 
-  test("intenção válida e recente é aceita", () => {
-    const intent = parseIntent(JSON.stringify(createIntent("/conta", now, nonce)));
-    assert.equal(verifyIntent(intent, nonce, now + 5_000), null);
+  test("nonces não se repetem", async () => {
+    const seen = new Set();
+    for (let i = 0; i < 50; i++) seen.add((await createNonce(webcrypto)).raw);
+    assert.equal(seen.size, 50);
   });
 
-  test("estado ausente, diferente ou sem intenção é recusado", () => {
-    const intent = createIntent("/conta", now, nonce);
-    assert.equal(verifyIntent(intent, null, now), "invalid_state");
-    assert.equal(verifyIntent(intent, randomNonce(), now), "invalid_state");
-    assert.equal(verifyIntent(null, nonce, now), "invalid_state");
+  test("cofre entrega o nonce original uma única vez", async () => {
+    const vault = new NonceVault();
+    const pair = await createNonce(webcrypto);
+    vault.remember(pair, NOW);
+    assert.equal(vault.consume(pair.hashed, NOW + 1000), pair.raw);
+    assert.equal(vault.consume(pair.hashed, NOW + 2000), null, "reutilização bloqueada");
   });
 
-  test("intenção expirada (mais de 10 minutos) é recusada", () => {
-    const intent = createIntent("/conta", now, nonce);
-    assert.equal(verifyIntent(intent, nonce, now + INTENT_MAX_AGE_MS + 1), "expired_state");
-  });
-
-  test("intenção corrompida ou adulterada vira null; next adulterado é saneado", () => {
-    assert.equal(parseIntent("{"), null);
-    assert.equal(parseIntent(JSON.stringify({ nonce: "x", createdAt: now })), null);
-    assert.equal(parseIntent(JSON.stringify({ nonce, createdAt: "ontem" })), null);
-    assert.equal(parseIntent(JSON.stringify({ nonce, createdAt: now, next: "https://evil.com" }))?.next, ACCOUNT_HOME);
-  });
-});
-
-describe("login Google: retorno do callback", () => {
-  test("código válido com estado", () => {
-    assert.deepEqual(parseCallback("?code=abc12345-XYZ&s=ff", ""), { kind: "code", code: "abc12345-XYZ", state: "ff" });
-  });
-
-  test("usuário cancelou no Google", () => {
-    const r = parseCallback("?error=access_denied&error_description=The+user+denied", "");
-    assert.equal(r.kind, "error");
-    assert.equal(r.failure, "access_denied");
-  });
-
-  test("erro no fragmento (#) também é reconhecido", () => {
-    const r = parseCallback("", "#error=server_error&error_description=Unable+to+exchange+external+code");
-    assert.equal(r.failure, "provider_error");
-  });
-
-  test("cadastro bloqueado (usuário fora da lista de testes)", () => {
-    assert.equal(parseCallback("?error=access_denied&error_code=signup_disabled", "").failure, "not_allowed");
-    assert.equal(parseCallback("?error=server_error&error_description=Hook+rejected", "").failure, "not_allowed");
-  });
-
-  test("sem código ou código malformado", () => {
-    assert.equal(parseCallback("", "").failure, "missing_code");
-    assert.equal(parseCallback("?code=<script>", "").failure, "missing_code");
+  test("nonce desconhecido ou expirado é recusado", async () => {
+    const vault = new NonceVault();
+    const pair = await createNonce(webcrypto);
+    vault.remember(pair, NOW);
+    assert.equal(vault.consume("f".repeat(64), NOW), null);
+    assert.equal(vault.consume(pair.hashed, NOW + NONCE_MAX_AGE_MS + 1), null);
+    assert.equal(vault.consume(undefined, NOW), null);
   });
 });
 
-describe("login Google: dados do usuário e tokens", () => {
-  test("tokens do Google são removidos antes de persistir a sessão", () => {
-    const session = { access_token: "a", refresh_token: "r", provider_token: "g", provider_refresh_token: "gr", user: { id: "u" } };
-    const stored = JSON.parse(stripProviderTokens(JSON.stringify(session)));
-    assert.equal(stored.provider_token, undefined);
-    assert.equal(stored.provider_refresh_token, undefined);
-    assert.equal(stored.access_token, "a");
-    assert.equal(stripProviderTokens("pkce-verifier-string"), "pkce-verifier-string");
+describe("login Google: credencial (ID token)", () => {
+  const hashed = "a".repeat(64);
+  const valid = { iss: "https://accounts.google.com", aud: CLIENT_ID, exp: NOW / 1000 + 300, nonce: hashed, sub: "123" };
+
+  test("credencial válida devolve o hash do nonce", () => {
+    assert.deepEqual(checkCredential(fakeIdToken(valid), { clientId: CLIENT_ID, now: NOW }), { ok: true, hashedNonce: hashed });
   });
 
-  test("identidade de exibição a partir do usuário do Supabase", () => {
-    const id = toIdentity({
-      id: "u1",
-      email: "ana@example.com",
-      email_confirmed_at: "2026-11-18T10:00:00Z",
-      app_metadata: { provider: "google" },
-      user_metadata: { full_name: "Ana Souza", avatar_url: "https://lh3.googleusercontent.com/a/xyz" },
-    });
-    assert.deepEqual(id, {
-      id: "u1", email: "ana@example.com", name: "Ana Souza", avatarUrl: "https://lh3.googleusercontent.com/a/xyz",
-      provider: "google", emailVerified: true,
-    });
+  test("token inválido: malformado, outro emissor, outro Client ID ou expirado", () => {
+    const bad = (token) => checkCredential(token, { clientId: CLIENT_ID, now: NOW });
+    assert.deepEqual(bad("nao-e-jwt"), { ok: false, failure: "invalid_token" });
+    assert.deepEqual(bad(undefined), { ok: false, failure: "invalid_token" });
+    assert.deepEqual(bad(fakeIdToken({ ...valid, iss: "https://evil.com" })), { ok: false, failure: "invalid_token" });
+    assert.deepEqual(bad(fakeIdToken({ ...valid, aud: "outro.apps.googleusercontent.com" })), { ok: false, failure: "invalid_token" });
+    assert.deepEqual(bad(fakeIdToken({ ...valid, exp: NOW / 1000 - 1 })), { ok: false, failure: "invalid_token" });
   });
 
-  test("foto fora do domínio do Google é ignorada; nome cai para o e-mail", () => {
-    const id = toIdentity({ id: "u2", email: "joao@example.com", user_metadata: { avatar_url: "http://evil.com/x.png" } });
-    assert.equal(id.avatarUrl, null);
-    assert.equal(id.name, "joao");
-    assert.equal(id.emailVerified, false);
+  test("nonce inválido: ausente ou fora do formato SHA-256", () => {
+    const { nonce: _n, ...noNonce } = valid;
+    assert.deepEqual(checkCredential(fakeIdToken(noNonce), { clientId: CLIENT_ID, now: NOW }), { ok: false, failure: "invalid_nonce" });
+    assert.deepEqual(checkCredential(fakeIdToken({ ...valid, nonce: "123" }), { clientId: CLIENT_ID, now: NOW }), { ok: false, failure: "invalid_nonce" });
+  });
+
+  test("decodificação recusa payloads que não são objetos", () => {
+    assert.equal(decodeJwtPayload(`a.${Buffer.from("[1]").toString("base64url")}.c`), null);
+    assert.equal(decodeJwtPayload("a.b"), null);
+  });
+});
+
+describe("login Google: erros do Supabase", () => {
+  test("classificação das falhas", () => {
+    assert.equal(classifySupabaseError({ message: "Nonces mismatch" }), "invalid_nonce");
+    assert.equal(classifySupabaseError({ message: "Bad ID token", code: "bad_jwt" }), "invalid_token");
+    // Formato atual da API (x-supabase-api-version 2024-01-01), como o AuthApiError do SDK o expõe.
+    assert.equal(classifySupabaseError({ name: "AuthApiError", code: "bad_oidc_token", message: "Bad ID token", status: 400 }), "invalid_token");
+    assert.equal(classifySupabaseError({ name: "AuthApiError", message: "Bad ID token", status: 400 }), "invalid_token");
+    assert.equal(classifySupabaseError({ name: "AuthApiError", code: "bad_oidc_token", message: "Nonces mismatch", status: 400 }), "invalid_nonce");
+    assert.equal(classifySupabaseError({ message: "Signups not allowed for this instance", code: "signup_disabled" }), "not_allowed");
+    assert.equal(classifySupabaseError({ message: "Error running hook URI" }), "not_allowed");
+    assert.equal(classifySupabaseError({ name: "AuthRetryableFetchError", message: "Failed to fetch", status: 0 }), "network");
+    assert.equal(classifySupabaseError({ message: "Database error saving new user" }), "provider_error");
+    assert.equal(classifySupabaseError(null), "provider_error");
+  });
+});
+
+describe("conta autenticada: perfil de apresentação", () => {
+  const base = { id: "u1", email: "ana@example.com", email_confirmed_at: "2026-11-18T10:00:00Z", app_metadata: { provider: "google" } };
+
+  test("nome, e-mail e foto do Google", () => {
+    const p = toAuthenticatedProfile({ ...base, user_metadata: { full_name: "Ana Souza", avatar_url: "https://lh3.googleusercontent.com/a/xyz=s96-c" } });
+    assert.deepEqual(p, { id: "u1", displayName: "Ana Souza", email: "ana@example.com", avatarUrl: "https://lh3.googleusercontent.com/a/xyz=s96-c" });
+  });
+
+  test("usa name e picture quando full_name/avatar_url não existem", () => {
+    const p = toAuthenticatedProfile({ ...base, user_metadata: { name: "Ana", picture: "https://lh3.googleusercontent.com/p" } });
+    assert.equal(p.displayName, "Ana");
+    assert.equal(p.avatarUrl, "https://lh3.googleusercontent.com/p");
+  });
+
+  test("avatar ausente → null (a interface mostra iniciais)", () => {
+    assert.equal(toAuthenticatedProfile({ ...base, user_metadata: {} }).avatarUrl, null);
+  });
+
+  test("nome ausente → parte local do e-mail; sem e-mail → rótulo neutro", () => {
+    assert.equal(toAuthenticatedProfile({ ...base, user_metadata: { full_name: "   " } }).displayName, "ana");
+    assert.equal(toAuthenticatedProfile({ id: "u2", user_metadata: null }).displayName, "Sua conta");
+    assert.equal(toAuthenticatedProfile({ id: "u2" }).email, null);
+  });
+
+  test("foto fora do domínio do Google é ignorada", () => {
+    assert.equal(googlePhoto("http://lh3.googleusercontent.com/x"), null);
+    assert.equal(googlePhoto("https://evil.com/x.png"), null);
+    assert.equal(googlePhoto("https://lh3.googleusercontent.com.evil.com/x"), null);
+  });
+
+  test("foto personalizada tem prioridade e não é sobrescrita pela do Google", () => {
+    assert.equal(resolveAvatar({ custom: "https://cdn.edusearch.com.br/u1.webp", google: "https://lh3.googleusercontent.com/a" }), "https://cdn.edusearch.com.br/u1.webp");
+    assert.equal(resolveAvatar({ custom: null, google: "https://lh3.googleusercontent.com/a" }), "https://lh3.googleusercontent.com/a");
+  });
+
+  test("informações de sessão", () => {
+    assert.deepEqual(toSessionInfo(base, 1_800_000_000), { provider: "google", emailVerified: true, expiresAt: 1_800_000_000_000 });
+    assert.deepEqual(toSessionInfo({ id: "x" }), { provider: "desconhecido", emailVerified: false, expiresAt: null });
+  });
+});
+
+describe("credenciais: nada de segredos ou tokens persistidos", () => {
+  test("tokens de provedor são removidos antes de gravar a sessão", () => {
+    const stored = JSON.parse(stripProviderTokens(JSON.stringify({ access_token: "a", provider_token: "g", provider_refresh_token: "gr" })));
+    assert.deepEqual(stored, { access_token: "a" });
+    assert.equal(stripProviderTokens('"verificador"'), '"verificador"');
   });
 });
