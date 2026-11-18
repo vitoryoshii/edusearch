@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Teste de navegador do login Google (GIS + Supabase Auth) — roda no GitHub Actions.
+ * Teste de navegador da entrada única, do login Google (GIS + Supabase Auth) e do
+ * onboarding da conta real — roda no GitHub Actions.
  *
  * Dois servidores de desenvolvimento:
  *   1. "público" (sem variáveis de auth): login real DESLIGADO.
@@ -17,7 +18,8 @@
  *   node scripts/auth.mjs http://localhost:5190 http://localhost:5191 [pasta-de-capturas]
  */
 import { createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { launch, sleep } from "./lib/cdp.mjs";
 
@@ -27,6 +29,7 @@ const shots = process.argv[4];
 if (shots) mkdirSync(shots, { recursive: true });
 const testOrigin = new URL(testBase).origin;
 const CLIENT_ID = "1234567890-edusearchci.apps.googleusercontent.com";
+const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 
 const b = await launch();
 const failures = [];
@@ -36,6 +39,7 @@ async function diagnose() {
   try {
     page = await b.evaluate(`(() => ({
       caminho: location.pathname + location.search,
+      etapa: document.querySelector('section[data-step]')?.dataset.step ?? null,
       autenticacao: document.documentElement.dataset.auth ?? null,
       falha: document.querySelector('[data-failure]')?.getAttribute('data-failure') ?? null,
       fase: document.querySelector('[data-auth-phase]')?.getAttribute('data-auth-phase') ?? null,
@@ -79,20 +83,9 @@ async function waitFor(expression, timeout = 8000) {
   }
   return false;
 }
-async function shot(name, widths = [390, 1440]) {
-  if (!shots) return;
-  for (const w of widths) {
-    for (const dark of [false, true]) {
-      await b.viewport(w, { dark });
-      await sleep(350);
-      await b.screenshot(join(shots, `${name}-${w}-${dark ? "escuro" : "claro"}.png`));
-    }
-  }
-  await b.viewport(1280);
-}
 const ignoreExpectedNetworkErrors = () => {
   for (let i = b.errors.length - 1; i >= 0; i--)
-    if (/supabase\.co|googleusercontent|status of (400|401|404)|ERR_FAILED/.test(b.errors[i])) b.errors.splice(i, 1);
+    if (/supabase\.co|googleusercontent|status of (400|401|403|404|422)|ERR_FAILED/.test(b.errors[i])) b.errors.splice(i, 1);
 };
 
 /* --------------------------------- Mocks --------------------------------- */
@@ -130,7 +123,7 @@ const AVATAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
 const API_VERSION = [{ name: "x-supabase-api-version", value: "2024-01-01" }];
 const seen = [];
 const tokenRequests = [];
-let tokenMode = "ok"; // ok | invalid | network
+let tokenMode = "ok"; // ok | invalid | network | not_allowed
 let tokenDelayMs = 0; // atraso artificial da resposta do Supabase (teste de corrida)
 let userVariant = "full"; // full | broken-photo | minimal
 let userEndpoint = "ok"; // ok | revoked
@@ -213,6 +206,11 @@ b.on(async (m) => {
       entry.status = "falha-de-rede";
       return b.send("Fetch.failRequest", { requestId, errorReason: "InternetDisconnected" });
     }
+    if (tokenMode === "not_allowed") {
+      // Cadastro desativado/recusado (ex.: hook de allowlist) — formato atual da API.
+      entry.status = 422;
+      return reply(422, JSON.stringify({ code: "signup_disabled", message: "Signups not allowed for this instance" }), "application/json", API_VERSION);
+    }
     if (tokenMode === "invalid" || !nonceOk) {
       entry.status = 400;
       const message = tokenMode === "invalid" ? "Bad ID token" : "Nonces mismatch";
@@ -230,28 +228,126 @@ b.on(async (m) => {
   return reply(404, "{}");
 });
 
-const CTA_VISIBLE = `(() => { const el = document.querySelector('[data-testid=completion-cta]'); if (!el || !el.offsetParent) return false; const t = el.innerText; return t.includes('Conclua seu cadastro') && t.includes('Concluir cadastro') && !!el.querySelector('a[href="/conta/perfil"]'); })()`;
+/* ------------------------------- Auxiliares ------------------------------- */
+const WIDTHS = [320, 375, 390, 768, 1440];
 const failureIs = (code) => `document.querySelector('[data-failure]')?.getAttribute('data-failure') === '${code}'`;
 const text = (s) => `document.body.innerText.includes(${JSON.stringify(s)})`;
+const stepIs = (id) => `document.querySelector('section[data-step]')?.dataset.step === '${id}'`;
 const storageHas = (needle) =>
   `(() => { const all = [localStorage, sessionStorage].flatMap((st) => Object.keys(st).map((k) => k + '=' + st.getItem(k))).join('\\n'); return all.includes(${needle}); })()`;
+const ctaVisible = (roleLabel, path) =>
+  `(() => { const el = document.querySelector('[data-testid=completion-cta]'); if (!el || !el.offsetParent) return false; const t = el.innerText; return t.includes('Conclua seu cadastro de ${roleLabel}') && t.includes('Continuar cadastro') && !!el.querySelector('a[href="${path}"]'); })()`;
+const ROLE_KEY = "edusearch-account-role:00000000-0000-4000-8000-000000000001";
+
+/** Ação de interface que precisa encontrar o elemento; falha vira verificação com diagnóstico. */
+async function act(label, expression) {
+  const ok = await b.evaluate(expression).catch(() => false);
+  if (!ok) await check(false, `ação: ${label}`);
+  await sleep(120);
+}
+const clickChip = (group, chip) =>
+  act(
+    `${group} → ${chip}`,
+    `(() => {
+      const g = [...document.querySelectorAll('[role=group]')].find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === ${JSON.stringify(group)});
+      const btn = g && [...g.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(chip)});
+      if (!btn) return false; btn.click(); return true; })()`,
+  );
+const setField = (label, value) =>
+  act(
+    `preencher ${label}`,
+    `(() => {
+      const l = [...document.querySelectorAll('label')].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)}));
+      const el = l && (l.control || document.getElementById(l.htmlFor));
+      if (!el) return false;
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true; })()`,
+  );
+const continueStep = () =>
+  act("Continuar", `(() => { const x = [...document.querySelectorAll('section[data-step] button')].find((y) => y.textContent.trim() === 'Continuar'); if (!x) return false; x.click(); return true; })()`);
+const clickButton = (label) =>
+  act(`botão ${label}`, `(() => { const x = [...document.querySelectorAll('button')].find((y) => y.textContent.trim() === ${JSON.stringify(label)}); if (!x) return false; x.click(); return true; })()`);
+const signOutFromSettings = async () => {
+  await b.go(testBase + "/conta/configuracoes", 1200);
+  await waitFor(text("Conta e sessão"));
+  await clickButton("Sair da conta");
+  await waitFor(`location.pathname === '/'`);
+};
+
+/** axe-core (WCAG 2.2 AA) na tela atual. */
+async function axe(label) {
+  if (!(await b.evaluate("!!window.axe"))) await b.evaluate(`${AXE};1`);
+  const v = await b.evaluate(
+    `axe.run(document, { runOnly: { type: "tag", values: ["wcag2a","wcag2aa","wcag21a","wcag21aa","wcag22aa"] } })
+       .then((r) => r.violations.map((v) => v.id + " (" + v.nodes.length + "): " + v.nodes.slice(0, 2).map((n) => n.target.join(" ")).join(" | ")))`,
+  );
+  await check(v.length === 0, `acessibilidade (axe): ${label}${v.length ? " — " + v.join("; ") : ""}`);
+}
+
+/** Capturas (quando há pasta) e verificação de rolagem horizontal em cada largura e tema. */
+async function shot(name, widths = WIDTHS) {
+  const overflow = [];
+  for (const w of widths) {
+    for (const dark of [false, true]) {
+      await b.viewport(w, { dark });
+      await sleep(350);
+      if (await b.evaluate(`document.documentElement.scrollWidth > innerWidth + 1`)) overflow.push(`${w}px ${dark ? "escuro" : "claro"}`);
+      if (shots) await b.screenshot(join(shots, `${name}-${w}-${dark ? "escuro" : "claro"}.png`));
+    }
+  }
+  await b.viewport(1280);
+  await sleep(200);
+  await check(overflow.length === 0, `${name}: sem rolagem horizontal em ${widths.join("/")} px, claro e escuro${overflow.length ? " — " + overflow.join(", ") : ""}`);
+}
 
 /* ------------------------------ 1. Versão pública ------------------------------ */
 console.log(`Versão pública (${publicBase}) — login real desligado`);
-b.setStep("público /entrar");
-await b.go(publicBase + "/entrar", 1500);
-await check(await b.evaluate(`document.querySelector('[data-testid=google-signin-disabled]')?.getAttribute('aria-disabled') === 'true'`), "botão do Google desabilitado");
+b.setStep("público /");
+await b.go(publicBase + "/", 1500);
+await check(await waitFor(`document.querySelector('h1')?.textContent.trim() === 'Conectando alunos e professores.'`), "entrada única com a mensagem \"Conectando alunos e professores.\"");
+await check(await b.evaluate(`!!document.querySelector('main img[alt="EduSearch"]')`), "logo oficial centralizado");
+await check(await b.evaluate(`document.querySelector('[data-testid=google-signin-disabled]')?.getAttribute('aria-disabled') === 'true'`), "botão do Google desabilitado sem configuração");
 await check(await b.evaluate(`!document.querySelector('script[src*="accounts.google.com"]')`), "GIS não é carregado sem configuração");
-b.setStep("público /conta");
-await b.go(publicBase + "/conta", 1200);
-await check(await waitFor(`location.pathname === '/entrar'`), "/conta exige login (rota protegida)");
+await check(
+  await b.evaluate(`[...document.querySelectorAll('a')].some((a) => a.textContent.trim() === 'Explorar demonstração' && a.getAttribute('href') === '/perfil-de-acesso')`),
+  "ação secundária \"Explorar demonstração\"",
+);
+await check(
+  await b.evaluate(`!document.querySelector('input[type=password], input[type=email]') && !/Criar conta|Já tenho uma conta|Começar agora|continue com e-mail/i.test(document.body.innerText)`),
+  "sem login/cadastro por e-mail e senha nem botões separados",
+);
+await check(await b.evaluate(`!!document.querySelector('[data-testid=legal-pending]') && !/aceito|concordo/i.test(document.body.innerText)`), "documentos jurídicos indicados como em elaboração, sem aceite fictício");
+await axe("entrada (versão pública)");
+await shot("entrada-publica");
+
+b.setStep("rotas legadas");
+const legacy = [
+  ["/entrar", "/", ""],
+  ["/cadastro", "/", ""],
+  ["/entrar?next=%2Fconta%2Fperfil", "/", "?next=%2Fconta%2Fperfil"],
+  ["/cadastro?next=https%3A%2F%2Fevil.example.com", "/", "?next=%2Fconta"],
+  ["/conta", "/", "?next=%2Fconta"],
+  ["/conta/cadastro/aluno", "/", "?next=%2Fconta%2Fcadastro%2Faluno"],
+  ["/conta/boas-vindas", "/", "?next=%2Fconta%2Fboas-vindas"],
+];
+for (const [from, path, search] of legacy) {
+  await b.go(publicBase + from, 900);
+  await check(await waitFor(`location.pathname === '${path}' && location.search === '${search}'`), `${from} → ${path}${search} (rota legada/protegida, next seguro)`);
+}
+
+b.setStep("público → demonstração");
+await b.go(publicBase + "/", 1000);
+await act("Explorar demonstração", `(() => { const a = [...document.querySelectorAll('a')].find((x) => x.textContent.trim() === 'Explorar demonstração'); a.click(); return true; })()`);
+await check(await waitFor(`location.pathname === '/perfil-de-acesso'`), "demonstração acessível sem login");
 await check(seen.length === 0, "nenhuma requisição ao Google ou ao Supabase na versão pública");
 
 /* --------------------------- 2. Ambiente de testes --------------------------- */
 console.log(`Ambiente de testes (${testBase}) — GIS e Supabase falsos`);
 b.setStep("inicialização do GIS");
-await b.go(testBase + "/entrar", 1500);
-await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "botão oficial do GIS renderizado");
+await b.go(testBase + "/", 1500);
+await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "botão oficial do GIS renderizado na entrada única");
 const cfg = await b.evaluate(`window.__gis.config`);
 await check(cfg?.client_id === CLIENT_ID, "GIS inicializado com o Client ID público");
 await check(/^[0-9a-f]{64}$/.test(cfg?.nonce ?? ""), "GIS recebe o HASH SHA-256 (hex) do nonce");
@@ -260,15 +356,15 @@ await check((await b.evaluate(`window.__gis.inits`)) === 1, "GIS inicializado um
 await check((await b.evaluate(`document.querySelectorAll('script[src*="accounts.google.com/gsi/client"]').length`)) === 1, "script do GIS injetado uma única vez");
 const opts = await b.evaluate(`window.__gis.opts`);
 await check(opts?.text === "continue_with" && opts?.locale === "pt-BR" && opts?.type === "standard", "botão \"Continuar com o Google\" em pt-BR");
-await check(await b.evaluate(text("Acesso real · ambiente de testes")), "sessão real identificada como ambiente de testes");
-await shot("login-google");
+await check(await b.evaluate(text("Fase de testes: somente contas autorizadas")), "acesso real identificado como fase de testes");
+await axe("entrada com login Google ativo");
+await shot("entrada-google");
 
 b.setStep("login cancelado");
 await b.evaluate(`window.__gisMode = 'cancel'; document.querySelector('[data-fake-gis]').click()`);
 await sleep(800);
 await check(
-  (await b.evaluate(`location.pathname === '/entrar' && !document.querySelector('[data-failure]') && !document.querySelector('[role=alert]')`)) &&
-    tokenRequests.length === 0,
+  (await b.evaluate(`location.pathname === '/' && !document.querySelector('[data-failure]') && !document.querySelector('[role=alert]')`)) && tokenRequests.length === 0,
   "cancelar o seletor não gera erro nem sessão",
 );
 
@@ -280,7 +376,7 @@ await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`window.__gisMode = 'badnonce'; document.querySelector('[data-fake-gis]').click()`);
 await check(await waitFor(failureIs("invalid_nonce")), "token com nonce desconhecido é recusado");
 await check(tokenRequests.length === 0, "credenciais inválidas não chegam ao Supabase");
-await shot("login-erro", [390]);
+await shot("entrada-erro", [390]);
 
 b.setStep("token inválido (servidor)");
 tokenMode = "invalid";
@@ -315,18 +411,31 @@ await check(await waitFor(failureIs("network")), "falha de rede tratada com mens
 await check(await b.evaluate(`!!document.querySelector('[role=alert]')`), "erros anunciados com role=alert");
 ignoreExpectedNetworkErrors();
 
-b.setStep("login com sucesso");
+b.setStep("usuário não autorizado");
+tokenMode = "not_allowed";
+await waitFor(`!!document.querySelector('[data-fake-gis]')`);
+await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
+await check(await waitFor(failureIs("not_allowed")), "conta fora da lista de testes: cadastro recusado pelo Supabase");
+await check(await b.evaluate(`document.querySelector('[role=alert]')?.innerText.includes('Conta não liberada para testes')`), "mensagem \"Conta não liberada para testes\"");
+await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null && location.pathname === '/'`), "nenhuma sessão criada para usuário não autorizado");
+await shot("entrada-nao-autorizado", [390]);
+ignoreExpectedNetworkErrors();
+
+b.setStep("primeiro acesso");
 tokenMode = "ok";
 userVariant = "full";
 await b.evaluate(`sessionStorage.setItem('edusearch-demo-session', JSON.stringify({ role: 'student', name: 'Ana' }))`);
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
-await check(await waitFor(`location.pathname === '/conta' && ${text("Ana Teste")}`), "login bem-sucedido abre a conta com o nome do usuário");
-await check(await waitFor(`document.querySelector('main [data-testid=profile-email]')?.textContent.trim() === 'ana.teste@example.com'`), "e-mail exibido");
-await check(await waitFor(`[...document.querySelectorAll('img')].some((i) => i.src.includes('googleusercontent.com') && i.complete && i.naturalWidth > 0)`), "foto do Google exibida (avatar presente)");
+await check(await waitFor(`location.pathname === '/conta/boas-vindas' && ${text("Olá, Ana! Como você quer usar o EduSearch?")}`), "usuário autorizado: primeiro acesso leva às boas-vindas");
+await check(
+  await b.evaluate(`(() => { const s = document.querySelector('[data-role=student]')?.innerText ?? ''; const t = document.querySelector('[data-role=teacher]')?.innerText ?? '';
+    return s.includes('Quero aprender') && s.includes('Encontrar professores') && s.includes('Agendar aulas') && s.includes('Acompanhar meu aprendizado')
+      && t.includes('Quero ensinar') && t.includes('Apresentar especialidades') && t.includes('Disponibilizar horários') && t.includes('Receber solicitações de alunos'); })()`),
+  "duas opções: \"Quero aprender\" e \"Quero ensinar\"",
+);
+await check(await waitFor(`[...document.querySelectorAll('header img')].some((i) => i.src.includes('googleusercontent.com') && i.complete && i.naturalWidth > 0)`), "foto do Google exibida (avatar presente)");
 await check(await b.evaluate(`[...document.querySelectorAll('img[src*="googleusercontent"]')].every((i) => i.referrerPolicy === 'no-referrer' && getComputedStyle(i).borderRadius !== '0px')`), "foto circular e sem Referer");
-await check(await b.evaluate(`${text("Sessão autenticada")} && !${text("Modo demonstração")}`), "sessão autenticada diferenciada da demonstração");
-await check(await waitFor(CTA_VISIBLE), "usuário sem perfil concluído vê \"Concluir cadastro\"");
 await check(await b.evaluate(`sessionStorage.getItem('edusearch-demo-session') === null`), "sessão demonstrativa encerrada ao entrar com a conta real");
 await check(await b.evaluate(`!/Profa\\. Marina|Ana \\(demonstração\\)/.test(document.body.innerText)`), "nenhum dado fictício na conta real");
 const lastToken = JSON.stringify(await b.evaluate(`window.__gis.lastToken`));
@@ -335,66 +444,166 @@ await check(!(await b.evaluate(storageHas(JSON.stringify(tokenRequests.at(-1).bo
 await check(!seen.some((r) => r.url.includes(JSON.parse(lastToken))), "ID token nunca aparece em URLs");
 await check(!(await b.evaluate(`location.href.includes('token') || location.href.includes('code=')`)), "URL do app sem tokens");
 await check(!seen.some((r) => r.method === "GET" && r.host.endsWith("supabase.co") && r.path === "/auth/v1/authorize"), "nenhum redirecionamento para *.supabase.co");
-await shot("conta-inicio");
+await axe("boas-vindas (primeiro acesso)");
+await shot("boas-vindas");
+
+b.setStep("onboarding do aluno");
+const requestsBeforeOnboarding = seen.length;
+await act("Quero aprender", `(() => { document.querySelector('[data-role=student]').click(); return true; })()`);
+await check(await waitFor(`location.pathname === '/conta/cadastro/aluno' && ${stepIs("voce")}`), "\"Quero aprender\" abre o cadastro do aluno");
+await check(await b.evaluate(`localStorage.getItem('${ROLE_KEY}') === 'student'`), "escolha guardada só como preferência local");
+await check(await waitFor(`document.querySelector('main [data-testid=profile-email]')?.textContent.trim() === 'ana.teste@example.com'`), "e-mail exibido");
+await check(await b.evaluate(`document.querySelector('main [data-testid=profile-name]')?.textContent === 'Ana Teste' && !!document.querySelector('main img[src*="googleusercontent"]')`), "nome e foto vindos do Google");
+await check(await b.evaluate(`!!document.querySelector('[data-testid=onboarding-preview-notice]')`), "aviso de prévia: nada é enviado nem salvo");
+await axe("cadastro do aluno — etapa 1");
+await shot("aluno-etapa-1", [320, 390, 1440]);
+await continueStep();
+await check(await waitFor(`${stepIs("objetivo")} && document.activeElement?.tagName === 'H1'`), "ao avançar, o foco vai para o título da etapa");
+await continueStep();
+await check(await waitFor(`${stepIs("objetivo")} && document.querySelector('section[data-step] [role=alert]')?.textContent.includes('Conte em poucas palavras')`), "etapa incompleta explica o que falta (role=alert)");
+await setField("Seu objetivo", "Passar no ENEM com boa nota em matemática");
+await clickChip("Nível atual", "Ensino médio");
+await continueStep();
+await check(await waitFor(stepIs("materias")), "objetivo e nível → disciplinas");
+await clickChip("Disciplinas de interesse", "Matemática");
+await clickChip("Principais dificuldades", "Resolver exercícios e provas");
+await continueStep();
+await check(await waitFor(stepIs("rotina")), "disciplinas → disponibilidade");
+await clickChip("Dias disponíveis", "Seg");
+await clickChip("Períodos", "Noite");
+await clickChip("Modalidade", "Online");
+await clickChip("Valor por aula", "R$ 50 a R$ 80");
+await axe("cadastro do aluno — disponibilidade");
+await continueStep();
+await check(await waitFor(`${stepIs("revisao")} && ${text("Passar no ENEM com boa nota em matemática")} && ${text("R$ 50 a R$ 80")}`), "revisão mostra as respostas");
+await check(await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Salvar perfil')?.disabled === true`), "\"Salvar perfil\" bloqueado até existir a API de perfis");
+await check(!(await b.evaluate(storageHas(JSON.stringify("Passar no ENEM")))), "respostas do onboarding não são gravadas no navegador");
+await check(!seen.slice(requestsBeforeOnboarding).some((r) => r.method === "POST"), "respostas do onboarding não são enviadas a nenhum servidor");
+await axe("cadastro do aluno — revisão");
+await shot("aluno-revisao", [320, 390, 1440]);
+await act("Voltar", `(() => { const x = [...document.querySelectorAll('section[data-step] button')].find((y) => y.textContent.trim() === 'Voltar'); x.click(); return true; })()`);
+await check(await waitFor(`${stepIs("rotina")} && document.querySelector('[aria-pressed=true]')?.textContent.includes('Seg')`), "voltar preserva as respostas da etapa (em memória)");
+
+b.setStep("início da conta (sessão existente)");
+await b.go(testBase + "/conta", 1800);
+await check(await waitFor(ctaVisible("aluno", "/conta/cadastro/aluno")), "usuário sem perfil concluído vê \"Continuar cadastro\"");
+await check(await b.evaluate(`${text("Cadastro em análise")} && !/cadastro conclu[ií]do/i.test(document.body.innerText)`), "perfil provisório não aparece como cadastro concluído");
+await check(await b.evaluate(`${text("Sessão autenticada")} && !${text("Modo demonstração")}`), "sessão autenticada diferenciada da demonstração");
+await check(await b.evaluate(`document.querySelector('main [data-testid=profile-email]')?.textContent.trim() === 'ana.teste@example.com'`), "início da conta mostra nome, e-mail e foto");
+await axe("início da conta");
+await shot("conta-inicio", [390, 1440]);
+await b.go(testBase + "/conta/cadastro/aluno", 1200);
+await check(await waitFor(`${stepIs("voce")} && ${text("Etapa 1 de 5")}`), "respostas não persistem: ao reabrir, o cadastro recomeça");
+
+b.setStep("onboarding do professor");
+await b.go(testBase + "/conta/boas-vindas", 1500);
+await act("Quero ensinar", `(() => { document.querySelector('[data-role=teacher]').click(); return true; })()`);
+await check(await waitFor(`location.pathname === '/conta/cadastro/professor' && ${stepIs("voce")}`), "\"Quero ensinar\" abre o cadastro do professor");
+await check(await b.evaluate(`localStorage.getItem('${ROLE_KEY}') === 'teacher'`), "troca de papel atualiza a preferência local");
+await continueStep();
+await check(await waitFor(`document.querySelector('section[data-step] [role=alert]')?.textContent.includes('apresentação')`), "biografia obrigatória (mínimo de caracteres)");
+await setField("Biografia profissional", "Professor de física há sete anos, com foco em vestibulares e aulas práticas.");
+await continueStep();
+await check(await waitFor(stepIs("ensino")), "biografia → disciplinas e formação");
+await clickChip("Disciplinas", "Física");
+await setField("Formação acadêmica", "Licenciatura em Física");
+await clickChip("Experiência como professor", "3 a 5 anos");
+await continueStep();
+await check(await waitFor(stepIs("aulas")), "formação → aulas");
+await clickChip("Metodologia", "Resolução de exercícios");
+await setField("Valor da aula", "80");
+await check(
+  await waitFor(`(() => { const t = document.querySelector('[data-testid=commission-preview]')?.textContent ?? ''; return t.includes('15%') && t.includes('R$ 12,00') && t.includes('R$ 68,00'); })()`),
+  "comissão padrão de 15%: R$ 80,00 → R$ 12,00 EduSearch e R$ 68,00 ao professor",
+);
+await check(await b.evaluate(text("ainda não se aplicam")), "descontos e premiações indicados como planejados, sem taxa reduzida");
+await clickChip("Duração das aulas", "60 min");
+await clickChip("Modalidade", "Online");
+await axe("cadastro do professor — aulas");
+await shot("professor-aulas", [320, 390, 1440]);
+await continueStep();
+await check(await waitFor(stepIs("agenda")), "aulas → disponibilidade");
+await clickChip("Dias", "Ter");
+await clickChip("Períodos", "Tarde");
+await continueStep();
+await check(await waitFor(`${stepIs("documentos")} && ${text("Não envie documentos agora.")}`), "documentos: etapa apenas informativa");
+await check(await b.evaluate(`!document.querySelector('input[type=file]')`), "sem upload de documentos reais");
+await check(
+  await b.evaluate(`![...document.querySelectorAll('span, p, strong')].some((e) => /^(professor )?verificad[oa]$/i.test(e.textContent.trim()))`),
+  "nenhum selo de professor verificado",
+);
+await continueStep();
+await check(await waitFor(`${stepIs("revisao")} && ${text("Pendente (etapa futura)")} && ${text("R$ 80,00")}`), "revisão do professor com verificação pendente");
+await check(await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Salvar perfil')?.disabled === true`), "\"Salvar perfil\" do professor bloqueado");
+await check(!(await b.evaluate(storageHas(JSON.stringify("Professor de física")))), "biografia não é gravada no navegador");
+await axe("cadastro do professor — revisão");
 
 b.setStep("perfil e configurações");
 await b.go(testBase + "/conta/perfil", 1500);
 await check(await waitFor(`${text("Meu perfil")} && document.querySelector('[data-testid=profile-name]')?.textContent === 'Ana Teste'`), "Meu perfil mostra nome, e-mail e foto");
-await shot("conta-perfil");
-await b.evaluate(`document.querySelector('input[name=papel][value=teacher]').click()`);
-await sleep(200);
-await check(await b.evaluate(`localStorage.getItem('edusearch-account-role:00000000-0000-4000-8000-000000000001') === 'teacher'`), "papel escolhido salvo como preferência provisória");
 await check(await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.includes('Concluir perfil'))?.disabled === true`), "\"Concluir perfil\" bloqueado até existir backend");
 await b.go(testBase + "/conta/configuracoes", 1500);
 await check(await waitFor(text("Conta e sessão")), "configurações exibem a conta e a sessão");
-await shot("conta-configuracoes", [390]);
 
 b.setStep("restauração da sessão");
 const userCalls = seen.filter((r) => r.path === "/auth/v1/user").length;
 await b.go(testBase + "/conta", 2000);
 await check(await waitFor(text("Ana Teste")), "sessão restaurada após recarregar a página");
 await check(seen.filter((r) => r.path === "/auth/v1/user").length > userCalls, "sessão restaurada é confirmada no servidor (getUser)");
+await b.go(testBase + "/", 1500);
+await check(
+  await waitFor(`(() => { const a = document.querySelector('[data-testid=continue-account] a'); return !!a && a.textContent.includes('Continuar como Ana') && a.getAttribute('href') === '/conta'; })()`),
+  "sessão existente: a entrada oferece \"Continuar como Ana\" para a próxima etapa",
+);
+await shot("entrada-sessao-ativa", [390]);
 
 b.setStep("demonstração independente");
 await b.go(testBase + "/perfil-de-acesso", 1200);
 await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.includes('Continuar como aluno')).click()`);
 await check(await waitFor(`location.pathname === '/aluno' && ${text("Modo demonstração")} && !${text("Ana Teste")}`), "demonstração continua funcionando, sem dados da conta real");
+await b.go(testBase + "/", 1200);
+await check(
+  await waitFor(`[...document.querySelectorAll('a')].some((a) => a.textContent.trim() === 'Continuar demonstração' && a.getAttribute('href') === '/aluno') && !!document.querySelector('[data-testid=continue-account]')`),
+  "entrada distingue a sessão real e a demonstração",
+);
 await b.go(testBase + "/conta", 1500);
 await check(await waitFor(text("Ana Teste")), "conta real permanece separada da demonstração");
 
 b.setStep("logout");
-await b.go(testBase + "/conta/configuracoes", 1500);
-await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Sair da conta').click()`);
-await check(await waitFor(`location.pathname === '/entrar'`), "logout volta para o login");
-await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null`), "logout remove a sessão do navegador");
+await signOutFromSettings();
+await check(await waitFor(`location.pathname === '/' && !!document.querySelector('[data-fake-gis]')`), "logout volta para a entrada única");
+await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null && localStorage.getItem('${ROLE_KEY}') === null`), "logout remove a sessão e a preferência local");
 await check(seen.some((r) => r.path === "/auth/v1/logout" && r.url.includes("scope=local")), "logout revoga a sessão deste dispositivo");
 await b.go(testBase + "/conta", 1200);
-await check(await waitFor(`location.pathname === '/entrar' && location.search === '?next=%2Fconta'`), "após logout, /conta exige login novamente");
+await check(await waitFor(`location.pathname === '/' && location.search === '?next=%2Fconta'`), "após logout, /conta exige login novamente");
 
 b.setStep("entrar novamente sem foto e sem nome");
 userVariant = "minimal";
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`window.__gisMode = 'ok'; document.querySelector('[data-fake-gis]').click()`);
-await check(await waitFor(`location.pathname === '/conta' && document.querySelector('[data-testid=profile-name]')?.textContent === 'ana.teste'`), "entrar novamente funciona; nome ausente usa o e-mail");
-await check(await b.evaluate(`!document.querySelector('main img') && !!document.querySelector('main [aria-hidden=true].rounded-full')`), "avatar ausente → iniciais");
-await check(await waitFor(CTA_VISIBLE), "papel provisório foi limpo no logout (cadastro pendente de novo)");
+await check(await waitFor(`location.pathname === '/conta/boas-vindas' && ${text("Olá, ana.teste!")}`), "entrar novamente funciona; nome ausente usa o e-mail; primeiro acesso de novo");
+await check(
+  await b.evaluate(`!document.querySelector('img[src*="googleusercontent"]') && !!document.querySelector('header [aria-hidden=true].rounded-full')`),
+  "avatar ausente → iniciais",
+);
 
 b.setStep("foto quebrada");
-await b.go(testBase + "/conta/configuracoes", 1200);
-await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Sair da conta')?.click()`);
-await waitFor(`location.pathname === '/entrar'`);
+await signOutFromSettings();
 userVariant = "broken-photo";
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
-await waitFor(`location.pathname === '/conta'`);
-await check(await waitFor(`!document.querySelector('main img[src*="googleusercontent"]') && !!document.querySelector('main [aria-hidden=true].rounded-full')`), "foto que falha ao carregar cai para iniciais sem quebrar o layout");
+await waitFor(`location.pathname === '/conta/boas-vindas'`);
+await check(
+  await waitFor(`!document.querySelector('img[src*="googleusercontent"]') && !!document.querySelector('header [aria-hidden=true].rounded-full')`),
+  "foto que falha ao carregar cai para iniciais sem quebrar o layout",
+);
 await check(await b.evaluate(`document.documentElement.scrollWidth <= innerWidth + 1`), "sem rolagem horizontal");
 ignoreExpectedNetworkErrors();
 
 b.setStep("sessão expirada/revogada");
 userEndpoint = "revoked";
 await b.go(testBase + "/conta", 2000);
-await check(await waitFor(`location.pathname === '/entrar' && ${text("Sua sessão expirou")}`), "sessão revogada no servidor leva ao login com aviso de sessão expirada");
+await check(await waitFor(`location.pathname === '/' && ${text("Sua sessão expirou")}`), "sessão revogada no servidor leva à entrada com aviso de sessão expirada");
 await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null`), "sessão expirada é removida do navegador");
 userEndpoint = "ok";
 ignoreExpectedNetworkErrors();
@@ -406,4 +615,4 @@ if (all.length) {
   console.error(`✗ auth: ${all.length} problema(s)\n  ` + all.join("\n  "));
   process.exit(1);
 }
-console.log("✓ auth: login Google (GIS + Supabase) e versão pública verificados");
+console.log("✓ auth: entrada única, login Google (GIS + Supabase), onboarding e versão pública verificados");

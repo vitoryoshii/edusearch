@@ -61,6 +61,16 @@ async function run() {
   await b.viewport(1440);
   await b.go(base + "/", 400);
 
+  /* ---------- Entrada única (Google + demonstração) ---------- */
+  await b.evaluate("sessionStorage.clear()");
+  await b.go(base + "/", 1200);
+  await until(`!!document.querySelector("h1")`, "entrada única");
+  await axe("Entrada única");
+  await expect(
+    "entrada única tem um h1 e o link da demonstração",
+    `document.querySelectorAll("h1").length === 1 && [...document.querySelectorAll("a")].some((a) => a.textContent.trim() === "Explorar demonstração")`,
+  );
+
   /* ---------- Escolha de perfil: seletor de professor ---------- */
   await b.evaluate("sessionStorage.clear()");
   await b.go(base + "/perfil-de-acesso", 1200);
