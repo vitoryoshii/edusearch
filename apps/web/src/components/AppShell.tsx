@@ -10,6 +10,7 @@ import {
   GiftIcon,
   GraduationIcon,
   HomeIcon,
+  LockIcon,
   LoadingState,
   Logo,
   LogoutIcon,
@@ -23,6 +24,7 @@ import {
   cn,
   type IconComponent,
 } from "@edusearch/ui";
+import { useAuth } from "../app/auth";
 import { homeFor, studentSession, teacherSession, useSession } from "../app/session";
 import type { Role } from "../lib/api/types";
 import { dataSource } from "../lib/data/source";
@@ -30,7 +32,15 @@ import { DemoBanner } from "./DemoNotice";
 
 type NavItem = { to: string; label: string; icon: IconComponent; end?: boolean; mobile?: boolean; short?: string };
 
-const NAV: Record<Role, NavItem[]> = {
+/** "account" = conta REAL (Supabase); "student"/"teacher" = demonstração. */
+export type ShellMode = Role | "account";
+
+const NAV: Record<ShellMode, NavItem[]> = {
+  account: [
+    { to: "/conta", label: "Início", icon: HomeIcon, end: true, mobile: true },
+    { to: "/conta/perfil", label: "Meu perfil", short: "Perfil", icon: UserIcon, mobile: true },
+    { to: "/conta/configuracoes", label: "Configurações", short: "Ajustes", icon: SettingsIcon, mobile: true },
+  ],
   student: [
     { to: "/aluno", label: "Início", icon: HomeIcon, end: true, mobile: true },
     { to: "/aluno/buscar", label: "Buscar", icon: SearchIcon, mobile: true },
@@ -52,16 +62,26 @@ const NAV: Record<Role, NavItem[]> = {
   ],
 };
 
-/** Layout das áreas logadas: barra lateral no desktop e barra inferior no mobile. */
-export function AppShell({ role }: { role: Role }) {
+const homeOf = (mode: ShellMode) => (mode === "account" ? "/conta" : homeFor(mode));
+
+/**
+ * Layout das áreas logadas: barra lateral no desktop e barra inferior no mobile.
+ * Na conta real (mode "account"), nome e foto vêm do perfil autenticado e não
+ * há faixa nem ações da demonstração.
+ */
+export function AppShell({ role }: { role: ShellMode }) {
   const { session, switchRole, signOut } = useSession();
+  const auth = useAuth();
+  const isAccount = role === "account";
   const navigate = useNavigate();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
   const items = NAV[role];
   const mobileItems = items.filter((i) => i.mobile);
   const overflow = items.filter((i) => !i.mobile);
-  const name = session?.name ?? "Visitante";
+  const name = isAccount ? (auth.profile?.displayName ?? "Sua conta") : (session?.name ?? "Visitante");
+  const avatarSrc = isAccount ? (auth.profile?.avatarUrl ?? undefined) : undefined;
+  const subtitle = isAccount ? "Conta Google · testes" : `${role === "student" ? "Aluno" : "Professor"} · demo`;
 
   // Ao trocar de tela: volta ao topo e move o foco para o conteúdo (leitores de tela).
   useEffect(() => {
@@ -70,7 +90,21 @@ export function AppShell({ role }: { role: Role }) {
   }, [location.pathname]);
 
   const other: Role = role === "student" ? "teacher" : "student";
-  const userMenu = [
+  const accountMenu = [
+    { id: "profile", label: "Meu perfil", icon: <UserIcon />, onSelect: () => navigate("/conta/perfil") },
+    { id: "settings", label: "Configurações", icon: <SettingsIcon />, onSelect: () => navigate("/conta/configuracoes") },
+    { id: "demo", label: "Explorar a demonstração", icon: <UsersIcon />, onSelect: () => navigate("/perfil-de-acesso") },
+    {
+      id: "logout",
+      label: "Sair da conta",
+      icon: <LogoutIcon />,
+      tone: "danger" as const,
+      onSelect: () => {
+        void auth.signOut().then(() => navigate("/entrar", { replace: true }));
+      },
+    },
+  ];
+  const demoMenu = [
     {
       id: "switch",
       label: other === "teacher" ? "Ver como professor (demo)" : "Ver como aluno (demo)",
@@ -97,6 +131,7 @@ export function AppShell({ role }: { role: Role }) {
       },
     },
   ];
+  const userMenu = isAccount ? accountMenu : demoMenu;
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[16rem_1fr]">
@@ -110,10 +145,12 @@ export function AppShell({ role }: { role: Role }) {
       {/* Barra lateral (desktop) */}
       <aside className="sticky top-0 hidden h-dvh flex-col border-r border-line bg-surface lg:flex">
         <div className="px-6 pt-6 pb-4">
-          <NavLink to={homeFor(role)} aria-label="EduSearch — início" className="inline-block rounded-md">
+          <NavLink to={homeOf(role)} aria-label="EduSearch — início" className="inline-block rounded-md">
             <Logo className="h-8" />
           </NavLink>
-          <p className="mt-2 text-xs font-medium text-fg-muted">{role === "student" ? "Área do aluno" : "Área do professor"}</p>
+          <p className="mt-2 text-xs font-medium text-fg-muted">
+            {isAccount ? "Minha conta" : role === "student" ? "Área do aluno" : "Área do professor"}
+          </p>
         </div>
         <nav aria-label="Navegação principal" className="flex-1 overflow-y-auto px-3">
           <ul className="space-y-0.5">
@@ -145,10 +182,10 @@ export function AppShell({ role }: { role: Role }) {
             triggerClassName="w-full justify-start px-2 py-2"
             trigger={
               <>
-                <Avatar name={name} size="sm" />
+                <Avatar name={name} src={avatarSrc} size="sm" />
                 <span className="min-w-0 text-left">
                   <span className="block truncate text-sm font-semibold text-fg-strong">{name}</span>
-                  <span className="block text-xs text-fg-muted">{role === "student" ? "Aluno" : "Professor"} · demo</span>
+                  <span className="block text-xs text-fg-muted">{subtitle}</span>
                 </span>
               </>
             }
@@ -157,11 +194,11 @@ export function AppShell({ role }: { role: Role }) {
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <DemoBanner />
+        {isAccount ? <AccountBanner /> : <DemoBanner />}
 
         {/* Barra superior (mobile/tablet) */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-bg/95 px-4 backdrop-blur-sm sm:px-6 lg:hidden">
-          <NavLink to={homeFor(role)} aria-label="EduSearch — início" className="rounded-md">
+          <NavLink to={homeOf(role)} aria-label="EduSearch — início" className="rounded-md">
             <Logo className="h-7" />
           </NavLink>
           <div className="flex items-center gap-1">
@@ -177,7 +214,7 @@ export function AppShell({ role }: { role: Role }) {
                 trigger={<MoreIcon className="h-6 w-6" />}
               />
             )}
-            <Dropdown label="Menu da conta" items={userMenu} trigger={<Avatar name={name} size="sm" />} />
+            <Dropdown label="Menu da conta" items={userMenu} trigger={<Avatar name={name} src={avatarSrc} size="sm" />} />
           </div>
         </header>
 
@@ -226,6 +263,19 @@ export function AppShell({ role }: { role: Role }) {
           ))}
         </ul>
       </nav>
+    </div>
+  );
+}
+
+/** Faixa da conta real: deixa claro que é uma sessão autenticada em fase de testes. */
+function AccountBanner() {
+  return (
+    <div className="flex items-center justify-center gap-1.5 border-b border-line bg-primary-soft px-4 py-2 text-center text-xs text-fg sm:px-6">
+      <LockIcon className="h-3.5 w-3.5 shrink-0 text-link" />
+      <span>
+        <strong className="font-semibold text-fg-strong">Sessão autenticada</strong> · ambiente de testes. Aulas e pagamentos
+        reais ainda não estão habilitados.
+      </span>
     </div>
   );
 }

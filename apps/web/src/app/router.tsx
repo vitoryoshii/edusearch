@@ -11,9 +11,10 @@ const Welcome = lazy(() => import("../pages/public/Welcome"));
 const Login = lazy(() => import("../pages/public/Auth").then((m) => ({ default: m.Login })));
 const Signup = lazy(() => import("../pages/public/Auth").then((m) => ({ default: m.Signup })));
 const ChooseRole = lazy(() => import("../pages/public/ChooseRole"));
-// Conta real (Supabase Auth + Google). Separada das áreas de demonstração.
-const AuthCallback = lazy(() => import("../pages/account/Callback"));
-const Account = lazy(() => import("../pages/account/Account"));
+// Conta real (Google Identity Services + Supabase Auth). Separada da demonstração.
+const AccountDashboard = lazy(() => import("../pages/account/Dashboard"));
+const AccountProfile = lazy(() => import("../pages/account/Profile"));
+const AccountSettings = lazy(() => import("../pages/account/Settings"));
 
 const StudentHome = lazy(() => import("../pages/student/Home"));
 const Search = lazy(() => import("../pages/student/Search"));
@@ -45,8 +46,9 @@ export const ROUTE_TITLES: Record<string, string> = {
   "/entrar": "Entrar",
   "/cadastro": "Criar conta",
   "/perfil-de-acesso": "Escolha seu perfil",
-  "/auth/callback": "Concluindo login",
   "/conta": "Minha conta",
+  "/conta/perfil": "Meu perfil",
+  "/conta/configuracoes": "Configurações da conta",
   "/aluno": "Início do aluno",
   "/aluno/buscar": "Buscar professores",
   "/aluno/assistente": "Assistente EduSearch",
@@ -86,15 +88,19 @@ const routes: RouteObject[] = [
           { index: true, element: <Welcome /> },
           { path: "entrar", element: <Login /> },
           { path: "cadastro", element: <Signup /> },
-          { path: "auth/callback", element: <AuthCallback /> },
-          {
-            path: "conta",
-            element: (
-              <RequireAuth>
-                <Account />
-              </RequireAuth>
-            ),
-          },
+        ],
+      },
+      {
+        path: "conta",
+        element: (
+          <RequireAuth>
+            <AppShell role="account" />
+          </RequireAuth>
+        ),
+        children: [
+          { index: true, element: <AccountDashboard /> },
+          { path: "perfil", element: <AccountProfile /> },
+          { path: "configuracoes", element: <AccountSettings /> },
         ],
       },
       {
