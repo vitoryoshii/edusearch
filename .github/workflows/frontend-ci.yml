@@ -3,16 +3,17 @@
 # - checks: roda em todo Pull Request que toca o frontend. Leve (~3–5 min):
 #   instalação com lockfile, typecheck, lint (efeitos React), testes unitários,
 #   build e testes rápidos no servidor de desenvolvimento (StrictMode): smoke e a11y.
-# - journey: teste de jornada completo (~5 min, Chrome headless). Complementar:
-#   roda sob demanda (Actions → Frontend CI → Run workflow) ou em PRs com o
-#   rótulo "journey", para não consumir recursos em todo commit.
+# - journey: jornada completa (Chrome headless do runner) + capturas de tela em
+#   375/390/768/1440 px, claro e escuro (artefatos). Roda em PRs em rascunho
+#   (Draft), em PRs com o rótulo "journey" ou sob demanda (Run workflow), para
+#   não consumir recursos em todo commit de PR pronto para revisão.
 #
 # Não usa segredos, não faz deploy e não toca a API (apps/api).
 name: Frontend CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
     paths:
       - "apps/web/**"
       - "apps/website/**"
@@ -50,9 +51,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Mesma versão do Cloudflare Pages (NODE_VERSION=22). react-router 8 exige >= 22.22.
-          node-version: 22
+          # Mesma linha do Cloudflare Pages (NODE_VERSION=22). react-router 8 exige >= 22.22.
+          node-version: ">=22.22.0 <23"
           cache: pnpm
+
+      - name: Versão do Node (mínimo 22.22)
+        run: node -v
 
       - name: Instalar dependências (lockfile congelado)
         run: pnpm install --frozen-lockfile
@@ -75,18 +79,19 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite.log"; exit 1
 
-      - name: Smoke test (24 rotas, console, overflow)
+      - name: Smoke test (29 rotas, console, overflow)
         run: pnpm --filter @edusearch/web smoke
 
       - name: Acessibilidade (axe + teclado em diálogos, menus e abas)
         run: pnpm --filter @edusearch/web a11y
 
   journey:
-    name: Jornada completa do marketplace (complementar)
+    name: Jornada completa e capturas de tela
     needs: checks
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.journey) ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'journey'))
+      (github.event_name == 'pull_request' &&
+        (github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'journey')))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -94,8 +99,8 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          # Mesma versão do Cloudflare Pages (NODE_VERSION=22). react-router 8 exige >= 22.22.
-          node-version: 22
+          # Mesma linha do Cloudflare Pages (NODE_VERSION=22). react-router 8 exige >= 22.22.
+          node-version: ">=22.22.0 <23"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
@@ -107,6 +112,19 @@ jobs:
 
       - name: Teste de jornada (1440, 768 e 375px, claro e escuro)
         run: node apps/web/scripts/journey.mjs http://localhost:5190 "$RUNNER_TEMP/journey-shots"
+
+      - name: Capturas de tela (375, 390, 768 e 1440 px; claro e escuro)
+        if: success() || failure()
+        run: node apps/web/scripts/screens.mjs http://localhost:5190 "$RUNNER_TEMP/screens" 375,390,768,1440 "" claro,escuro
+
+      - name: Artefato — capturas de tela da Fase 2.3
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-fase-2.3
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Capturas da jornada
         if: always()
