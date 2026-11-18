@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "node scripts/check-effects.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "journey": "node scripts/journey.mjs"
   },
   "dependencies": {
     "@edusearch/ui": "workspace:*",
