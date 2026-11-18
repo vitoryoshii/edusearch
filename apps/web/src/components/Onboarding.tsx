@@ -148,7 +148,7 @@ export function OnboardingFlow({
         </span>
       </div>
       <div className="mt-2">
-        <ProgressBar value={index + 1} max={steps.length} label={`${label}: etapa ${index + 1} de ${steps.length}`} showValue={false} />
+        <ProgressBar value={index + 1} max={steps.length} label={label} showValue={false} />
       </div>
 
       <h1 ref={heading} tabIndex={-1} className="mt-8 text-2xl font-semibold tracking-tight text-balance text-fg-strong outline-none sm:text-3xl">
