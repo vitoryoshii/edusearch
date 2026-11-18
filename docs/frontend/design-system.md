@@ -62,6 +62,8 @@ O tema é o atributo `data-theme` no `<html>`, aplicado antes da renderização 
 | `Dialog` | `<dialog>` nativo: foco preso, Esc e clique fora fecham, foco volta ao gatilho. Variante `sheet` para mobile. |
 | `Dropdown` | Padrão ARIA *menu button*: setas, Home/End, Esc. `triggerHasText` quando o gatilho tem texto visível (WCAG 2.5.3). |
 | `Tabs` | Padrão ARIA *tabs*: setas, Home/End, painéis com `aria-labelledby`. |
+| `SegmentedControl` | Grupo de rádio (`role=radiogroup`): uma opção ativa; setas mudam a seleção. Usado em Semana/Mês, Calendário/Lista e na pré-visualização de estados. |
+| `ProgressRing` | Anel de progresso do mockup, com `role=progressbar` e valores ARIA. |
 | `Skeleton`, `LoadingState` | `role="status"` com texto para leitores de tela. |
 | `Toast` / `useToast` | Região `aria-live="polite"`, fechamento manual, até 3 simultâneos. |
 | `EmptyState`, `ErrorState` | `ErrorState` usa `role="alert"` e oferece "Tentar novamente". |
@@ -94,6 +96,15 @@ Implementado em `packages/ui/src/components/GoogleButton.tsx`, seguindo https://
 
 - **Estado atual:** desabilitado (`available={false}`), com a mensagem "O acesso com Google estará disponível após a integração." O botão não executa nenhum fluxo, não solicita escopos e não simula tokens.
 - **Pendência:** a Google Sans não é carregada pelo app. Usa a fonte do sistema se estiver instalada; senão, Roboto ou Inter. Na integração real, use o botão renderizado pelo SDK Google Identity Services ou carregue a fonte. O SVG do G pode ser trocado pelo arquivo do pacote oficial (`signin-assets.zip`).
+
+## Referência visual (Fase 2.3)
+
+O mockup aprovado (`assets/branding/references/edusearch-mobile-app-mockup.png`) orienta as telas:
+
+- **Botão primário:** gradiente moderado petróleo → esmeralda (`from-petroleo to-esmeralda`). O texto branco tem contraste mínimo de 4,67:1 em todo o gradiente.
+- **Telas:** blocos de disciplina no início, assistente em conversa, destaque do perfil do professor, cartões de "Próxima aula", pagamento e progresso em *Minhas aulas* e navegação inferior com 4 itens.
+- **Diferenças intencionais:** sem fotos de pessoas, sem selo de verificação e sem avaliações, porque os dados são fictícios; o botão do Meet só aparece com link real.
+- **Regra de layout:** grids responsivos sempre com `grid-cols-1` na base, porque textos com `truncate` em colunas automáticas causam overflow (caso encontrado em *Minhas aulas*).
 
 ## Microinterações
 

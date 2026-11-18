@@ -15,6 +15,7 @@ import { AsyncContent } from "../../components/AsyncContent";
 import { LessonCard } from "../../components/LessonCard";
 import { SectionTitle } from "../../components/PageHeader";
 import { StatCard } from "../../components/StatCard";
+import { STANDARD_COMMISSION_BPS, formatBps } from "../../lib/commission";
 import { dataSource } from "../../lib/data/source";
 import { formatDateShort, formatMoney, formatTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks/useAsync";
@@ -45,7 +46,7 @@ export default function TeacherDashboard() {
             .slice(0, 3);
           return (
             <div className="space-y-10">
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <StatCard icon={CalendarIcon} label="Aulas nos próximos 7 dias" value={dash.lessonsThisWeek} />
                 <StatCard
                   icon={ClockIcon}
@@ -55,9 +56,13 @@ export default function TeacherDashboard() {
                 />
                 <StatCard
                   icon={WalletIcon}
-                  label="Recebimentos previstos"
-                  value={formatMoney(dash.expectedMonthCents)}
-                  hint="Valor líquido estimado"
+                  label="Saldo estimado"
+                  value={formatMoney(dash.estimatedBalanceCents)}
+                  hint={
+                    dash.awaitingPaymentCents > 0
+                      ? `Pagamentos confirmados, após ${formatBps(STANDARD_COMMISSION_BPS)} de comissão · ${formatMoney(dash.awaitingPaymentCents)} aguardando`
+                      : `Pagamentos confirmados, após ${formatBps(STANDARD_COMMISSION_BPS)} de comissão`
+                  }
                 />
               </div>
 

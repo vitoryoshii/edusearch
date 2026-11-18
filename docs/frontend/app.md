@@ -17,7 +17,9 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
 /aluno/professores/:id          Perfil do professor + próximos horários disponíveis
 /aluno/professores/:id/agendar  Seleção de dia e horário (?horario=<id> pré-seleciona)
 /aluno/agendamento/resumo       Resumo e confirmação do agendamento
-/aluno/aulas                    Minhas aulas (próximas / concluídas / canceladas), detalhes e cancelamento
+/aluno/aulas                    Minhas aulas: próxima aula, pagamento e progresso; Calendário (semana/mês) | Lista
+/aluno/aulas/:id                Aula online (Google Meet, estados, preparação, Google Agenda simulado)
+/aluno/pagamento/:lessonId      Checkout Pix (demonstração)
 /aluno/progresso                Acompanhamento: metas, tempo de estudo, anotações
 /aluno/perfil                   Perfil e configurações
 
@@ -25,9 +27,11 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
 /professor/perfil               Perfil profissional (formulário validado)
 /professor/especialidades       Disciplinas e níveis
 /professor/disponibilidade      Disponibilidade semanal com validação de intervalos
-/professor/agenda               Agenda semanal navegável
+/professor/agenda               Agenda semana/mês: aulas, horários livres, bloqueios e conflitos
+/professor/aulas/:id            Aula online (mesma tela do aluno)
+/professor/beneficios           Comissão (15%), metas, conquistas e indicações
 /professor/aulas                Aulas agendadas
-/professor/recebimentos         Bruto, comissão (hipótese de 10%), líquido e detalhamento
+/professor/recebimentos         Comissão de 15%, parcela do professor, saldo estimado (só pagos) e detalhamento
 /professor/configuracoes        Configurações
 ```
 
@@ -125,3 +129,7 @@ src/
 ├── pages/          public/, student/, teacher/
 └── pwa/            registro do Service Worker
 ```
+
+## Fase 2.3
+
+Calendário, aula online, checkout Pix, comissão de 15% e incentivos: veja [calendar-meet-payments.md](calendar-meet-payments.md). Na navegação inferior do aluno ficam 4 itens (Início, Buscar, Aulas, Perfil), como no mockup. Assistente e Progresso aparecem na barra lateral, no menu "mais opções" e nos cartões do início e de *Minhas aulas*.

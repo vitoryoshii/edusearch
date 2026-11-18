@@ -259,3 +259,53 @@ export function Skeleton({ className }: { className?: string }) {
 export function Divider({ className }: { className?: string }) {
   return <hr className={cn("border-line", className)} />;
 }
+
+/* ------------------------------ ProgressRing ------------------------------ */
+
+/** Anel de progresso (como no mockup "Meu progresso"), com semântica de progressbar. */
+export function ProgressRing({
+  value,
+  max = 100,
+  label,
+  size = 72,
+  className,
+}: {
+  value: number;
+  max?: number;
+  label: string;
+  size?: number;
+  className?: string;
+}) {
+  const pct = Math.max(0, Math.min(100, Math.round((value / max) * 100)));
+  const r = 15.5;
+  const c = 2 * Math.PI * r;
+  return (
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      className={cn("relative inline-flex shrink-0 items-center justify-center", className)}
+      style={{ width: size, height: size }}
+    >
+      <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90" aria-hidden="true">
+        <circle cx="18" cy="18" r={r} fill="none" strokeWidth="3.5" className="stroke-surface-muted" />
+        <circle
+          cx="18"
+          cy="18"
+          r={r}
+          fill="none"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c - (pct / 100) * c}
+          className="stroke-success transition-[stroke-dashoffset] duration-700"
+        />
+      </svg>
+      <span className="absolute text-sm font-semibold text-fg-strong tabular-nums" aria-hidden="true">
+        {pct}%
+      </span>
+    </div>
+  );
+}

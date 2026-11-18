@@ -25,7 +25,7 @@ export default function Progress() {
       >
         {(p) => (
           <div className="space-y-8">
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <StatCard icon={BookIcon} label="Aulas concluídas" value={p.lessonsCompleted} />
               <StatCard icon={ClockIcon} label="Tempo de estudo" value={formatMinutes(p.minutesStudied)} />
               <StatCard icon={TargetIcon} label="Metas ativas" value={p.goals.length} />

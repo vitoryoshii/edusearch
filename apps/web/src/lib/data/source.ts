@@ -1,5 +1,9 @@
 import type {
   BookingInput,
+  CalendarConnection,
+  Checkout,
+  CommissionProgram,
+  ReferralProgram,
   EarningsSummary,
   HealthResponse,
   LearningProgress,
@@ -36,10 +40,27 @@ export interface DataSource {
   getTeacher(id: string): Promise<Teacher>;
   listTeacherSlots(teacherId: string): Promise<TimeSlot[]>;
   matchTeachers(request: MatchRequest): Promise<MatchResult[]>;
+  /** Solicita a reserva: a aula nasce "aguardando pagamento". */
   createBooking(input: BookingInput): Promise<Lesson>;
+  /** Aula visível ao usuário atual (aluno ou professor). */
+  getLesson(id: string): Promise<Lesson>;
   listStudentLessons(): Promise<Lesson[]>;
   cancelLesson(id: string): Promise<Lesson>;
   getStudentProgress(): Promise<LearningProgress>;
+
+  // Pagamentos (Pix via AbacatePay, orquestrado pela API)
+  /** Cobrança mais recente da aula, ou null se ainda não existir. */
+  getCheckout(lessonId: string): Promise<Checkout | null>;
+  /** Cria (ou devolve a aberta) cobrança Pix da reserva. Idempotente. */
+  createCheckout(lessonId: string): Promise<Checkout>;
+  /** Somente demonstração: simula o retorno do gateway (sem chamada externa). */
+  simulatePayment?(checkoutId: string, outcome: "confirmed" | "failed" | "expired"): Promise<Checkout>;
+
+  // Google Agenda (OAuth e eventos ficam no backend)
+  getCalendarConnection(): Promise<CalendarConnection>;
+  /** Somente demonstração: alterna uma conexão simulada. Na API real, o fluxo OAuth será outro. */
+  setCalendarConnection?(connected: boolean): Promise<CalendarConnection>;
+  syncLessonToCalendar(lessonId: string, opts?: { simulateFailure?: boolean }): Promise<Lesson>;
 
   // Professor
   getTeacherDashboard(): Promise<TeacherDashboard>;
@@ -50,7 +71,13 @@ export interface DataSource {
   getAvailability(): Promise<WeeklyAvailability>;
   saveAvailability(value: WeeklyAvailability): Promise<WeeklyAvailability>;
   listTeacherLessons(): Promise<Lesson[]>;
+  /** Dias bloqueados (YYYY-MM-DD) do professor atual. */
+  listBlockedDates(): Promise<string[]>;
+  setDateBlocked(date: string, blocked: boolean): Promise<string[]>;
   getEarnings(): Promise<EarningsSummary>;
+  /** Comissão e incentivos (cálculo oficial no backend; regras de desconto ainda não aprovadas). */
+  getCommissionProgram(): Promise<CommissionProgram>;
+  getReferralProgram(): Promise<ReferralProgram>;
 }
 
 /**

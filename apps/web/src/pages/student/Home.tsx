@@ -1,14 +1,21 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowRightIcon, Button, Card, Chip, EmptyState, Input, SearchIcon, SparkleIcon, buttonClasses } from "@edusearch/ui";
+import { ArrowRightIcon, BookIcon, Button, Card, ChartIcon, ChatIcon, EmptyState, Input, SearchIcon, SparkIcon, SparkleIcon, buttonClasses, cn } from "@edusearch/ui";
 import { useSession } from "../../app/session";
 import { AsyncContent } from "../../components/AsyncContent";
 import { LessonCard } from "../../components/LessonCard";
 import { SectionTitle } from "../../components/PageHeader";
 import { TeacherCard } from "../../components/TeacherCard";
-import { SUBJECTS } from "../../lib/catalog";
+import { subjectName } from "../../lib/catalog";
 import { dataSource } from "../../lib/data/source";
 import { useAsync } from "../../lib/hooks/useAsync";
+
+const TILES = [
+  { id: "matematica", icon: ChartIcon },
+  { id: "redacao", icon: BookIcon },
+  { id: "ingles", icon: ChatIcon },
+  { id: "fisica", icon: SparkIcon },
+] as const;
 
 export default function StudentHome() {
   const { session } = useSession();
@@ -40,10 +47,20 @@ export default function StudentHome() {
           />
           <Button type="submit">Buscar</Button>
         </form>
-        <ul className="mt-4 flex flex-wrap gap-2" aria-label="Disciplinas populares">
-          {SUBJECTS.slice(0, 5).map((s) => (
-            <li key={s.id}>
-              <Chip onClick={() => navigate(`/aluno/buscar?disciplina=${s.id}`)}>{s.name}</Chip>
+        {/* Atalhos por disciplina em blocos, como no mockup aprovado */}
+        <ul className="mt-5 grid grid-cols-4 gap-2 sm:gap-3" aria-label="Disciplinas populares">
+          {TILES.map((t, i) => (
+            <li key={t.id}>
+              <Link
+                to={`/aluno/buscar?disciplina=${t.id}`}
+                className={cn(
+                  "flex min-h-20 flex-col items-center justify-center gap-2 rounded-card border px-1 py-3 text-center text-xs font-medium shadow-card transition-[border-color,background-color] duration-150 sm:min-h-24 sm:text-sm",
+                  i === 0 ? "border-transparent bg-soft text-fg-strong" : "border-line bg-surface text-fg-strong hover:border-line-strong",
+                )}
+              >
+                <t.icon className="h-6 w-6 text-link" />
+                {subjectName(t.id)}
+              </Link>
             </li>
           ))}
         </ul>
@@ -119,7 +136,7 @@ export default function StudentHome() {
           empty={{ title: "Nenhum professor disponível", description: "Volte mais tarde para ver novos perfis." }}
         >
           {(data) => (
-            <ul className="grid gap-3 md:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {data.slice(0, 4).map((t) => (
                 <li key={t.id}>
                   <TeacherCard teacher={t} compact />

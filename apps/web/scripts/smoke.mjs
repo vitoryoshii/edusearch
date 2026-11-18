@@ -21,10 +21,12 @@ const ROUTES = {
     "/aluno", "/aluno/buscar", "/aluno/assistente", "/aluno/recomendados", "/aluno/professores/t-marina",
     "/aluno/professores/t-marina/agendar", "/aluno/agendamento/resumo", "/aluno/aulas", "/aluno/progresso",
     "/aluno/perfil", "/aluno/buscar?demo=erro", "/aluno/aulas?demo=vazio",
+    "/aluno/aulas?view=lista", "/aluno/aulas/l-1", "/aluno/pagamento/l-1",
   ],
   teacher: [
     "/professor", "/professor/perfil", "/professor/especialidades", "/professor/disponibilidade",
     "/professor/agenda", "/professor/aulas", "/professor/recebimentos", "/professor/configuracoes",
+    "/professor/aulas/l-1", "/professor/beneficios",
   ],
 };
 // Telas em que o estado de erro é esperado (não contam como falha).

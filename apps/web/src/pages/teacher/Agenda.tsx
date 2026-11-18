@@ -1,114 +1,158 @@
 import { useMemo, useState } from "react";
-import { Badge, Card, ChevronLeftIcon, ChevronRightIcon, IconButton, cn } from "@edusearch/ui";
-import { AsyncContent } from "../../components/AsyncContent";
+import { AlertIcon, BanIcon, Button, ErrorState, LoadingState, SegmentedControl, useToast } from "@edusearch/ui";
+import { useSession } from "../../app/session";
+import { CalendarView, type CalendarMode, type DayInfo } from "../../components/CalendarView";
+import { GoogleCalendarCard } from "../../components/Integrations";
+import { LessonDetailsDialog, useLessonDialogs } from "../../components/LessonDetailsDialog";
 import { PageHeader } from "../../components/PageHeader";
+import { describeError } from "../../lib/api/client";
 import type { Lesson } from "../../lib/api/types";
-import { subjectName } from "../../lib/catalog";
+import { conflictReason, dateKey, todayKey, weekDays } from "../../lib/calendar";
 import { dataSource } from "../../lib/data/source";
-import { STATUS_LABELS, formatDateShort, formatTimeRange } from "../../lib/format";
+import { DEMO_TEACHER_ID } from "../../lib/demo";
 import { useAsync } from "../../lib/hooks/useAsync";
 
-function startOfWeek(offset: number) {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  const diff = (d.getDay() + 6) % 7; // segunda-feira
-  d.setDate(d.getDate() - diff + offset * 7);
-  return d;
-}
-
-const rangeFmt = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" });
-
-function Week({ lessons, offset }: { lessons: Lesson[]; offset: number }) {
-  const days = useMemo(() => {
-    const start = startOfWeek(offset);
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d;
-    });
-  }, [offset]);
-  const today = new Date().toDateString();
-
-  return (
-    <ol className="grid gap-3">
-      {days.map((d) => {
-        const items = lessons
-          .filter((l) => new Date(l.start).toDateString() === d.toDateString())
-          .sort((a, b) => a.start.localeCompare(b.start));
-        const isToday = d.toDateString() === today;
-        return (
-          <li key={d.toISOString()}>
-            <Card padding="none" className={cn(isToday && "border-primary")}>
-              <div className="flex flex-col sm:flex-row">
-                <div className="flex items-center gap-2 border-b border-line px-4 py-3 sm:w-40 sm:shrink-0 sm:flex-col sm:items-start sm:border-r sm:border-b-0 sm:py-4">
-                  <p className="font-semibold text-fg-strong">{formatDateShort(d.toISOString())}</p>
-                  {isToday && <Badge tone="primary">Hoje</Badge>}
-                </div>
-                <div className="flex-1 p-3 sm:p-4">
-                  {items.length === 0 ? (
-                    <p className="px-1 py-1 text-sm text-fg-muted">Sem aulas</p>
-                  ) : (
-                    <ul className="grid gap-2">
-                      {items.map((l) => (
-                        <li
-                          key={l.id}
-                          className={cn(
-                            "flex flex-wrap items-center justify-between gap-2 rounded-control border-l-4 bg-surface-muted px-3 py-2.5",
-                            l.status === "cancelled" ? "border-line-strong opacity-70" : "border-primary",
-                          )}
-                        >
-                          <div>
-                            <p className="text-sm font-semibold text-fg-strong tabular-nums">{formatTimeRange(l.start, l.end)}</p>
-                            <p className="text-sm text-fg">
-                              {subjectName(l.subject)} · {l.studentName}
-                            </p>
-                          </div>
-                          {l.status !== "scheduled" && <Badge tone={l.status === "completed" ? "success" : "neutral"}>{STATUS_LABELS[l.status]}</Badge>}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            </Card>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
+const LEGEND = [
+  { label: "Confirmada", className: "border-l-4 border-primary" },
+  { label: "Aguardando pagamento", className: "border-l-4 border-warning-text" },
+  { label: "Cancelada", className: "border-l-4 border-line-strong" },
+  { label: "Horário livre", className: "border border-dashed border-line-strong rounded-full" },
+];
 
 export default function Agenda() {
-  const lessons = useAsync(() => dataSource.listTeacherLessons(), []);
-  const [offset, setOffset] = useState(0);
-  const start = startOfWeek(offset);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
+  const { session } = useSession();
+  const toast = useToast();
+  const teacherId = session?.teacherId ?? DEMO_TEACHER_ID;
+  const data = useAsync(
+    () => Promise.all([dataSource.listTeacherLessons(), dataSource.getAvailability(), dataSource.listBlockedDates(), dataSource.listTeacherSlots(teacherId)]),
+    [teacherId],
+  );
+  const [mode, setMode] = useState<CalendarMode>("week");
+  const [focus, setFocus] = useState(todayKey());
+  const [busyDay, setBusyDay] = useState<string | null>(null);
+  const dialogs = useLessonDialogs();
+
+  const derived = useMemo(() => {
+    if (data.status !== "success") return null;
+    const [lessons, weekly, blockedList, slots] = data.data;
+    const blocked = new Set(blockedList);
+    const conflicts = new Map<string, string>();
+    for (const l of lessons) {
+      const reason = conflictReason(l, weekly, blocked);
+      if (reason) conflicts.set(l.id, reason);
+    }
+    return { lessons, blocked, slots, conflicts };
+  }, [data.status, data.data]);
+
+  if (data.status === "loading") return <LoadingState label="Carregando agenda…" />;
+  if (data.status === "error" || !derived) return <ErrorState description={describeError(data.error)} onRetry={data.reload} />;
+
+  const { lessons, blocked, slots, conflicts } = derived;
+  const today = todayKey();
+
+  const dayInfo = (key: string): DayInfo => ({
+    blocked: blocked.has(key),
+    freeSlots: slots.filter((s) => dateKey(s.start) === key),
+    conflicts: new Map([...conflicts].filter(([id]) => lessons.find((l) => l.id === id && dateKey(l.start) === key))),
+  });
+
+  const toggleBlock = async (key: string) => {
+    const willBlock = !blocked.has(key);
+    setBusyDay(key);
+    try {
+      await dataSource.setDateBlocked(key, willBlock);
+      toast({
+        title: willBlock ? "Dia bloqueado" : "Dia desbloqueado",
+        description: willBlock ? "Novos horários não serão oferecidos. Aulas já marcadas continuam ativas." : "Os horários da sua grade voltaram a ser oferecidos.",
+      });
+      data.reload();
+    } catch (e) {
+      toast({ tone: "error", title: "Não foi possível alterar o bloqueio", description: describeError(e) });
+    } finally {
+      setBusyDay(null);
+    }
+  };
+
+  const visibleKeys = new Set(mode === "week" ? weekDays(focus) : [focus]);
+  const visible = lessons.filter((l) => visibleKeys.has(dateKey(l.start)));
+  const confirmed = visible.filter((l) => l.status === "scheduled").length;
+  const pending = visible.filter((l) => l.status === "pending_payment").length;
+  const visibleConflicts = visible.filter((l) => conflicts.has(l.id)).length;
+
+  const replace = (updated: Lesson) => {
+    data.setData([lessons.map((l) => (l.id === updated.id ? updated : l)), data.data![1], data.data![2], data.data![3]]);
+    data.reload();
+  };
 
   return (
     <>
-      <PageHeader title="Agenda" description="Suas aulas organizadas por semana." />
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <IconButton label="Semana anterior" variant="secondary" onClick={() => setOffset((o) => o - 1)}>
-          <ChevronLeftIcon className="h-5 w-5" />
-        </IconButton>
-        <div className="text-center" aria-live="polite">
-          <p className="font-semibold text-fg-strong">
-            {rangeFmt.format(start)} – {rangeFmt.format(end)}
+      <PageHeader title="Agenda" description="Aulas reservadas, horários livres e bloqueios." />
+
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <SegmentedControl
+            label="Período da agenda"
+            options={[
+              { value: "week", label: "Semana" },
+              { value: "month", label: "Mês" },
+            ]}
+            value={mode}
+            onChange={setMode}
+          />
+          <p className="text-sm text-fg" aria-live="polite">
+            {confirmed} {confirmed === 1 ? "confirmada" : "confirmadas"} · {pending} aguardando pagamento
+            {visibleConflicts > 0 && (
+              <span className="ml-1 inline-flex items-center gap-1 font-medium text-warning-text">
+                · <AlertIcon className="h-4 w-4" /> {visibleConflicts} {visibleConflicts === 1 ? "conflito" : "conflitos"}
+              </span>
+            )}
           </p>
-          {offset !== 0 && (
-            <button type="button" onClick={() => setOffset(0)} className="text-sm font-medium text-link hover:underline">
-              Voltar para esta semana
-            </button>
-          )}
         </div>
-        <IconButton label="Próxima semana" variant="secondary" onClick={() => setOffset((o) => o + 1)}>
-          <ChevronRightIcon className="h-5 w-5" />
-        </IconButton>
+
+        <ul className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-fg-muted" aria-label="Legenda">
+          {LEGEND.map((l) => (
+            <li key={l.label} className="flex items-center gap-1.5">
+              <span className={`inline-block h-3 w-3 bg-surface-muted ${l.className}`} aria-hidden="true" />
+              {l.label}
+            </li>
+          ))}
+        </ul>
+
+        <CalendarView
+          mode={mode}
+          focus={focus}
+          onFocusChange={setFocus}
+          lessons={lessons}
+          perspective="teacher"
+          onSelectLesson={dialogs.setDetails}
+          dayInfo={dayInfo}
+          renderDayActions={(key) =>
+            key > today ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                leftIcon={<BanIcon className="h-4 w-4" />}
+                loading={busyDay === key}
+                aria-pressed={blocked.has(key)}
+                onClick={() => toggleBlock(key)}
+              >
+                {blocked.has(key) ? "Desbloquear dia" : "Bloquear dia"}
+              </Button>
+            ) : null
+          }
+        />
+
+        <GoogleCalendarCard perspective="teacher" compact />
       </div>
-      <AsyncContent state={lessons} reload={lessons.reload}>
-        {(data) => <Week lessons={data} offset={offset} />}
-      </AsyncContent>
+
+      <LessonDetailsDialog
+        lesson={dialogs.details}
+        perspective="teacher"
+        onClose={() => dialogs.setDetails(null)}
+        confirming={dialogs.confirming}
+        setConfirming={dialogs.setConfirming}
+        onChanged={replace}
+      />
     </>
   );
 }

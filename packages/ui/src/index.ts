@@ -33,6 +33,7 @@ export {
   Chip,
   Divider,
   ProgressBar,
+  ProgressRing,
   Skeleton,
   Switch,
   type BadgeTone,
@@ -41,6 +42,7 @@ export {
 export { Dialog, type DialogProps } from "./components/Dialog";
 export { Dropdown, type DropdownItem } from "./components/Dropdown";
 export { Tabs, type TabItem } from "./components/Tabs";
+export { SegmentedControl, type SegmentOption } from "./components/SegmentedControl";
 export { ToastProvider, useToast, type ToastInput, type ToastTone } from "./components/Toast";
 export { EmptyState, ErrorState, LoadingState } from "./components/States";
 export { Logo } from "./components/Logo";

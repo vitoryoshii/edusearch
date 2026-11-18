@@ -4,6 +4,7 @@ import { AsyncContent } from "../../components/AsyncContent";
 import { PageHeader } from "../../components/PageHeader";
 import { describeError } from "../../lib/api/client";
 import type { Methodology, TeacherProfile } from "../../lib/api/types";
+import { STANDARD_COMMISSION_BPS, formatBps } from "../../lib/commission";
 import { dataSource } from "../../lib/data/source";
 import { METHODOLOGY_LABELS, options } from "../../lib/format";
 import { useAsync } from "../../lib/hooks/useAsync";
@@ -92,7 +93,7 @@ function ProfileForm({ initial, onSaved }: { initial: TeacherProfile; onSaved: (
       </Card>
 
       <Card className="space-y-5">
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <Input
             name="price"
             label="Valor por aula (R$)"
@@ -104,7 +105,7 @@ function ProfileForm({ initial, onSaved }: { initial: TeacherProfile; onSaved: (
               setPrice(e.target.value);
               setDirty(true);
             }}
-            hint="Hipótese de comissão da plataforma: 10%."
+            hint={`Comissão padrão do EduSearch: ${formatBps(STANDARD_COMMISSION_BPS)} (tarifas do gateway à parte).`}
           />
           <Select
             label="Duração da aula"

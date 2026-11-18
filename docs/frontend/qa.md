@@ -175,3 +175,50 @@ Durante a análise, o axe apontou contraste no diálogo escuro. Era um falso pos
 ### CI
 
 `.github/workflows/frontend-ci.yml` foi criado e validado como YAML. **Ainda não foi executado no GitHub**, porque a branch não foi publicada. O lockfile contém os binários nativos para Linux (TypeScript 7, rolldown, Tailwind oxide, lightningcss). No CI, o Chrome roda com `--no-sandbox` (exigência dos runners Ubuntu 24.04), só quando `CI` está definido.
+
+---
+
+## Fase 2.3 — Validação (18/11/2026)
+
+### Ambiente
+
+A regra é rodar testes com navegador só com **≥ 3 GB de RAM livres**. A máquina ficou entre **1,6 e 1,7 GB livres** (de 16 GB) durante toda a validação, e na sessão anterior o servidor de desenvolvimento chegou a ser encerrado por pressão de memória. Por isso **não foram iniciados Vite nem Chrome**: só rodaram as verificações leves, em sequência. Não havia processos do EduSearch (Node ou Chrome) remanescentes.
+
+### Verificações executadas
+
+| Verificação | Resultado |
+| ----------- | --------- |
+| `pnpm -r typecheck` (ui, website, web) | ✅ |
+| Lint (`check-effects`) | ✅ |
+| Testes unitários (`node --test`): comissão de 15% em inteiros, calendário, conflitos, URL do Meet, estados da aula online | ✅ 10/10 |
+| Build do app | ✅ (`Checkout` 12 KB, `OnlineLesson` 7,9 KB, `Benefits` 7,5 KB, `Agenda` 4 KB; carga inicial inalterada, ~76 KB gzip de JS principal) |
+| Build do website | ✅ |
+| Credenciais no código ou no bundle (`sk_*`, chaves Google/Gemini, service role, AbacatePay) | ✅ nenhuma |
+| Payload Pix (BR Code/EMV `00020126`, `br.gov.bcb.pix`) | ✅ nenhum |
+| Link concreto do Google Meet | ✅ nenhum (só o formato `xxx-xxxx-xxx` em um comentário de documentação, ausente do bundle) |
+| Chamadas de rede fora do cliente HTTP central | ✅ nenhuma (sem chamadas diretas a AbacatePay ou Google) |
+| `apps/api`, `supabase`, `apps/website` | ✅ sem alterações em relação à `main` |
+| Comissão padrão | ✅ 15% (`STANDARD_COMMISSION_BPS = 1500`), coberta por teste unitário; nenhum outro percentual no código |
+
+### Versão do Node
+
+| Ambiente | Antes | Agora |
+| -------- | ----- | ----- |
+| Cloudflare Pages (README) | `NODE_VERSION=22` | inalterado |
+| GitHub Actions | 24 (alterado nesta branch) | **22** |
+| `apps/web` `engines` | — | `>=22.22.0` |
+
+- O react-router 8.5.1 exige **Node ≥ 22.22.0** e o Vite 8, ≥ 22.12. Com Node 20, o app não funciona.
+- Node 22 ≥ 22.18 executa os testes unitários em `.ts` (remoção de tipos padrão).
+- **Recomendação:** versão única **Node 22 LTS (≥ 22.22)** no Cloudflare, no CI e localmente.
+- O `engines` da raiz (`>=20`) deveria passar a `>=22.22.0`. Não foi alterado por estar fora das pastas desta frente.
+
+### Bloqueado por memória (pendente)
+
+1. Smoke test (rotas novas: aula online, checkout, benefícios).
+2. Jornada completa no servidor de dev: reserva → checkout → confirmação simulada, falha, expiração, confirmação repetida, calendário por teclado, aula sem link do Meet, Google Agenda simulado e `.ics`, recebimentos de 15%, benefícios, bloqueio de dia e conflito, cancelamento coerente.
+3. Auditoria de acessibilidade (axe e teclado) nas telas novas.
+4. Responsividade em 375, 390, 768 e 1440 px, temas claro e escuro.
+5. Capturas em `screenshots/fase-2.3/` e comparação visual final com o mockup.
+
+Os testes 1 a 3 foram escritos e atualizados nesta fase, mas **ainda não rodaram**: falhas no primeiro uso são possíveis e devem ser corrigidas antes da aprovação. A comparação visual preliminar (375 px, tema claro) foi feita antes do bloqueio e motivou ajustes de layout e uma correção de overflow (ver `calendar-meet-payments.md`).

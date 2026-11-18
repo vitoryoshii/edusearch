@@ -32,34 +32,31 @@ export default function TeacherProfile() {
         {(t) => (
           <div className="grid grid-cols-1 gap-6 pb-16 lg:grid-cols-[1fr_20rem] lg:items-start lg:pb-0">
             <div className="space-y-6">
-              <Card padding="lg">
-                <div className="flex items-start gap-4 sm:gap-5">
-                  <span className="hidden sm:block">
-                    <Avatar name={t.name} size="xl" />
-                  </span>
-                  <span className="sm:hidden">
-                    <Avatar name={t.name} size="lg" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h2 className="text-xl font-semibold text-fg-strong sm:text-2xl">{t.name}</h2>
-                        <p className="mt-1 text-fg-muted">{t.headline}</p>
-                      </div>
-                      <IconButton
-                        label={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-                        aria-pressed={favorite}
-                        onClick={() => setFavorite((f) => !f)}
-                        className="-mt-2 -mr-2"
-                      >
-                        <HeartIcon className={cn("h-5 w-5", favorite && "fill-current text-danger-text")} />
-                      </IconButton>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
+              {/* Destaque do perfil, como no mockup: avatar grande, nome, especialidade e preço.
+                  Sem fotos, selo de verificação ou avaliações: os perfis são fictícios. */}
+              <Card padding="lg" className="relative overflow-hidden">
+                <div aria-hidden="true" className="absolute inset-x-0 top-0 h-24 bg-soft sm:hidden" />
+                <IconButton
+                  label={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                  aria-pressed={favorite}
+                  onClick={() => setFavorite((f) => !f)}
+                  className="absolute top-3 right-3 z-10 bg-surface/80"
+                >
+                  <HeartIcon className={cn("h-5 w-5", favorite && "fill-current text-danger-text")} />
+                </IconButton>
+                <div className="relative flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:gap-5 sm:text-left">
+                  <Avatar name={t.name} size="xl" className="ring-4 ring-surface" />
+                  <div className="min-w-0 flex-1 sm:pr-10">
+                    <h2 className="text-xl font-semibold text-fg-strong sm:text-2xl">{t.name}</h2>
+                    <p className="mt-1 text-fg-muted">{t.headline}</p>
+                    <p className="mt-2 text-lg font-semibold text-fg-strong tabular-nums sm:hidden">
+                      {formatMoney(t.priceCents)} <span className="text-sm font-normal text-fg-muted">/ aula</span>
+                    </p>
+                    <div className="mt-3 flex flex-wrap justify-center gap-1.5 sm:justify-start">
                       {isDemo && <Badge tone="demo">Perfil fictício</Badge>}
-                      {t.subjects.map((s) => (
-                        <Badge key={s} tone="primary">
-                          {subjectName(s)}
+                      {t.subjects.map((sub) => (
+                        <Badge key={sub} tone="primary">
+                          {subjectName(sub)}
                         </Badge>
                       ))}
                     </div>

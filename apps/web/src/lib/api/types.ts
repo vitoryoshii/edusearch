@@ -6,7 +6,8 @@
  * devem converter as respostas da API para estes tipos (ou estes tipos
  * devem ser ajustados). Ver docs/frontend/api-integration.md.
  *
- * Convenções: datas em ISO 8601 (UTC); valores monetários em centavos (BRL).
+ * Convenções: datas em ISO 8601 (UTC); valores monetários em centavos (BRL),
+ * sempre inteiros; percentuais em basis points inteiros (1500 = 15%).
  */
 
 export type Role = "student" | "teacher";
@@ -48,7 +49,38 @@ export type TeacherFilters = {
 
 export type TimeSlot = { id: string; teacherId: string; start: string; end: string };
 
-export type LessonStatus = "scheduled" | "completed" | "cancelled";
+/**
+ * Ciclo de vida da aula:
+ * - pending_payment: reserva solicitada; o horário fica reservado até o Pix
+ *   ser confirmado, expirar ou ser cancelado.
+ * - scheduled: confirmada (pagamento confirmado).
+ * - completed / cancelled.
+ */
+export type LessonStatus = "pending_payment" | "scheduled" | "completed" | "cancelled";
+
+export type CancellationReason = "student" | "teacher" | "payment_expired";
+
+/**
+ * Status de uma cobrança Pix:
+ * - creating: aguardando criação da cobrança.
+ * - pending: aguardando pagamento.
+ * - processing: pagamento em processamento.
+ * - confirmed, expired, cancelled, failed.
+ */
+export type PaymentStatus = "creating" | "pending" | "processing" | "confirmed" | "expired" | "cancelled" | "failed";
+
+/** Reunião da aula. O link só existe quando a API devolver uma URL do Google Meet. */
+export type MeetingInfo = {
+  provider: "google_meet";
+  /** URL de entrada. Nunca é inventada pelo frontend; null até a integração existir. */
+  joinUrl: string | null;
+  status: "not_connected" | "awaiting_link" | "ready";
+};
+
+/** Estado da sincronização da aula com o Google Agenda. */
+export type CalendarSyncStatus = "not_synced" | "pending" | "synced" | "failed";
+
+export type LessonMaterial = { id: string; title: string; kind: "lista" | "resumo" | "link" };
 
 export type Lesson = {
   id: string;
@@ -61,10 +93,39 @@ export type Lesson = {
   start: string;
   end: string;
   status: LessonStatus;
+  cancellationReason?: CancellationReason;
   priceCents: number;
-  /** Link da videochamada (Google Meet) — será gerado pela API no futuro. */
-  meetingUrl: string | null;
+  meeting: MeetingInfo;
+  /** Cobrança mais recente desta aula (null quando ainda não foi criada). */
+  payment: { checkoutId: string; status: PaymentStatus } | null;
+  calendarSync: CalendarSyncStatus;
+  /** Contexto do aluno exibido ao professor (fictício na demonstração). */
+  studentLevel?: Level;
+  studentGoal?: string;
+  materials?: LessonMaterial[];
 };
+
+/** Cobrança Pix de uma aula (gateway planejado: AbacatePay). */
+export type Checkout = {
+  id: string;
+  lessonId: string;
+  status: PaymentStatus;
+  method: "pix";
+  gateway: "abacatepay";
+  amountCents: number;
+  createdAt: string;
+  /** Validade da cobrança informada pelo gateway (null quando não houver). */
+  expiresAt: string | null;
+  confirmedAt?: string;
+  failureReason?: string;
+  /** QR Code e Copia e Cola: só existem quando devolvidos por integração autorizada. */
+  pix: { qrCodeImageUrl: string | null; copyPasteCode: string | null };
+  /** true na demonstração: nada é cobrado. */
+  simulated: boolean;
+};
+
+/** Conexão da conta Google Agenda (na demonstração, apenas simulada). */
+export type CalendarConnection = { status: "disconnected" | "connected"; simulated: boolean };
 
 export type BookingInput = { teacherId: string; slotId: string; subject: string; topic?: string };
 
@@ -117,29 +178,72 @@ export type Specialty = { subject: string; levels: Level[] };
 export type TeacherDashboard = {
   lessonsThisWeek: number;
   nextLesson: Lesson | null;
-  expectedMonthCents: number;
+  /** Saldo estimado: parcela do professor nas aulas com pagamento confirmado. */
+  estimatedBalanceCents: number;
+  /** Valor de reservas ainda aguardando pagamento (não recebido). */
+  awaitingPaymentCents: number;
   profileChecklist: Array<{ id: "profile" | "specialties" | "availability"; label: string; done: boolean }>;
 };
 
-export type EarningStatus = "expected" | "transferred";
+/**
+ * Situação financeira de uma aula na visão do professor.
+ * Não existe "repassado": repasses e saques não fazem parte desta fase.
+ */
+export type FinancialStatus = "awaiting_payment" | "confirmed" | "cancelled" | "cancelled_after_payment";
+
+export type TeacherEarning = {
+  id: string;
+  lessonId: string;
+  date: string;
+  studentName: string;
+  subject: string;
+  grossCents: number;
+  /** Comissão bruta do EduSearch sobre o valor da aula. */
+  commissionCents: number;
+  /** Parcela bruta do professor (valor da aula − comissão). */
+  teacherShareCents: number;
+  /** Tarifas do gateway, contabilizadas à parte; null = ainda não informadas. */
+  gatewayFeeCents: number | null;
+  /** Parcela do professor − tarifas conhecidas. Estimativa, não é saldo real. */
+  estimatedBalanceCents: number;
+  status: FinancialStatus;
+};
 
 export type EarningsSummary = {
   periodLabel: string;
-  /** Hipótese de comissão da plataforma (10%), ainda não validada. */
-  feeRate: number;
-  grossCents: number;
-  feeCents: number;
-  netCents: number;
-  items: Array<{
-    id: string;
-    date: string;
-    studentName: string;
-    subject: string;
-    grossCents: number;
-    feeCents: number;
-    netCents: number;
-    status: EarningStatus;
-  }>;
+  /** Comissão aplicada, em basis points (1500 = 15%). */
+  commissionBps: number;
+  /** Somente aulas com pagamento confirmado. */
+  confirmed: { grossCents: number; commissionCents: number; teacherShareCents: number; gatewayFeesCents: number | null; estimatedBalanceCents: number };
+  /** Reservas aguardando pagamento (ainda não recebidas). */
+  awaitingPaymentCents: number;
+  items: TeacherEarning[];
+};
+
+/** Comissão e programa de incentivos do professor (regras ainda não aprovadas). */
+export type CommissionProgram = {
+  standardBps: number;
+  currentBps: number;
+  activeBenefits: Array<{ id: string; title: string; description: string }>;
+  /** Economia acumulada com benefícios (0 enquanto não houver benefício aprovado). */
+  savingsCents: number;
+  /** Metas e conquistas são exemplos com dados da demonstração. */
+  illustrative: boolean;
+  goals: Array<{ id: string; title: string; current: number; target: number; unit: string; reward: string }>;
+  achievements: Array<{ id: string; title: string; date: string | null; achieved: boolean }>;
+};
+
+export type ReferralProgram = {
+  /** Código ilustrativo: não funciona sem backend. */
+  code: string;
+  /** Link público: null até existir backend que valide indicações. */
+  shareUrl: string | null;
+  invited: number;
+  qualified: number;
+  goals: Array<{ id: string; title: string; current: number; target: number; reward: string }>;
+  rewardsEarned: Array<{ id: string; title: string }>;
+  rewardsPending: Array<{ id: string; title: string; reason: string }>;
+  illustrative: boolean;
 };
 
 export type HealthResponse = { status: "ok"; service: string; version: string };

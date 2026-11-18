@@ -6,7 +6,9 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "soft
 export type ButtonSize = "sm" | "md" | "lg";
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-fg shadow-card hover:bg-primary-hover",
+  // Gradiente moderado do mockup aprovado: petróleo → esmeralda (texto branco ≥ 4,67:1 em todo o gradiente).
+  primary:
+    "bg-primary bg-gradient-to-r from-petroleo to-esmeralda text-primary-fg shadow-card hover:from-petroleo-dark hover:to-[#0e6e5c]",
   secondary: "border border-line-strong bg-surface text-fg-strong hover:border-link hover:text-link",
   ghost: "text-fg-strong hover:bg-surface-muted",
   soft: "bg-primary-soft text-link hover:bg-soft",

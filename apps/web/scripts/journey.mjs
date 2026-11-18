@@ -217,12 +217,27 @@ async function bookFirstSlot(tag, teacherId = "t-marina") {
   await until(`location.pathname.endsWith("/agendar") && ${textHas("Selecionado:")}`, "horário pré-selecionado");
   if (tag) await shot(`5-${tag}-horario`);
   await clickText("button", "Continuar");
-  await until(`location.pathname === "/aluno/agendamento/resumo" && ${textHas("Confirmar agendamento")}`, "resumo");
+  await until(`location.pathname === "/aluno/agendamento/resumo" && ${textHas("Reservar e pagar com Pix")}`, "resumo");
   if (tag) await shot(`5-${tag}-resumo`);
-  await clickText("button", "Confirmar agendamento");
-  await until(`location.pathname === "/aluno/aulas" && ${textHas("Nova reserva")}`, "aula em Minhas aulas");
-  await until(`__t.toasts().some((t) => t.includes("Aula reservada"))`, "feedback de sucesso");
+  await clickText("button", "Reservar e pagar com Pix");
+  await payCurrentCheckout(tag);
+  // Lista de Minhas aulas para as verificações seguintes.
+  await b.go(base + "/aluno/aulas?view=lista", 1200);
+  await until(`document.querySelectorAll("main article").length > 0`, "lista de aulas");
   return slotId;
+}
+
+/** No checkout: gera a cobrança e simula a confirmação (somente demonstração). */
+async function payCurrentCheckout(tag) {
+  await until(`location.pathname.startsWith("/aluno/pagamento/") && ${textHas("Gerar cobrança Pix")}`, "checkout: reserva solicitada");
+  if (tag) await shot(`6-${tag}-checkout-solicitada`);
+  await clickText("button", "Gerar cobrança Pix");
+  await until(`${textHas("QR Code simulado")} && ${textHas("Simular confirmação de pagamento")}`, "checkout: aguardando pagamento");
+  if (tag) await shot(`6-${tag}-checkout-pix`);
+  await clickText("button", "Simular confirmação de pagamento");
+  await until(`${textHas("Pagamento confirmado (simulação)")}`, "pagamento confirmado (simulado)", 8000);
+  await until(`__t.toasts().some((t) => t.includes("Pagamento confirmado"))`, "feedback de sucesso");
+  if (tag) await shot(`6-${tag}-checkout-confirmado`);
 }
 
 let bookedSlot;
@@ -250,17 +265,17 @@ async function booking() {
     await run(`document.querySelector('a[href*="agendar?horario="]').click()`);
     await until(textHas("Selecionado:"), "horário selecionado");
     await clickText("button", "Continuar");
-    await until(textHas("Confirmar agendamento"), "resumo");
+    await until(textHas("Reservar e pagar com Pix"), "resumo");
     // Simula outra aba reservando o mesmo horário antes da confirmação.
     await b.evaluate(`__edusearchDemo.dataSource.createBooking({ teacherId: "t-marina", slotId: ${JSON.stringify(slot)}, subject: "matematica" })`);
-    await clickText("button", "Confirmar agendamento");
+    await clickText("button", "Reservar e pagar com Pix");
     await until(textHas("acabou de ser reservado"), "mensagem de conflito");
     if (!(await run(`__t.has("a", "Escolher outro horário")`))) throw new Error("sem atalho para escolher outro horário");
-    if (!(await run(`[...document.querySelectorAll("main button")].find((x) => x.textContent.includes("Confirmar agendamento")).disabled`)))
+    if (!(await run(`[...document.querySelectorAll("main button")].find((x) => x.textContent.includes("Reservar e pagar com Pix")).disabled`)))
       throw new Error("botão de confirmar deveria ficar desabilitado após conflito");
     await shot("5-conflito");
     // Limpa a reserva simulada para não interferir nas próximas etapas.
-    await b.evaluate(`__edusearchDemo.dataSource.listStudentLessons().then((ls) => { const l = ls.find((x) => x.status === "scheduled" && x.teacherId === "t-marina" && x.start === ${JSON.stringify(slot)}.slice(9)); return l && __edusearchDemo.dataSource.cancelLesson(l.id); })`);
+    await b.evaluate(`__edusearchDemo.dataSource.listStudentLessons().then((ls) => { const l = ls.find((x) => ["scheduled", "pending_payment"].includes(x.status) && x.teacherId === "t-marina" && x.start === ${JSON.stringify(slot)}.slice(9)); return l && __edusearchDemo.dataSource.cancelLesson(l.id); })`);
   });
 
   await step("Etapa 5 — aluno não pode ter duas aulas no mesmo horário", async () => {
@@ -281,7 +296,7 @@ async function booking() {
 
 async function lessons() {
   await step("Etapa 6 — detalhes e cancelamento liberam o horário", async () => {
-    await b.go(base + "/aluno/aulas", 1200);
+    await b.go(base + "/aluno/aulas?view=lista", 1200);
     await until(`document.querySelectorAll("main article").length > 0`, "lista de aulas");
     // Abre os detalhes da aula reservada (a de horário = bookedSlot).
     const start = slotStart(bookedSlot);
@@ -337,13 +352,14 @@ async function teacherSync() {
     await clickText("[role=menuitem]", "Ver como aluno (demo)");
     await until(`location.pathname === "/aluno"`, "volta ao aluno");
     await clickText("nav a", "Minhas aulas");
+    await clickText("[role=radio]", "Lista");
     await clickText("[role=tab]", "Canceladas");
     await until(`[...document.querySelectorAll("main article time")].some((t) => t.getAttribute("datetime") === ${JSON.stringify(start)})`, "aula cancelada visível para o aluno");
   });
 
   await step("Persistência — reservas sobrevivem ao recarregar (sessionStorage)", async () => {
     const before = await b.evaluate(`__edusearchDemo.dataSource.listStudentLessons().then((l) => l.length)`);
-    await b.go(base + "/aluno/aulas", 1200);
+    await b.go(base + "/aluno/aulas?view=lista", 1200);
     const after = await b.evaluate(`__edusearchDemo.dataSource.listStudentLessons().then((l) => l.length)`);
     if (before !== after) throw new Error(`perdeu dados ao recarregar (${before} → ${after})`);
   });
@@ -391,6 +407,182 @@ async function otherTeachers() {
   });
 }
 
+const ds = "__edusearchDemo.dataSource";
+const asStudent = `sessionStorage.setItem('edusearch-demo-session', JSON.stringify({ role: 'student', name: 'Ana' }))`;
+const asTeacher = `sessionStorage.setItem('edusearch-demo-session', JSON.stringify({ role: 'teacher', name: 'Marina', teacherId: 't-marina' }))`;
+
+/** Solicita uma reserva com a Marina pela camada de dados (sem pagar) e devolve { lesson, slot }. */
+const requestBooking = (index = 0) =>
+  b.evaluate(`(async () => {
+    const slots = await ${ds}.listTeacherSlots("t-marina");
+    const lesson = await ${ds}.createBooking({ teacherId: "t-marina", slotId: slots[${index}].id, subject: "matematica" });
+    return { lesson, slot: slots[${index}] };
+  })()`);
+
+async function checkoutStates() {
+  let paidLessonId;
+  await step("Checkout — reserva solicitada → aguardando pagamento (placeholders seguros)", async () => {
+    await b.go(base + "/", 300);
+    await b.evaluate(`sessionStorage.removeItem("edusearch-demo-data"); ${asStudent}`);
+    await b.go(base + "/aluno", 900);
+    const { lesson } = await requestBooking(0);
+    paidLessonId = lesson.id;
+    if (lesson.status !== "pending_payment") throw new Error(`reserva deveria nascer aguardando pagamento, veio ${lesson.status}`);
+    await b.go(base + `/aluno/pagamento/${lesson.id}`, 1200);
+    await until(`${textHas("Resumo da reserva")} && ${textHas("Gerar cobrança Pix")} && ${textHas("reserva está solicitada")}`, "reserva solicitada");
+    await clickText("button", "Gerar cobrança Pix");
+    await until(`${textHas("Aguardando pagamento (simulado)")} && ${textHas("QR Code simulado")} && ${textHas("Expira em")}`, "aguardando pagamento");
+    const copyDisabled = await run(`[...document.querySelectorAll("main button")].find((x) => x.textContent.trim() === "Copiar").disabled`);
+    if (!copyDisabled) throw new Error("copiar código Pix deveria estar desabilitado sem código real");
+    if (await run(`!!document.querySelector('main img[alt*="QR"]')`)) throw new Error("não deveria haver imagem de QR Code na demonstração");
+    // Idempotência: criar a cobrança de novo devolve a mesma
+    const again = await b.evaluate(`Promise.all([${ds}.getCheckout(${JSON.stringify(lesson.id)}), ${ds}.createCheckout(${JSON.stringify(lesson.id)})]).then(([a, c]) => a.id === c.id)`);
+    if (!again) throw new Error("criar a cobrança duas vezes gerou cobranças diferentes");
+  });
+
+  await step("Checkout — falha simulada e nova cobrança", async () => {
+    await clickText("button", "Simular falha");
+    await until(`${textHas("Falha no pagamento (simulado)")} && ${textHas("Gerar nova cobrança")}`, "estado de falha");
+    await clickText("button", "Gerar nova cobrança");
+    await until(`${textHas("Aguardando pagamento (simulado)")}`, "nova cobrança aguardando pagamento");
+  });
+
+  await step("Checkout — confirmação simulada, processamento e bloqueio de confirmação repetida", async () => {
+    await clickText("button", "Simular confirmação de pagamento");
+    await until(`${textHas("Pagamento em processamento")}`, "em processamento", 3000).catch(() => {}); // transitório
+    await until(`${textHas("Pagamento confirmado (simulação)")} && ${textHas("Ver no calendário")}`, "confirmado", 8000);
+    await shot("6-checkout-confirmado");
+    const dup = await b.evaluate(`(async () => {
+      const c = await ${ds}.getCheckout(${JSON.stringify(paidLessonId)});
+      try { await ${ds}.simulatePayment(c.id, "confirmed"); return "CONFIRMOU DE NOVO"; } catch (e) { return e.message; }
+    })()`);
+    if (!/já foi confirmado/.test(dup)) throw new Error(`confirmação repetida deveria ser recusada: ${dup}`);
+    const lesson = await b.evaluate(`${ds}.getLesson(${JSON.stringify(paidLessonId)})`);
+    if (lesson.status !== "scheduled" || lesson.payment?.status !== "confirmed") throw new Error(`aula deveria estar confirmada: ${lesson.status}/${lesson.payment?.status}`);
+  });
+
+  await step("Checkout — cobrança expirada cancela a reserva e libera o horário", async () => {
+    const { lesson, slot } = await requestBooking(1);
+    await b.go(base + `/aluno/pagamento/${lesson.id}`, 1200);
+    await clickText("button", "Gerar cobrança Pix");
+    await until(textHas("Simular expiração"), "cobrança aberta");
+    await clickText("button", "Simular expiração");
+    await until(`${textHas("Cobrança expirada")} && ${textHas("horário voltou a ficar disponível")}`, "expirada");
+    await shot("6-checkout-expirado");
+    const state = await b.evaluate(`Promise.all([${ds}.getLesson(${JSON.stringify(lesson.id)}), ${ds}.listTeacherSlots("t-marina")]).then(([l, s]) => ({ status: l.status, free: s.some((x) => x.id === ${JSON.stringify(slot.id)}) }))`);
+    if (state.status !== "cancelled" || !state.free) throw new Error(`expiração incoerente: ${JSON.stringify(state)}`);
+  });
+
+  await step("Calendário — aula confirmada, mudança de semana e mês, teclado", async () => {
+    await clickText("a", "Minhas aulas");
+    await until(`location.pathname === "/aluno/aulas" && document.querySelectorAll("main ol > li").length === 7`, "calendário semanal");
+    const before = await run(`document.querySelector('main [aria-live="polite"]').textContent`);
+    await clickText("button[aria-label]", "Próxima semana");
+    await until(`document.querySelector('main [aria-live="polite"]').textContent !== ${JSON.stringify(before)}`, "semana mudou");
+    await clickText("button", "Voltar para esta semana");
+    await clickText("[role=radio]", "Mês");
+    await until(`!!document.querySelector('[role="group"][aria-label^="Dias de"]')`, "grade do mês");
+    await shot("7-calendario-mes");
+    // Teclado: seta para a direita seleciona o dia seguinte
+    const sel = await run(`document.querySelector('[data-day][aria-pressed="true"]').dataset.day`);
+    await run(`document.querySelector('[data-day][aria-pressed="true"]').focus()`);
+    await b.press("ArrowRight");
+    await until(`document.activeElement?.dataset.day && document.activeElement.dataset.day !== ${JSON.stringify(sel)} && document.activeElement.getAttribute("aria-pressed") === "true"`, "seta muda o dia");
+    await b.press("PageDown");
+    await until(`document.activeElement?.getAttribute("aria-pressed") === "true" && document.activeElement.dataset.day.slice(0, 7) !== ${JSON.stringify(sel)}.slice(0, 7)`, "PageDown muda o mês");
+    // Abre os detalhes da aula confirmada: o link ?aula= foca o dia da aula
+    await b.go(base + `/aluno/aulas?aula=${paidLessonId}`, 1400);
+    await clickText("[role=radio]", "Semana");
+    await until(`!!document.querySelector('main button[data-lesson-id="${paidLessonId}"]')`, "evento confirmado no calendário");
+    if (!(await run(`document.querySelector('main button[data-lesson-id="${paidLessonId}"]').textContent.includes("Confirmada")`))) throw new Error("evento confirmado sem o status no nome acessível");
+    await run(`document.querySelector('main button[data-lesson-id="${paidLessonId}"]').click()`);
+    await until(`!!document.querySelector("dialog[open]") && ${textHas("Abrir aula online")} && ${textHas("Pagamento confirmado (simulado)")}`, "detalhes pelo calendário");
+    await shot("7-calendario-detalhes");
+  });
+
+  await step("Aula online — sem link Meet, sem link inventado, estados e Google Agenda simulado", async () => {
+    await b.go(base + `/aluno/aulas/${paidLessonId}`, 1400);
+    await until(`${textHas("EduSearch · Aula online")} && ${textHas("Google Meet")} && ${textHas("Link indisponível")}`, "aula online sem link");
+    if (await run(`[...document.querySelectorAll("a[href]")].some((a) => a.href.includes("meet.google.com"))`)) throw new Error("não pode haver link do Meet inventado");
+    if (await run(`[...document.querySelectorAll("main a, main button")].some((x) => x.textContent.includes("Entrar no Google Meet"))`)) throw new Error("botão de entrada não deveria aparecer sem URL confiável");
+    await shot("8-aula-online");
+    for (const [label, badge] of [["Pronta", "Pronta para iniciar"], ["Em andamento", "Em andamento"], ["Finalizada", "Finalizada"], ["Cancelada", "Cancelada"]]) {
+      await clickText("[role=radio]", label);
+      await until(textHas(`${badge} (pré-visualização)`), `estado ${badge}`);
+    }
+    await clickText("[role=radio]", "Agendada");
+    const addDisabled = await run(`[...document.querySelectorAll("main button")].find((x) => x.textContent.includes("Adicionar ao Google Agenda")).disabled`);
+    if (!addDisabled) throw new Error("Adicionar ao Google Agenda deveria exigir conexão");
+    await clickText("button", "Simular conexão");
+    await until(textHas("Conectado (simulação)"), "conexão simulada");
+    await clickText("button", "Adicionar ao Google Agenda");
+    await until(textHas("Aula adicionada ao Google Agenda (simulação)"), "sincronização simulada", 6000);
+    // Exportação .ics local válida (gerada pelo módulo do app, sem rede)
+    const ics = await b.evaluate(`import("/src/lib/ics.ts").then(async (m) => m.buildLessonIcs(await ${ds}.getLesson(${JSON.stringify(paidLessonId)}), "student"))`);
+    for (const line of ["BEGIN:VCALENDAR", "BEGIN:VEVENT", "DTSTART:", "DTEND:", "STATUS:CONFIRMED", "END:VCALENDAR"]) if (!ics.includes(line)) throw new Error(`.ics sem ${line}`);
+    if (ics.includes("meet.google.com")) throw new Error(".ics não pode conter link de reunião");
+  });
+
+  await step("Professor — recebimento com comissão de 15% e reserva pendente não recebida", async () => {
+    const pending = await requestBooking(2);
+    await b.evaluate(asTeacher);
+    await b.go(base + "/professor/recebimentos", 1500);
+    await until(`${textHas("Comissão EduSearch (15%)")} && ${textHas("Detalhamento por aula")}`, "recebimentos 15%");
+    const e = await b.evaluate(`${ds}.getEarnings()`);
+    if (e.commissionBps !== 1500) throw new Error(`comissão deveria ser 1500 bps, veio ${e.commissionBps}`);
+    for (const i of e.items) {
+      if (i.commissionCents !== Math.floor((i.grossCents * 1500 + 5000) / 10000) || i.commissionCents + i.teacherShareCents !== i.grossCents)
+        throw new Error(`comissão inconsistente: ${JSON.stringify(i)}`);
+    }
+    const paid = e.items.find((i) => i.lessonId === paidLessonId);
+    if (!paid || paid.status !== "confirmed" || paid.commissionCents !== 1200 || paid.teacherShareCents !== 6800) throw new Error(`aula paga (R$ 80) deveria render 12,00/68,00: ${JSON.stringify(paid)}`);
+    const pend = e.items.find((i) => i.lessonId === pending.lesson.id);
+    if (!pend || pend.status !== "awaiting_payment" || pend.estimatedBalanceCents !== 0) throw new Error(`reserva pendente não pode contar como recebida: ${JSON.stringify(pend)}`);
+    if (e.confirmed.grossCents !== e.items.filter((i) => i.status === "confirmed").reduce((a, i) => a + i.grossCents, 0)) throw new Error("total confirmado inclui itens não pagos");
+    if (await run(`/Repassad/.test(__t.text())`)) throw new Error("não pode haver repasse apresentado como concluído");
+    await shot("9-recebimentos");
+  });
+
+  await step("Professor — comissão e incentivos (15%, sem faixas aprovadas)", async () => {
+    await clickText("a", "Comissão e benefícios");
+    await until(`${textHas("Comissão padrão")} && ${textHas("Comissão atual")} && ${textHas("nenhuma faixa foi aprovada")}`, "comissão");
+    const p = await b.evaluate(`${ds}.getCommissionProgram()`);
+    if (p.standardBps !== 1500 || p.currentBps !== 1500 || p.activeBenefits.length || p.savingsCents !== 0) throw new Error(`programa incoerente: ${JSON.stringify(p)}`);
+    for (const t of ["DEMO-MARINA", "Link de indicação disponível após a integração", "Nenhuma recompensa liberada", "Cadastros não geram recompensa", "Exemplo com dados da demonstração"])
+      if (!(await run(textHas(t)))) throw new Error(`benefícios sem «${t}»`);
+    const copyLink = await run(`[...document.querySelectorAll("main button")].find((x) => x.textContent.includes("Copiar link")).disabled`);
+    if (!copyLink) throw new Error("link de indicação não pode ser operacional sem backend");
+    await shot("9-beneficios");
+  });
+
+  await step("Professor — bloqueio de dia remove horários e mostra conflito", async () => {
+    const lesson = await b.evaluate(`${ds}.getLesson(${JSON.stringify(paidLessonId)})`);
+    const day = await b.evaluate(`import("/src/lib/calendar.ts").then((m) => m.dateKey(${JSON.stringify(lesson.start)}))`);
+    await b.evaluate(`${ds}.setDateBlocked(${JSON.stringify(day)}, true)`);
+    const slotsThatDay = await b.evaluate(`import("/src/lib/calendar.ts").then(async (m) => (await ${ds}.listTeacherSlots("t-marina")).filter((s) => m.dateKey(s.start) === ${JSON.stringify(day)}).length)`);
+    if (slotsThatDay !== 0) throw new Error("dia bloqueado ainda oferece horários");
+    await b.go(base + "/professor/agenda", 1500);
+    for (let i = 0; i < 2 && !(await run(`__t.text().includes("Dia bloqueado")`)); i++) await clickText("button[aria-label]", "Próxima semana");
+    await until(`${textHas("Dia bloqueado")} && [...document.querySelectorAll("main button[data-lesson-id]")].some((x) => x.textContent.includes("Conflito") && /Conflito:/.test(document.getElementById(x.getAttribute("aria-describedby"))?.textContent ?? ""))`, "conflito visível");
+    await shot("10-agenda-professor-conflito");
+    await clickText("button", "Desbloquear dia");
+    await until(`!${textHas("Dia bloqueado")}`, "desbloqueio");
+  });
+
+  await step("Coerência — cancelar aula paga atualiza aluno, professor e financeiro", async () => {
+    await b.evaluate(asStudent);
+    const cancelled = await b.evaluate(`${ds}.cancelLesson(${JSON.stringify(paidLessonId)})`);
+    if (cancelled.status !== "cancelled" || cancelled.payment?.status !== "confirmed") throw new Error("cancelamento deveria manter o pagamento registrado (sem reembolso real)");
+    await b.evaluate(asTeacher);
+    const e = await b.evaluate(`${ds}.getEarnings()`);
+    const item = e.items.find((i) => i.lessonId === paidLessonId);
+    if (!item || item.status !== "cancelled_after_payment" || item.estimatedBalanceCents !== 0) throw new Error(`financeiro incoerente após cancelamento: ${JSON.stringify(item)}`);
+    const teacherLesson = (await b.evaluate(`${ds}.listTeacherLessons()`)).find((l) => l.id === paidLessonId);
+    if (teacherLesson.status !== "cancelled") throw new Error("aula cancelada aparece ativa para o professor");
+    await b.evaluate(asStudent);
+  });
+}
+
 /** Critério de aceite: entrar, receber recomendação, reservar e ver a aula. */
 async function essentialJourney() {
   await access();
@@ -409,7 +601,7 @@ async function essentialJourney() {
 
 let failed = false;
 const plans = [
-  { width: 1440, dark: false, run: async () => { await access(); await searchDesktop(); await matching(); await profile(); await booking(); await lessons(); await teacherSync(); await otherTeachers(); } },
+  { width: 1440, dark: false, run: async () => { await access(); await searchDesktop(); await matching(); await profile(); await booking(); await lessons(); await teacherSync(); await otherTeachers(); await checkoutStates(); } },
   { width: 768, dark: false, run: essentialJourney },
   { width: 375, dark: false, run: async () => { await essentialJourney(); await searchMobile(); } },
   { width: 375, dark: true, run: essentialJourney },

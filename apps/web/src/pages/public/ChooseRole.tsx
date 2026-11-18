@@ -43,7 +43,7 @@ export default function ChooseRole() {
 
       <fieldset className="mt-8">
         <legend className="sr-only">Perfil de acesso</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {ROLES.map((r) => {
             const selected = role === r.value;
             return (

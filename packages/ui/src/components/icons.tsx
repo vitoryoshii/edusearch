@@ -236,3 +236,61 @@ export const EyeOffIcon = make(
     <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
   </>,
 );
+export const CopyIcon = make(
+  <>
+    <rect x="8" y="8" width="12" height="12" rx="2" />
+    <path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8" />
+  </>,
+);
+export const QrCodeIcon = make(
+  <>
+    <rect x="4" y="4" width="6" height="6" rx="1" />
+    <rect x="14" y="4" width="6" height="6" rx="1" />
+    <rect x="4" y="14" width="6" height="6" rx="1" />
+    <path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2" />
+  </>,
+);
+export const MicIcon = make(
+  <>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
+  </>,
+);
+export const MicOffIcon = make(
+  <>
+    <path d="M15 9.5V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 4.9 2.3" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 10.8 4.8M18.5 11c0 .8-.1 1.5-.4 2.2M12 17.5V21M3 3l18 18" />
+  </>,
+);
+export const CameraIcon = make(
+  <>
+    <rect x="3" y="6.5" width="13" height="11" rx="2" />
+    <path d="m16 10.5 5-3v9l-5-3" />
+  </>,
+);
+export const CameraOffIcon = make(
+  <>
+    <path d="M10 6.5h4a2 2 0 0 1 2 2v3.5l5-3v9l-1.5-.9M16 16.5a2 2 0 0 1-2 1H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 1.6-2" />
+    <path d="M3 3l18 18" />
+  </>,
+);
+export const DownloadIcon = make(<path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" />);
+export const GiftIcon = make(
+  <>
+    <rect x="3.5" y="8" width="17" height="4" rx="1" />
+    <path d="M5 12v8h14v-8M12 8v12M12 8S10.5 3.5 8 4.5c-2 .8-1 3.5 4 3.5ZM12 8s1.5-4.5 4-3.5c2 .8 1 3.5-4 3.5Z" />
+  </>,
+);
+export const TrophyIcon = make(
+  <>
+    <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />
+    <path d="M8 6H4.5v1.5A3.5 3.5 0 0 0 8 11M16 6h3.5v1.5A3.5 3.5 0 0 1 16 11M12 13v4M8.5 20h7M9.5 17h5v3h-5z" />
+  </>,
+);
+export const BanIcon = make(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m5.6 5.6 12.8 12.8" />
+  </>,
+);
+export const RepeatIcon = make(<path d="M17 3l3 3-3 3M20 6H8a4 4 0 0 0-4 4v1M7 21l-3-3 3-3M4 18h12a4 4 0 0 0 4-4v-1" />);

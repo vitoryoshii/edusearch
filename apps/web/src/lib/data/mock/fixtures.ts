@@ -7,9 +7,9 @@
  */
 import type {
   DayPeriod,
-  EarningsSummary,
   LearningProgress,
   Lesson,
+  Level,
   Specialty,
   Teacher,
   TeacherProfile,
@@ -176,9 +176,33 @@ function lesson(
     end: iso(plusMinutes(start, teacher.lessonMinutes)),
     status,
     priceCents: teacher.priceCents,
-    meetingUrl: null,
+    // Nunca há link do Meet na demonstração: ele só existirá quando a API criar a reunião.
+    meeting: { provider: "google_meet", joinUrl: null, status: status === "scheduled" || status === "completed" ? "awaiting_link" : "not_connected" },
+    // Aulas confirmadas e concluídas do seed já têm pagamento confirmado (simulado).
+    payment: status === "scheduled" || status === "completed" ? { checkoutId: `ck-${id}`, status: "confirmed" } : null,
+    calendarSync: "not_synced",
   };
 }
+
+/** Contexto fictício dos alunos, exibido ao professor nos detalhes da aula. */
+export const STUDENT_PROFILES: Record<string, { level: Level; goal: string }> = {
+  [DEMO_STUDENT_ID]: { level: "pre-vestibular", goal: "Preparação para o ENEM, com foco em Matemática e Redação." },
+  "s-brunot": { level: "medio", goal: "Recuperar a base de geometria." },
+  "s-carlam": { level: "medio", goal: "Entender cinemática para a prova bimestral." },
+  "s-diegor": { level: "pre-vestibular", goal: "Treinar probabilidade em questões do ENEM." },
+  "s-eduardal": { level: "graduacao", goal: "Revisar estatística para a disciplina da faculdade." },
+  "s-gabrielp": { level: "pre-vestibular", goal: "Ampliar repertório para a redação." },
+  "s-igors": { level: "medio", goal: "Revisar genética antes do vestibular." },
+};
+
+/** Materiais fictícios (sem arquivos reais) para algumas aulas. */
+const MATERIALS: Record<string, Lesson["materials"]> = {
+  "l-1": [
+    { id: "m-1", title: "Lista de exercícios — funções (demonstração)", kind: "lista" },
+    { id: "m-2", title: "Resumo: gráficos de 1º e 2º grau (demonstração)", kind: "resumo" },
+  ],
+  "l-3": [{ id: "m-3", title: "Lista de porcentagem e juros (demonstração)", kind: "lista" }],
+};
 
 /**
  * Uma única lista de aulas para toda a demonstração.
@@ -210,7 +234,12 @@ export function seedLessons(): Lesson[] {
     lesson("l-14", rafael, other("Gabriel P."), "redacao", at(4, 19), "scheduled", "Repertório sociocultural"),
     lesson("l-15", rafael, other("Júlia N."), "redacao", at(-4, 20), "completed"),
     lesson("l-16", teachers[4], other("Igor S."), "biologia", at(3, 8), "scheduled", "Genética"),
-  ];
+  ].map((l) => ({
+    ...l,
+    studentLevel: STUDENT_PROFILES[l.studentId]?.level,
+    studentGoal: STUDENT_PROFILES[l.studentId]?.goal,
+    materials: MATERIALS[l.id],
+  }));
 }
 
 const [marina, rafael] = teachers;
@@ -275,24 +304,3 @@ export function availabilityOf(t: Teacher): WeeklyAvailability {
   }));
 }
 
-export function buildEarnings(lessons: Lesson[], feeRate = 0.1): EarningsSummary {
-  const items = lessons
-    .filter((l) => l.status !== "cancelled")
-    .sort((a, b) => b.start.localeCompare(a.start))
-    .map((l) => {
-      const feeCents = Math.round(l.priceCents * feeRate);
-      return {
-        id: l.id,
-        date: l.start,
-        studentName: l.studentName,
-        subject: l.subject,
-        grossCents: l.priceCents,
-        feeCents,
-        netCents: l.priceCents - feeCents,
-        status: l.status === "completed" ? ("transferred" as const) : ("expected" as const),
-      };
-    });
-  const sum = (k: "grossCents" | "feeCents" | "netCents") => items.reduce((a, i) => a + i[k], 0);
-  const month = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(new Date());
-  return { periodLabel: month.charAt(0).toUpperCase() + month.slice(1), feeRate, grossCents: sum("grossCents"), feeCents: sum("feeCents"), netCents: sum("netCents"), items };
-}
