@@ -493,8 +493,9 @@ async function checkoutStates() {
     // Abre os detalhes da aula confirmada: o link ?aula= foca o dia da aula
     await b.go(base + `/aluno/aulas?aula=${paidLessonId}`, 1400);
     await clickText("[role=radio]", "Semana");
-    await until(`[...document.querySelectorAll("main button[aria-label]")].some((x) => /Confirmada\. Abrir detalhes/.test(x.getAttribute("aria-label")))`, "evento confirmado");
-    await run(`[...document.querySelectorAll("main button[aria-label]")].find((x) => /Confirmada\. Abrir detalhes/.test(x.getAttribute("aria-label"))).click()`);
+    await until(`!!document.querySelector('main button[data-lesson-id="${paidLessonId}"]')`, "evento confirmado no calendário");
+    if (!(await run(`document.querySelector('main button[data-lesson-id="${paidLessonId}"]').textContent.includes("Confirmada")`))) throw new Error("evento confirmado sem o status no nome acessível");
+    await run(`document.querySelector('main button[data-lesson-id="${paidLessonId}"]').click()`);
     await until(`!!document.querySelector("dialog[open]") && ${textHas("Abrir aula online")} && ${textHas("Pagamento confirmado (simulado)")}`, "detalhes pelo calendário");
     await shot("7-calendario-detalhes");
   });
@@ -562,7 +563,7 @@ async function checkoutStates() {
     if (slotsThatDay !== 0) throw new Error("dia bloqueado ainda oferece horários");
     await b.go(base + "/professor/agenda", 1500);
     for (let i = 0; i < 2 && !(await run(`__t.text().includes("Dia bloqueado")`)); i++) await clickText("button[aria-label]", "Próxima semana");
-    await until(`${textHas("Dia bloqueado")} && [...document.querySelectorAll("main button[aria-label]")].some((x) => x.getAttribute("aria-label").includes("conflito"))`, "conflito visível");
+    await until(`${textHas("Dia bloqueado")} && [...document.querySelectorAll("main button[data-lesson-id]")].some((x) => x.textContent.includes("Conflito") && /Conflito:/.test(document.getElementById(x.getAttribute("aria-describedby"))?.textContent ?? ""))`, "conflito visível");
     await shot("10-agenda-professor-conflito");
     await clickText("button", "Desbloquear dia");
     await until(`!${textHas("Dia bloqueado")}`, "desbloqueio");

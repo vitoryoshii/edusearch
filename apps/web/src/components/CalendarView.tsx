@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { AlertIcon, Badge, Button, ChevronLeftIcon, ChevronRightIcon, IconButton, VideoIcon, cn } from "@edusearch/ui";
 import type { Lesson, TimeSlot } from "../lib/api/types";
 import {
@@ -37,7 +37,15 @@ const BAR: Record<Lesson["status"], string> = {
   cancelled: "border-line-strong",
 };
 
-/** Um evento (aula) no calendário. Abre os detalhes ao ser acionado. */
+/**
+ * Um evento (aula) no calendário. Abre os detalhes ao ser acionado.
+ *
+ * Acessibilidade: o nome acessível vem do conteúdo visível (horário,
+ * disciplina · pessoa, status, conflito, "Online"), para coincidir com o que
+ * a pessoa vê (WCAG 2.5.3). O status "Confirmada", que não tem selo visível
+ * para reduzir a densidade, entra como texto apenas para leitores de tela.
+ * O motivo do conflito e a ação ficam na descrição (aria-describedby).
+ */
 function EventItem({
   lesson,
   perspective,
@@ -51,11 +59,14 @@ function EventItem({
 }) {
   const person = perspective === "student" ? lesson.teacherName : lesson.studentName;
   const cancelled = lesson.status === "cancelled";
+  const descId = useId();
   return (
+    <>
     <button
       type="button"
       onClick={() => onSelect(lesson)}
-      aria-label={`${subjectName(lesson.subject)}, ${formatTimeRange(lesson.start, lesson.end)}, com ${person}, ${STATUS_LABELS[lesson.status]}${conflict ? `, conflito: ${conflict}` : ""}. Abrir detalhes`}
+      data-lesson-id={lesson.id}
+      aria-describedby={descId}
       className={cn(
         "flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-control border-l-4 bg-surface-muted px-3 py-2.5 text-left transition-colors hover:bg-primary-soft",
         BAR[lesson.status],
@@ -71,6 +82,7 @@ function EventItem({
         </span>
       </span>
       <span className="flex flex-wrap items-center gap-1.5">
+        {lesson.status === "scheduled" && <span className="sr-only">{STATUS_LABELS[lesson.status]}</span>}
         {lesson.status !== "scheduled" && (
           <Badge tone={lesson.status === "pending_payment" ? "warning" : lesson.status === "completed" ? "success" : "neutral"}>
             {STATUS_LABELS[lesson.status]}
@@ -88,6 +100,10 @@ function EventItem({
         )}
       </span>
     </button>
+    <span id={descId} className="sr-only">
+      {conflict ? `Conflito: ${conflict}. ` : ""}Abre os detalhes da aula.
+    </span>
+    </>
   );
 }
 

@@ -165,6 +165,10 @@ async function run() {
   await b.go(base + "/aluno/aulas", 1500);
   await until(`!!document.querySelector('[role="radiogroup"]')`, "calendário");
   await axe("Calendário semanal do aluno");
+  await expect(
+    "eventos do calendário: nome vem do texto visível (sem aria-label) e há descrição",
+    `(() => { const evs = [...document.querySelectorAll("main button[data-lesson-id]")]; return evs.length > 0 && evs.every((b) => !b.hasAttribute("aria-label") && b.textContent.includes(":") && document.getElementById(b.getAttribute("aria-describedby"))?.textContent.trim()); })()`,
+  );
   // Controle segmentado: setas trocam a opção selecionada
   await focusOn(`document.querySelector('[role="radiogroup"][aria-label="Período do calendário"] [aria-checked="true"]')`);
   await b.press("ArrowRight");
@@ -189,7 +193,11 @@ async function run() {
   await until(`document.body.innerText.includes("QR Code simulado")`, "checkout");
   await axe("Checkout Pix (aguardando pagamento)");
   await expect("QR Code simulado tem nome acessível de não pagável", `!!document.querySelector('[role="img"][aria-label*="não pagável"]')`);
-  await expect("campo Pix Copia e Cola tem rótulo", `!!document.querySelector('input[readonly]')?.labels?.[0]?.textContent.includes("Pix Copia e Cola")`);
+  // Campo específico do Copia e Cola (id "pix-<cobrança>"); o rádio do método Pix também é readonly.
+  await expect(
+    "campo Pix Copia e Cola tem rótulo associado (label for = id)",
+    `(() => { const i = document.querySelector('input[id^="pix-"]'); const l = i?.labels?.[0]; return !!i && !!l && l.htmlFor === i.id && l.textContent.trim() === "Pix Copia e Cola"; })()`,
+  );
 
   await b.viewport(375, { dark: true });
   await b.go(base + `/aluno/pagamento/${pendingId}`, 1800);
