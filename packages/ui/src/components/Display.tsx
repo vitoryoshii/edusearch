@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
+import { useState } from "react";
 import { cn } from "../lib/cn";
 import { CheckIcon } from "./icons";
 
@@ -110,8 +111,10 @@ function initials(name: string) {
 }
 
 /**
- * Avatar com iniciais. Não usa fotos de pessoas: os dados de demonstração
- * são fictícios e não devem parecer perfis reais.
+ * Avatar circular. Sem `src`, mostra iniciais (padrão da demonstração, cujos
+ * perfis fictícios não usam fotos). Com `src` (ex.: foto do Google da conta
+ * real), a imagem é recortada em círculo e centralizada; se falhar ao carregar,
+ * volta às iniciais sem quebrar o layout. Não envia o Referer à origem da foto.
  */
 export function Avatar({
   name,
@@ -127,10 +130,22 @@ export function Avatar({
   /** Quando o nome já aparece ao lado, o avatar é decorativo. */
   decorative?: boolean;
 }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const tint = avatarTints[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % avatarTints.length];
   const common = cn("inline-flex shrink-0 items-center justify-center rounded-full font-semibold", avatarSizes[size], className);
-  if (src) {
-    return <img src={src} alt={decorative ? "" : name} className={cn(common, "object-cover")} />;
+  if (src && failedSrc !== src) {
+    return (
+      <img
+        src={src}
+        alt={decorative ? "" : name}
+        referrerPolicy="no-referrer"
+        decoding="async"
+        loading="lazy"
+        draggable={false}
+        onError={() => setFailedSrc(src)}
+        className={cn(common, "overflow-hidden bg-surface-muted object-cover object-center")}
+      />
+    );
   }
   return (
     <span className={cn(common, tint)} {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": name })}>
