@@ -29,6 +29,8 @@ type Ctx = {
   session: SessionInfo | null;
   /** Aviso pendente para a tela de login (ex.: sessão expirada). */
   notice: AuthFailure | null;
+  /** Saída pedida pelo usuário (não expiração): as rotas protegidas não guardam o destino. */
+  signedOutByUser: boolean;
   clearNotice: () => void;
   /** Gera (ou reaproveita) o nonce da tentativa atual e devolve o HASH para o GIS. */
   prepareNonce: () => Promise<string>;
@@ -58,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<AuthenticatedProfile | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [notice, setNotice] = useState<AuthFailure | null>(null);
+  const [signedOutByUser, setSignedOutByUser] = useState(false);
   const subscribed = useRef<SupabaseClient | null>(null);
   const signedInRef = useRef(false);
   const leavingRef = useRef(false);
@@ -157,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const { data, error } = await sb.auth.signInWithIdToken({ provider: "google", token: credential as string, nonce: rawNonce });
           if (error || !data.session) return { ok: false, failure: classifySupabaseError(error) };
           setNotice(null);
+          setSignedOutByUser(false);
           apply(data.session);
           return { ok: true };
         } catch {
@@ -176,6 +180,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     const userId = profile?.id;
     leavingRef.current = true;
+    // Antes de qualquer mudança de estado: RequireAuth da tela atual não deve gravar `next`.
+    setSignedOutByUser(true);
     try {
       const sb = await client();
       // "local": encerra a sessão deste dispositivo e revoga o refresh token dele.
@@ -199,8 +205,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearNotice = useCallback(() => setNotice(null), []);
 
   const value = useMemo(
-    () => ({ status, profile, session, notice, clearNotice, prepareNonce, signInWithGoogleCredential, signOut }),
-    [status, profile, session, notice, clearNotice, prepareNonce, signInWithGoogleCredential, signOut],
+    () => ({ status, profile, session, notice, signedOutByUser, clearNotice, prepareNonce, signInWithGoogleCredential, signOut }),
+    [status, profile, session, notice, signedOutByUser, clearNotice, prepareNonce, signInWithGoogleCredential, signOut],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -213,10 +219,12 @@ export function useAuth() {
 
 /** Protege rotas da conta REAL. A demonstração continua usando RequireRole. */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+  const { status, signedOutByUser } = useAuth();
   const location = useLocation();
   if (status === "loading") return <LoadingState label="Verificando sua sessão…" className="min-h-dvh" />;
   if (status !== "signedIn") {
+    // Saída voluntária: volta à entrada sem destino (o próximo login segue o fluxo normal).
+    if (signedOutByUser) return <Navigate to="/" replace />;
     return <Navigate to={`/?next=${encodeURIComponent(sanitizeNext(location.pathname))}`} replace />;
   }
   return <>{children}</>;
