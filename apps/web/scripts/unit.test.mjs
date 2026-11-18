@@ -207,6 +207,10 @@ describe("login Google: erros do Supabase", () => {
   test("classificação das falhas", () => {
     assert.equal(classifySupabaseError({ message: "Nonces mismatch" }), "invalid_nonce");
     assert.equal(classifySupabaseError({ message: "Bad ID token", code: "bad_jwt" }), "invalid_token");
+    // Formato atual da API (x-supabase-api-version 2024-01-01), como o AuthApiError do SDK o expõe.
+    assert.equal(classifySupabaseError({ name: "AuthApiError", code: "bad_oidc_token", message: "Bad ID token", status: 400 }), "invalid_token");
+    assert.equal(classifySupabaseError({ name: "AuthApiError", message: "Bad ID token", status: 400 }), "invalid_token");
+    assert.equal(classifySupabaseError({ name: "AuthApiError", code: "bad_oidc_token", message: "Nonces mismatch", status: 400 }), "invalid_nonce");
     assert.equal(classifySupabaseError({ message: "Signups not allowed for this instance", code: "signup_disabled" }), "not_allowed");
     assert.equal(classifySupabaseError({ message: "Error running hook URI" }), "not_allowed");
     assert.equal(classifySupabaseError({ name: "AuthRetryableFetchError", message: "Failed to fetch", status: 0 }), "network");

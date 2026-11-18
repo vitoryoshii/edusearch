@@ -30,10 +30,43 @@ const CLIENT_ID = "1234567890-edusearchci.apps.googleusercontent.com";
 
 const b = await launch();
 const failures = [];
-const check = (ok, msg) => {
-  if (!ok) failures.push(msg);
-  else console.log(`  ✓ ${msg}`);
-};
+/** Estado da tela e do servidor falso para depurar falhas — nunca inclui tokens, nonces ou chaves. */
+async function diagnose() {
+  let page;
+  try {
+    page = await b.evaluate(`(() => ({
+      caminho: location.pathname + location.search,
+      autenticacao: document.documentElement.dataset.auth ?? null,
+      falha: document.querySelector('[data-failure]')?.getAttribute('data-failure') ?? null,
+      fase: document.querySelector('[data-auth-phase]')?.getAttribute('data-auth-phase') ?? null,
+      alertas: [...document.querySelectorAll('[role=alert]')].map((e) => e.innerText.replace(/\\s+/g, ' ').trim().slice(0, 200)),
+      sessaoGravada: localStorage.getItem('edusearch-auth') !== null,
+      sessaoDemo: sessionStorage.getItem('edusearch-demo-session') !== null,
+      perfilNome: document.querySelector('[data-testid=profile-name]')?.textContent ?? null,
+      perfilEmailPresente: !!document.querySelector('[data-testid=profile-email]'),
+      ctaCadastro: !!document.querySelector('[data-testid=completion-cta]'),
+      carregando: !!document.querySelector('[role=status]'),
+    }))()`);
+  } catch (e) {
+    page = { erro: String(e.message ?? e).slice(0, 200) };
+  }
+  const last = tokenRequests.at(-1);
+  const servidor = {
+    modoToken: tokenMode,
+    trocasDeToken: tokenRequests.length,
+    ultimaTroca: last ? { provider: last.body.provider, nonceConfere: last.nonceOk, status: last.status ?? null } : null,
+  };
+  return JSON.stringify({ ...page, servidor });
+}
+async function check(ok, msg) {
+  if (ok) {
+    console.log(`  ✓ ${msg}`);
+    return;
+  }
+  const info = await diagnose();
+  failures.push(`${msg}\n      diagnóstico: ${info}`);
+  console.log(`  ✗ ${msg}\n      diagnóstico: ${info}`);
+}
 async function waitFor(expression, timeout = 8000) {
   const end = Date.now() + timeout;
   while (Date.now() < end) {
@@ -94,9 +127,11 @@ const FAKE_GIS = `(() => {
 
 const AVATAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" fill="#146A7A"/><circle cx="48" cy="38" r="18" fill="#E8F5F3"/><rect x="18" y="62" width="60" height="34" rx="17" fill="#E8F5F3"/></svg>`;
 
+const API_VERSION = [{ name: "x-supabase-api-version", value: "2024-01-01" }];
 const seen = [];
 const tokenRequests = [];
 let tokenMode = "ok"; // ok | invalid | network
+let tokenDelayMs = 0; // atraso artificial da resposta do Supabase (teste de corrida)
 let userVariant = "full"; // full | broken-photo | minimal
 let userEndpoint = "ok"; // ok | revoked
 const b64url = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
@@ -156,6 +191,7 @@ b.on(async (m) => {
         { name: "Access-Control-Allow-Origin", value: testOrigin },
         { name: "Access-Control-Allow-Headers", value: "authorization, apikey, content-type, x-client-info, x-supabase-api-version" },
         { name: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS" },
+        { name: "Access-Control-Expose-Headers", value: "x-supabase-api-version" },
         ...extra,
       ],
       body: Buffer.from(body).toString("base64"),
@@ -170,21 +206,31 @@ b.on(async (m) => {
   if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "id_token") {
     const body = JSON.parse(request.postData ?? "{}");
     const nonceOk = typeof body.nonce === "string" && createHash("sha256").update(body.nonce).digest("hex") === decode(body.id_token).nonce;
-    tokenRequests.push({ body, nonceOk });
-    if (tokenMode === "network") return b.send("Fetch.failRequest", { requestId, errorReason: "InternetDisconnected" });
-    if (tokenMode === "invalid") return reply(400, JSON.stringify({ code: 400, error_code: "bad_oidc_token", msg: "Bad ID token" }));
-    if (!nonceOk) return reply(400, JSON.stringify({ code: 400, error_code: "bad_oidc_token", msg: "Nonces mismatch" }));
-    return reply(200, JSON.stringify(makeSession()));
+    const entry = { body, nonceOk, status: null };
+    tokenRequests.push(entry);
+    if (tokenDelayMs) await sleep(tokenDelayMs);
+    if (tokenMode === "network") {
+      entry.status = "falha-de-rede";
+      return b.send("Fetch.failRequest", { requestId, errorReason: "InternetDisconnected" });
+    }
+    if (tokenMode === "invalid" || !nonceOk) {
+      entry.status = 400;
+      const message = tokenMode === "invalid" ? "Bad ID token" : "Nonces mismatch";
+      return reply(400, JSON.stringify({ code: "bad_oidc_token", message }), "application/json", API_VERSION);
+    }
+    entry.status = 200;
+    return reply(200, JSON.stringify(makeSession()), "application/json", API_VERSION);
   }
   if (url.pathname === "/auth/v1/user") {
     return userEndpoint === "revoked"
-      ? reply(401, JSON.stringify({ code: 401, error_code: "session_not_found", msg: "Session from session_id claim in JWT does not exist" }))
+      ? reply(403, JSON.stringify({ code: "session_not_found", message: "Session from session_id claim in JWT does not exist" }), "application/json", API_VERSION)
       : reply(200, JSON.stringify(makeUser()));
   }
   if (url.pathname === "/auth/v1/logout") return reply(204, "");
   return reply(404, "{}");
 });
 
+const CTA_VISIBLE = `(() => { const el = document.querySelector('[data-testid=completion-cta]'); if (!el || !el.offsetParent) return false; const t = el.innerText; return t.includes('Conclua seu cadastro') && t.includes('Concluir cadastro') && !!el.querySelector('a[href="/conta/perfil"]'); })()`;
 const failureIs = (code) => `document.querySelector('[data-failure]')?.getAttribute('data-failure') === '${code}'`;
 const text = (s) => `document.body.innerText.includes(${JSON.stringify(s)})`;
 const storageHas = (needle) =>
@@ -194,33 +240,33 @@ const storageHas = (needle) =>
 console.log(`Versão pública (${publicBase}) — login real desligado`);
 b.setStep("público /entrar");
 await b.go(publicBase + "/entrar", 1500);
-check(await b.evaluate(`document.querySelector('[data-testid=google-signin-disabled]')?.getAttribute('aria-disabled') === 'true'`), "botão do Google desabilitado");
-check(await b.evaluate(`!document.querySelector('script[src*="accounts.google.com"]')`), "GIS não é carregado sem configuração");
+await check(await b.evaluate(`document.querySelector('[data-testid=google-signin-disabled]')?.getAttribute('aria-disabled') === 'true'`), "botão do Google desabilitado");
+await check(await b.evaluate(`!document.querySelector('script[src*="accounts.google.com"]')`), "GIS não é carregado sem configuração");
 b.setStep("público /conta");
 await b.go(publicBase + "/conta", 1200);
-check(await waitFor(`location.pathname === '/entrar'`), "/conta exige login (rota protegida)");
-check(seen.length === 0, "nenhuma requisição ao Google ou ao Supabase na versão pública");
+await check(await waitFor(`location.pathname === '/entrar'`), "/conta exige login (rota protegida)");
+await check(seen.length === 0, "nenhuma requisição ao Google ou ao Supabase na versão pública");
 
 /* --------------------------- 2. Ambiente de testes --------------------------- */
 console.log(`Ambiente de testes (${testBase}) — GIS e Supabase falsos`);
 b.setStep("inicialização do GIS");
 await b.go(testBase + "/entrar", 1500);
-check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "botão oficial do GIS renderizado");
+await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "botão oficial do GIS renderizado");
 const cfg = await b.evaluate(`window.__gis.config`);
-check(cfg?.client_id === CLIENT_ID, "GIS inicializado com o Client ID público");
-check(/^[0-9a-f]{64}$/.test(cfg?.nonce ?? ""), "GIS recebe o HASH SHA-256 (hex) do nonce");
-check(cfg?.ux_mode === "popup" && cfg?.auto_select === false, "popup do Google, sem login automático");
-check((await b.evaluate(`window.__gis.inits`)) === 1, "GIS inicializado uma única vez (React StrictMode)");
-check((await b.evaluate(`document.querySelectorAll('script[src*="accounts.google.com/gsi/client"]').length`)) === 1, "script do GIS injetado uma única vez");
+await check(cfg?.client_id === CLIENT_ID, "GIS inicializado com o Client ID público");
+await check(/^[0-9a-f]{64}$/.test(cfg?.nonce ?? ""), "GIS recebe o HASH SHA-256 (hex) do nonce");
+await check(cfg?.ux_mode === "popup" && cfg?.auto_select === false, "popup do Google, sem login automático");
+await check((await b.evaluate(`window.__gis.inits`)) === 1, "GIS inicializado uma única vez (React StrictMode)");
+await check((await b.evaluate(`document.querySelectorAll('script[src*="accounts.google.com/gsi/client"]').length`)) === 1, "script do GIS injetado uma única vez");
 const opts = await b.evaluate(`window.__gis.opts`);
-check(opts?.text === "continue_with" && opts?.locale === "pt-BR" && opts?.type === "standard", "botão \"Continuar com o Google\" em pt-BR");
-check(await b.evaluate(text("Acesso real · ambiente de testes")), "sessão real identificada como ambiente de testes");
+await check(opts?.text === "continue_with" && opts?.locale === "pt-BR" && opts?.type === "standard", "botão \"Continuar com o Google\" em pt-BR");
+await check(await b.evaluate(text("Acesso real · ambiente de testes")), "sessão real identificada como ambiente de testes");
 await shot("login-google");
 
 b.setStep("login cancelado");
 await b.evaluate(`window.__gisMode = 'cancel'; document.querySelector('[data-fake-gis]').click()`);
 await sleep(800);
-check(
+await check(
   (await b.evaluate(`location.pathname === '/entrar' && !document.querySelector('[data-failure]') && !document.querySelector('[role=alert]')`)) &&
     tokenRequests.length === 0,
   "cancelar o seletor não gera erro nem sessão",
@@ -228,37 +274,45 @@ check(
 
 b.setStep("token inválido (cliente)");
 await b.evaluate(`window.__gisMode = 'badaud'; document.querySelector('[data-fake-gis]').click()`);
-check(await waitFor(failureIs("invalid_token")), "token de outro Client ID é recusado antes do Supabase");
+await check(await waitFor(failureIs("invalid_token")), "token de outro Client ID é recusado antes do Supabase");
 b.setStep("nonce inválido (cliente)");
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`window.__gisMode = 'badnonce'; document.querySelector('[data-fake-gis]').click()`);
-check(await waitFor(failureIs("invalid_nonce")), "token com nonce desconhecido é recusado");
-check(tokenRequests.length === 0, "credenciais inválidas não chegam ao Supabase");
+await check(await waitFor(failureIs("invalid_nonce")), "token com nonce desconhecido é recusado");
+await check(tokenRequests.length === 0, "credenciais inválidas não chegam ao Supabase");
 await shot("login-erro", [390]);
 
 b.setStep("token inválido (servidor)");
 tokenMode = "invalid";
+tokenDelayMs = 1500;
 const nonceBefore = await b.evaluate(`window.__gis.config.nonce`);
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`window.__gisMode = 'ok'; document.querySelector('[data-fake-gis]').click()`);
-check(await waitFor(failureIs("invalid_token")), "Supabase recusa o ID token → mensagem de token inválido");
-check(tokenRequests.at(-1)?.nonceOk === true, "Supabase recebe o nonce ORIGINAL (SHA-256 confere com o claim)");
-check(tokenRequests.at(-1)?.body.provider === "google" && !("access_token" in tokenRequests.at(-1).body), "signInWithIdToken com provider google, sem access token do Google");
+await check(await waitFor(`document.querySelector('[data-auth-phase]')?.getAttribute('data-auth-phase') === 'signing' && !!document.querySelector('[role=status]')`, 1400), "estado acessível \"Entrando com sua conta Google…\" durante a validação");
+// O tema do sistema muda enquanto o Supabase responde (o botão é redesenhado).
+await b.viewport(1280, { dark: true });
+await check(await waitFor(failureIs("invalid_token")), "Supabase recusa o ID token → mensagem de token inválido");
+await check(await b.evaluate(`document.querySelector('[role=alert]')?.innerText.includes('Não foi possível validar sua conta Google')`), "alerta de token inválido com texto visível");
+await check(await b.evaluate(`document.querySelector('[data-auth-phase]')?.getAttribute('data-auth-phase') === 'ready'`), "trocar o tema durante a validação não descarta o resultado do login");
+await b.viewport(1280);
+tokenDelayMs = 0;
+await check(tokenRequests.at(-1)?.nonceOk === true, "Supabase recebe o nonce ORIGINAL (SHA-256 confere com o claim)");
+await check(tokenRequests.at(-1)?.body.provider === "google" && !("access_token" in tokenRequests.at(-1).body), "signInWithIdToken com provider google, sem access token do Google");
 await waitFor(`window.__gis.config.nonce !== ${JSON.stringify(nonceBefore)}`);
-check((await b.evaluate(`window.__gis.config.nonce`)) !== nonceBefore, "nova tentativa recebe um novo nonce");
+await check((await b.evaluate(`window.__gis.config.nonce`)) !== nonceBefore, "nova tentativa recebe um novo nonce");
 
 b.setStep("reutilização de token");
 const before = tokenRequests.length;
 await b.evaluate(`window.__gis.replay()`);
-check(await waitFor(failureIs("invalid_nonce")), "reenviar um ID token já usado é bloqueado (nonce de uso único)");
-check(tokenRequests.length === before, "token reutilizado não chega ao Supabase");
+await check(await waitFor(failureIs("invalid_nonce")), "reenviar um ID token já usado é bloqueado (nonce de uso único)");
+await check(tokenRequests.length === before, "token reutilizado não chega ao Supabase");
 
 b.setStep("erro de rede");
 tokenMode = "network";
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
-check(await waitFor(failureIs("network")), "falha de rede tratada com mensagem acessível");
-check(await b.evaluate(`!!document.querySelector('[role=alert]')`), "erros anunciados com role=alert");
+await check(await waitFor(failureIs("network")), "falha de rede tratada com mensagem acessível");
+await check(await b.evaluate(`!!document.querySelector('[role=alert]')`), "erros anunciados com role=alert");
 ignoreExpectedNetworkErrors();
 
 b.setStep("login com sucesso");
@@ -267,63 +321,63 @@ userVariant = "full";
 await b.evaluate(`sessionStorage.setItem('edusearch-demo-session', JSON.stringify({ role: 'student', name: 'Ana' }))`);
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
-check(await waitFor(`location.pathname === '/conta' && ${text("Ana Teste")}`), "login bem-sucedido abre a conta com o nome do usuário");
-check(await b.evaluate(text("ana.teste@example.com")), "e-mail exibido");
-check(await waitFor(`[...document.querySelectorAll('img')].some((i) => i.src.includes('googleusercontent.com') && i.complete && i.naturalWidth > 0)`), "foto do Google exibida (avatar presente)");
-check(await b.evaluate(`[...document.querySelectorAll('img[src*="googleusercontent"]')].every((i) => i.referrerPolicy === 'no-referrer' && getComputedStyle(i).borderRadius !== '0px')`), "foto circular e sem Referer");
-check(await b.evaluate(`${text("Sessão autenticada")} && !${text("Modo demonstração")}`), "sessão autenticada diferenciada da demonstração");
-check(await b.evaluate(`!!document.querySelector('[data-testid=completion-cta]')`), "usuário sem perfil concluído vê \"Concluir cadastro\"");
-check(await b.evaluate(`sessionStorage.getItem('edusearch-demo-session') === null`), "sessão demonstrativa encerrada ao entrar com a conta real");
-check(await b.evaluate(`!/Profa\\. Marina|Ana \\(demonstração\\)/.test(document.body.innerText)`), "nenhum dado fictício na conta real");
+await check(await waitFor(`location.pathname === '/conta' && ${text("Ana Teste")}`), "login bem-sucedido abre a conta com o nome do usuário");
+await check(await waitFor(`document.querySelector('main [data-testid=profile-email]')?.textContent.trim() === 'ana.teste@example.com'`), "e-mail exibido");
+await check(await waitFor(`[...document.querySelectorAll('img')].some((i) => i.src.includes('googleusercontent.com') && i.complete && i.naturalWidth > 0)`), "foto do Google exibida (avatar presente)");
+await check(await b.evaluate(`[...document.querySelectorAll('img[src*="googleusercontent"]')].every((i) => i.referrerPolicy === 'no-referrer' && getComputedStyle(i).borderRadius !== '0px')`), "foto circular e sem Referer");
+await check(await b.evaluate(`${text("Sessão autenticada")} && !${text("Modo demonstração")}`), "sessão autenticada diferenciada da demonstração");
+await check(await waitFor(CTA_VISIBLE), "usuário sem perfil concluído vê \"Concluir cadastro\"");
+await check(await b.evaluate(`sessionStorage.getItem('edusearch-demo-session') === null`), "sessão demonstrativa encerrada ao entrar com a conta real");
+await check(await b.evaluate(`!/Profa\\. Marina|Ana \\(demonstração\\)/.test(document.body.innerText)`), "nenhum dado fictício na conta real");
 const lastToken = JSON.stringify(await b.evaluate(`window.__gis.lastToken`));
-check(!(await b.evaluate(storageHas(lastToken))), "ID token do Google não é armazenado (localStorage/sessionStorage)");
-check(!(await b.evaluate(storageHas(JSON.stringify(tokenRequests.at(-1).body.nonce)))), "nonce original não é armazenado");
-check(!seen.some((r) => r.url.includes(JSON.parse(lastToken))), "ID token nunca aparece em URLs");
-check(!(await b.evaluate(`location.href.includes('token') || location.href.includes('code=')`)), "URL do app sem tokens");
-check(!seen.some((r) => r.method === "GET" && r.host.endsWith("supabase.co") && r.path === "/auth/v1/authorize"), "nenhum redirecionamento para *.supabase.co");
+await check(!(await b.evaluate(storageHas(lastToken))), "ID token do Google não é armazenado (localStorage/sessionStorage)");
+await check(!(await b.evaluate(storageHas(JSON.stringify(tokenRequests.at(-1).body.nonce)))), "nonce original não é armazenado");
+await check(!seen.some((r) => r.url.includes(JSON.parse(lastToken))), "ID token nunca aparece em URLs");
+await check(!(await b.evaluate(`location.href.includes('token') || location.href.includes('code=')`)), "URL do app sem tokens");
+await check(!seen.some((r) => r.method === "GET" && r.host.endsWith("supabase.co") && r.path === "/auth/v1/authorize"), "nenhum redirecionamento para *.supabase.co");
 await shot("conta-inicio");
 
 b.setStep("perfil e configurações");
 await b.go(testBase + "/conta/perfil", 1500);
-check(await waitFor(`${text("Meu perfil")} && document.querySelector('[data-testid=profile-name]')?.textContent === 'Ana Teste'`), "Meu perfil mostra nome, e-mail e foto");
+await check(await waitFor(`${text("Meu perfil")} && document.querySelector('[data-testid=profile-name]')?.textContent === 'Ana Teste'`), "Meu perfil mostra nome, e-mail e foto");
 await shot("conta-perfil");
 await b.evaluate(`document.querySelector('input[name=papel][value=teacher]').click()`);
 await sleep(200);
-check(await b.evaluate(`localStorage.getItem('edusearch-account-role:00000000-0000-4000-8000-000000000001') === 'teacher'`), "papel escolhido salvo como preferência provisória");
-check(await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.includes('Concluir perfil'))?.disabled === true`), "\"Concluir perfil\" bloqueado até existir backend");
+await check(await b.evaluate(`localStorage.getItem('edusearch-account-role:00000000-0000-4000-8000-000000000001') === 'teacher'`), "papel escolhido salvo como preferência provisória");
+await check(await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.includes('Concluir perfil'))?.disabled === true`), "\"Concluir perfil\" bloqueado até existir backend");
 await b.go(testBase + "/conta/configuracoes", 1500);
-check(await waitFor(text("Conta e sessão")), "configurações exibem a conta e a sessão");
+await check(await waitFor(text("Conta e sessão")), "configurações exibem a conta e a sessão");
 await shot("conta-configuracoes", [390]);
 
 b.setStep("restauração da sessão");
 const userCalls = seen.filter((r) => r.path === "/auth/v1/user").length;
 await b.go(testBase + "/conta", 2000);
-check(await waitFor(text("Ana Teste")), "sessão restaurada após recarregar a página");
-check(seen.filter((r) => r.path === "/auth/v1/user").length > userCalls, "sessão restaurada é confirmada no servidor (getUser)");
+await check(await waitFor(text("Ana Teste")), "sessão restaurada após recarregar a página");
+await check(seen.filter((r) => r.path === "/auth/v1/user").length > userCalls, "sessão restaurada é confirmada no servidor (getUser)");
 
 b.setStep("demonstração independente");
 await b.go(testBase + "/perfil-de-acesso", 1200);
 await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.includes('Continuar como aluno')).click()`);
-check(await waitFor(`location.pathname === '/aluno' && ${text("Modo demonstração")} && !${text("Ana Teste")}`), "demonstração continua funcionando, sem dados da conta real");
+await check(await waitFor(`location.pathname === '/aluno' && ${text("Modo demonstração")} && !${text("Ana Teste")}`), "demonstração continua funcionando, sem dados da conta real");
 await b.go(testBase + "/conta", 1500);
-check(await waitFor(text("Ana Teste")), "conta real permanece separada da demonstração");
+await check(await waitFor(text("Ana Teste")), "conta real permanece separada da demonstração");
 
 b.setStep("logout");
 await b.go(testBase + "/conta/configuracoes", 1500);
 await b.evaluate(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Sair da conta').click()`);
-check(await waitFor(`location.pathname === '/entrar'`), "logout volta para o login");
-check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null`), "logout remove a sessão do navegador");
-check(seen.some((r) => r.path === "/auth/v1/logout" && r.url.includes("scope=local")), "logout revoga a sessão deste dispositivo");
+await check(await waitFor(`location.pathname === '/entrar'`), "logout volta para o login");
+await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null`), "logout remove a sessão do navegador");
+await check(seen.some((r) => r.path === "/auth/v1/logout" && r.url.includes("scope=local")), "logout revoga a sessão deste dispositivo");
 await b.go(testBase + "/conta", 1200);
-check(await waitFor(`location.pathname === '/entrar' && location.search === '?next=%2Fconta'`), "após logout, /conta exige login novamente");
+await check(await waitFor(`location.pathname === '/entrar' && location.search === '?next=%2Fconta'`), "após logout, /conta exige login novamente");
 
 b.setStep("entrar novamente sem foto e sem nome");
 userVariant = "minimal";
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`window.__gisMode = 'ok'; document.querySelector('[data-fake-gis]').click()`);
-check(await waitFor(`location.pathname === '/conta' && document.querySelector('[data-testid=profile-name]')?.textContent === 'ana.teste'`), "entrar novamente funciona; nome ausente usa o e-mail");
-check(await b.evaluate(`!document.querySelector('main img') && !!document.querySelector('main [aria-hidden=true].rounded-full')`), "avatar ausente → iniciais");
-check(await b.evaluate(`!!document.querySelector('[data-testid=completion-cta]')`), "papel provisório foi limpo no logout (cadastro pendente de novo)");
+await check(await waitFor(`location.pathname === '/conta' && document.querySelector('[data-testid=profile-name]')?.textContent === 'ana.teste'`), "entrar novamente funciona; nome ausente usa o e-mail");
+await check(await b.evaluate(`!document.querySelector('main img') && !!document.querySelector('main [aria-hidden=true].rounded-full')`), "avatar ausente → iniciais");
+await check(await waitFor(CTA_VISIBLE), "papel provisório foi limpo no logout (cadastro pendente de novo)");
 
 b.setStep("foto quebrada");
 await b.go(testBase + "/conta/configuracoes", 1200);
@@ -333,15 +387,15 @@ userVariant = "broken-photo";
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
 await waitFor(`location.pathname === '/conta'`);
-check(await waitFor(`!document.querySelector('main img[src*="googleusercontent"]') && !!document.querySelector('main [aria-hidden=true].rounded-full')`), "foto que falha ao carregar cai para iniciais sem quebrar o layout");
-check(await b.evaluate(`document.documentElement.scrollWidth <= innerWidth + 1`), "sem rolagem horizontal");
+await check(await waitFor(`!document.querySelector('main img[src*="googleusercontent"]') && !!document.querySelector('main [aria-hidden=true].rounded-full')`), "foto que falha ao carregar cai para iniciais sem quebrar o layout");
+await check(await b.evaluate(`document.documentElement.scrollWidth <= innerWidth + 1`), "sem rolagem horizontal");
 ignoreExpectedNetworkErrors();
 
 b.setStep("sessão expirada/revogada");
 userEndpoint = "revoked";
 await b.go(testBase + "/conta", 2000);
-check(await waitFor(`location.pathname === '/entrar' && ${text("Sua sessão expirou")}`), "sessão revogada no servidor leva ao login com aviso de sessão expirada");
-check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null`), "sessão expirada é removida do navegador");
+await check(await waitFor(`location.pathname === '/entrar' && ${text("Sua sessão expirou")}`), "sessão revogada no servidor leva ao login com aviso de sessão expirada");
+await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null`), "sessão expirada é removida do navegador");
 userEndpoint = "ok";
 ignoreExpectedNetworkErrors();
 
