@@ -130,3 +130,48 @@ Em [`screenshots/fase-2.2/`](screenshots/fase-2.2/), na ordem da jornada (1440, 
 - Horário, resumo e conflito.
 - Minhas aulas e detalhes.
 - Aulas e agenda do professor.
+
+---
+
+## Fase 2.2 — Estabilização para o Pull Request
+
+Todas as validações rodaram **em sequência**, com um único servidor de desenvolvimento (`localhost:5190`, StrictMode) e um Chrome headless por vez.
+
+### Correções
+
+| Problema | Correção |
+| -------- | -------- |
+| A visão do professor era fixa na Profa. Marina: reservas com outros professores não apareciam em nenhuma agenda | Professor exibido configurável (sessão `teacherId`). Perfil, especialidades e grade agora existem **por professor**. Horários de todos os professores vêm da grade editável. Novo seletor em *Escolha seu perfil* e *Configurações* e atalho *Ver na agenda do professor* |
+| A troca de perfil para uma rota específica caía na home do professor: o guard da área antiga redirecionava antes do `navigate` assíncrono (encontrado pelo novo teste de jornada) | `switchRole(sessão, destino)`: a sessão e o destino mudam juntos e o `RequireRole` respeita o destino |
+| Texto do aviso de reserva ("na agenda de Prof. Rafael Nogueira") | Primeiro nome: "na agenda de Rafael" |
+| 4 servidores Vite órfãos de execuções anteriores (portas 4173, 4174, 5174 e 5190, ~160 MB) | Encerrados só os processos com `EDUSEARCH` na linha de comando. Daí em diante, um servidor e um teste por vez |
+
+### Acessibilidade de componentes interativos (`a11y`: 29 verificações)
+
+| Estado ou interação | Resultado |
+| ------------------- | --------- |
+| axe: escolha de perfil com seletor, menu da conta aberto, recomendações expandidas (claro e escuro), diálogo de detalhes (claro e escuro), confirmação de cancelamento, painel de filtros mobile, Configurações do professor | ✅ 0 violações |
+| Menu da conta: `Enter` abre e foca o 1º item, `ArrowDown` move, `Escape` fecha e devolve o foco; `aria-expanded` e nome acessível | ✅ |
+| Abas: `ArrowRight` seleciona e foca a próxima; `Home` volta à primeira | ✅ |
+| `<summary>` dos critérios: `Enter` expande | ✅ |
+| Diálogos: foco entra ao abrir, `Tab` não vai para o fundo, `Escape` fecha e devolve o foco ao gatilho; nome (`aria-labelledby`) e descrição (`aria-describedby`) presentes; `Escape` não confirma o cancelamento | ✅ |
+| Avisos (toasts) em região `aria-live="polite"` | ✅ |
+
+Durante a análise, o axe apontou contraste no diálogo escuro. Era um falso positivo: a medição ocorreu durante a animação de entrada (opacidade). Com a animação concluída, passa (`fg-muted` `#94A3B8` sobre `#102E46`, 5,46:1). Nenhuma mudança visual foi necessária.
+
+### Validação final
+
+| Verificação | Resultado |
+| ----------- | --------- |
+| `pnpm -r typecheck` | ✅ |
+| `pnpm --filter @edusearch/web lint` (efeitos React) | ✅ |
+| `pnpm -r build` | ✅ |
+| `smoke` (24 rotas, dev) | ✅ 0 erros |
+| `a11y` (dev) | ✅ 29/29 |
+| `journey` (dev) | ✅ **31/31 etapas**, incluindo as 2 novas: reserva com o Prof. Rafael vai para a agenda dele e não para a da Marina; escolha da Profa. Luiza na tela de perfil |
+| Responsividade e console: 15 rotas (4 públicas, 8 do aluno, 8 do professor) × 375/768/1440 × claro/escuro, 120 renderizações | ✅ 0 overflow, 0 violações axe, 0 erros de console |
+| `apps/website`, `apps/api`, `supabase` e `docs/database-design.md` | ✅ sem alterações em relação à `main` |
+
+### CI
+
+`.github/workflows/frontend-ci.yml` foi criado e validado como YAML. **Ainda não foi executado no GitHub**, porque a branch não foi publicada. O lockfile contém os binários nativos para Linux (TypeScript 7, rolldown, Tailwind oxide, lightningcss). No CI, o Chrome roda com `--no-sandbox` (exigência dos runners Ubuntu 24.04), só quando `CI` está definido.

@@ -77,7 +77,9 @@ A jornada completa (busca → matching → perfil → reserva → minhas aulas �
 
 ## Sessão de demonstração
 
-`sessionStorage` (`edusearch-demo-session`) guarda apenas `{ role, name }`. Nenhuma senha ou token é armazenado, e os formulários de login e cadastro descartam a senha. É possível alternar entre aluno e professor pelo menu da conta (avatar) ou em *Configurações*. Sair da demonstração também restaura os dados fictícios.
+`sessionStorage` (`edusearch-demo-session`) guarda apenas `{ role, name }`. Nenhuma senha ou token é armazenado, e os formulários de login e cadastro descartam a senha. Para alternar entre aluno e professor, use o menu da conta (avatar) ou *Configurações*. Para escolher **qual professor fictício** é exibido, use *Escolha seu perfil*, *Configurações → Professor exibido* ou o atalho *Ver na agenda do professor* nos detalhes de uma aula. Sair da demonstração também restaura os dados fictícios.
+
+Trocas de perfil usam `switchRole(sessão, destino)` (`src/app/session.tsx`). Usar `signIn` seguido de `navigate` falha: o guard da área antiga redireciona para a home do novo perfil antes da navegação assíncrona terminar.
 
 ## PWA
 
@@ -94,6 +96,11 @@ A jornada completa (busca → matching → perfil → reserva → minhas aulas �
 
 - `pnpm --filter @edusearch/web lint` (`scripts/check-effects.mjs`): falha se algum `useEffect`/`useLayoutEffect` tiver corpo de expressão ou for `async`. O build do app roda essa checagem antes do `tsc`.
 - `pnpm --filter @edusearch/web journey [url] [pasta]` (`scripts/journey.mjs`): executa a jornada do marketplace pela interface em 1440, 768 e 375px, nos temas claro e escuro (29 etapas, ver [demo-journey.md](demo-journey.md)).
+- `pnpm --filter @edusearch/web a11y [url]` (`scripts/a11y.mjs`), cerca de 1 minuto:
+  - axe-core em estados interativos: diálogos abertos, menu da conta, painel de filtros, recomendações expandidas e seletor de professor, nos temas claro e escuro.
+  - Teclado real: foco ao abrir, `Tab` contido, `Escape` fecha e devolve o foco, setas no menu e nas abas, `Enter` no `<summary>`.
+  - Nomes acessíveis e regiões `aria-live`.
+- **CI** (`.github/workflows/frontend-ci.yml`): em Pull Requests roda instalação com lockfile, typecheck, lint, build, smoke e a11y no servidor de dev. A jornada é complementar: roda manualmente (*Run workflow*) ou em PRs com o rótulo `journey`.
 - `pnpm --filter @edusearch/web smoke [url]` (`scripts/smoke.mjs`): abre 24 rotas no Chrome headless e falha em caso de erro de console, exceção, tela de erro de rota, estado de erro inesperado ou rolagem horizontal. A URL padrão é `http://localhost:5190`. Rode contra o **servidor de desenvolvimento** para cobrir o React StrictMode.
 
 ```bash
@@ -108,7 +115,7 @@ src/
 ├── app/            router, sessão de demonstração, tema
 ├── components/     AppShell, PageHeader, AsyncContent, TeacherCard, LessonCard, LessonTabs, SettingsPanel...
 ├── lib/
-│   ├── demo.ts     identidades fictícias (Ana e Profa. Marina)
+│   ├── demo.ts     identidades fictícias (Ana, professor padrão) e chave da sessão
 │   ├── auth/       providers.ts (ponto de integração Supabase + Google; hoje indisponível)
 │   ├── api/        client.ts (HTTP), types.ts (modelos do frontend)
 │   ├── data/       source.ts (interface), mock/ (fixtures + adapter), http/ (adapter real)

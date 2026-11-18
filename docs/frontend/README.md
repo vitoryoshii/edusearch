@@ -8,7 +8,7 @@ Documentação da frente de frontend (Fase 2): design system, website institucio
 | [app.md](app.md) | Telas, navegação, dados de demonstração e PWA do `apps/web` |
 | [demo-journey.md](demo-journey.md) | **Jornada de demonstração ponta a ponta**: roteiro para avaliadores, regras de reserva, matching, estado e testes |
 | [api-integration.md](api-integration.md) | Camada de dados, cliente HTTP e **necessidades de integração** com a API |
-| [qa.md](qa.md) | Resultado de build, typecheck, acessibilidade e responsividade |
+| [qa.md](qa.md) | Resultado de build, typecheck, acessibilidade, responsividade e CI |
 
 ## Estrutura
 
