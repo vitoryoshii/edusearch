@@ -6,6 +6,7 @@ Documentação da frente de frontend (Fase 2): design system, website institucio
 | --------- | -------- |
 | [design-system.md](design-system.md) | Tokens, temas, componentes e regras de uso do `@edusearch/ui` |
 | [app.md](app.md) | Telas, navegação, dados de demonstração e PWA do `apps/web` |
+| [demo-journey.md](demo-journey.md) | **Jornada de demonstração ponta a ponta**: roteiro para avaliadores, regras de reserva, matching, estado e testes |
 | [api-integration.md](api-integration.md) | Camada de dados, cliente HTTP e **necessidades de integração** com a API |
 | [qa.md](qa.md) | Resultado de build, typecheck, acessibilidade e responsividade |
 
@@ -44,7 +45,7 @@ Tudo que depende de backend é **simulado no navegador** e identificado na inter
 
 - Login e cadastro (validam o formulário, não autenticam). Login com Google: **não integrado**.
 - Matching pedagógico: regras locais simples, **sem IA (Gemini não integrado)**.
-- Agendamento, cancelamento, perfil, especialidades e disponibilidade: estado em memória, perdido ao recarregar.
+- Agendamento, cancelamento, perfil, especialidades e disponibilidade: simulados no navegador e mantidos no `sessionStorage` da aba até sair da demonstração (ver [demo-journey.md](demo-journey.md)).
 - Link da videochamada: **Google Meet não integrado** (botão "Entrar na aula" desabilitado).
 - Pagamentos, split e repasse: **AbacatePay não integrado**; nenhum valor é cobrado. A comissão de 10% é hipótese.
 - Professores, alunos, valores e anotações são **fictícios**. Não há avaliações (estrelas) inventadas.

@@ -83,3 +83,50 @@ Em [`screenshots/fase-2.1/`](screenshots/fase-2.1/):
 - Cadastro: desktop, 320px e validação (claro e escuro).
 - Boas-vindas: desktop e mobile, claro e escuro.
 - Escolha de perfil (390px), aulas do aluno (mobile), início do aluno (escuro) e recebimentos (1024px).
+
+---
+
+## Fase 2.2 — Jornada funcional do marketplace
+
+Executado no **servidor de desenvolvimento** (`localhost:5190`, React StrictMode) e no build de produção.
+
+| Verificação | Resultado |
+| ----------- | --------- |
+| `pnpm -r typecheck` | ✅ |
+| `pnpm --filter @edusearch/web lint` (`check-effects`) | ✅ |
+| `pnpm -r build` | ✅ |
+| `smoke` (24 rotas, dev) | ✅ 0 erros |
+| `journey` (dev): jornada completa em 1440px claro e essencial em 768px claro, 375px claro/escuro e 1440px escuro | ✅ **29/29 etapas** |
+| Teste de mutação: guarda de reserva duplicada desligada temporariamente | ❌ detectado pela etapa "conflito" (prova que o teste protege a regra) |
+| axe-core WCAG 2.2 AA, aluno: 7 rotas × 375/768/1440 × claro/escuro (42) | ✅ 0 violações, 0 overflow, 0 erros de console |
+| axe-core, professor: 4 rotas × 375/768/1440 × claro/escuro (24) | ✅ 0 violações |
+
+### Cobertura do teste de jornada (`scripts/journey.mjs`)
+
+1. Acesso em modo demonstração → perfil Aluno → dashboard com as ações de busca.
+2. Busca: disciplina (3) → orçamento (2) → período "Noite" (1) → nível sem resultados (estado vazio) → limpar filtros (6). No mobile, filtros pelo painel inferior.
+3. Matching: validação de dificuldade obrigatória → preferências → revisão → recomendações. A 1ª é a Profa. Marina, com 100%, motivo de dificuldade, ponto de atenção de orçamento e explicação dos critérios.
+4. Perfil: especialidade, metodologia, preço e próximos horários; sem avaliações reais nem "verificado".
+5. Reserva: horário pré-selecionado → resumo → confirmação → aviso de sucesso → "Nova reserva".
+6. O horário reservado some da agenda (interface e dados).
+7. Conflito: outra "aba" reserva o mesmo horário antes da confirmação. Resultado: 409, mensagem, botão desabilitado e atalho para outro horário.
+8. O aluno não pode reservar duas aulas sobrepostas (professores diferentes).
+9. Detalhes da aula (código, pagamento não cobrado) → cancelamento → o horário volta a ficar livre → aba Canceladas.
+10. Troca para a visão do professor: a reserva aparece em Aulas e na Agenda semanal.
+11. O cancelamento feito pela professora aparece para o aluno.
+12. Persistência ao recarregar (`sessionStorage`).
+13. Tema aplicado corretamente (claro e escuro), sem rolagem horizontal e sem erros de console em todas as etapas.
+
+### Encontrado e corrigido durante o QA
+
+- A rolagem horizontal entre 768 e 800px em *Configurações* foi causada pela nova seção "Dados da demonstração". Agora os cartões só ficam em linha a partir de 1024px.
+
+### Capturas
+
+Em [`screenshots/fase-2.2/`](screenshots/fase-2.2/), na ordem da jornada (1440, 768 e 375px, claro e escuro):
+
+- Dashboard, busca filtrada e vazia, filtros mobile.
+- Recomendações e perfil.
+- Horário, resumo e conflito.
+- Minhas aulas e detalhes.
+- Aulas e agenda do professor.
