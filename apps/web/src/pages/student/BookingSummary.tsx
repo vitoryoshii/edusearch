@@ -61,11 +61,11 @@ export default function BookingSummary() {
       setDone(true);
       toast({
         tone: "success",
-        title: "Aula reservada",
-        description: `Também aparece na agenda de ${firstName(teacher.name)}, na visão do professor da demonstração.`,
+        title: "Reserva solicitada",
+        description: `O horário com ${firstName(teacher.name)} fica guardado enquanto a cobrança Pix estiver válida.`,
       });
       // replace: voltar no navegador não reabre o resumo de uma reserva já feita.
-      navigate("/aluno/aulas", { replace: true, state: { highlight: lesson.id } });
+      navigate(`/aluno/pagamento/${lesson.id}`, { replace: true });
     } catch (e) {
       setError({ message: describeError(e), conflict: e instanceof ApiError && e.status === 409 });
       setSubmitting(false);
@@ -140,7 +140,8 @@ export default function BookingSummary() {
             </div>
           </dl>
           <DemoNotice className="mt-5">
-            Pagamento via Pix (AbacatePay) ainda não integrado. Nenhuma cobrança será feita.
+            Ao continuar, a reserva fica <strong className="font-semibold">aguardando pagamento</strong> e você segue para o Pix.
+            Demonstração: nenhuma cobrança real é feita.
           </DemoNotice>
           {error && (
             <div role="alert" className="mt-4 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger-text">
@@ -164,9 +165,9 @@ export default function BookingSummary() {
             disabled={done || error?.conflict}
             onClick={confirm}
           >
-            Confirmar agendamento
+            Reservar e pagar com Pix
           </Button>
-          <p className="mt-3 text-center text-xs text-fg-muted">Agendamento de demonstração.</p>
+          <p className="mt-3 text-center text-xs text-fg-muted">A aula só é confirmada após o pagamento.</p>
         </Card>
       </div>
     </>

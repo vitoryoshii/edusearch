@@ -24,9 +24,17 @@ export const httpDataSource: DataSource = {
   listTeacherSlots: pending("horários do professor"),
   matchTeachers: pending("matching pedagógico (Gemini)"),
   createBooking: pending("agendamento"),
+  getLesson: pending("detalhes da aula"),
   listStudentLessons: pending("aulas do aluno"),
   cancelLesson: pending("cancelamento de aula"),
   getStudentProgress: pending("acompanhamento do aprendizado"),
+
+  getCheckout: pending("cobrança Pix (AbacatePay)"),
+  createCheckout: pending("cobrança Pix (AbacatePay)"),
+  // simulatePayment e setCalendarConnection não existem na API real (somente demonstração).
+
+  getCalendarConnection: pending("conexão com o Google Agenda"),
+  syncLessonToCalendar: pending("sincronização com o Google Agenda"),
 
   getTeacherDashboard: pending("dashboard do professor"),
   getTeacherProfile: pending("perfil profissional"),
@@ -36,5 +44,9 @@ export const httpDataSource: DataSource = {
   getAvailability: pending("disponibilidade"),
   saveAvailability: pending("disponibilidade"),
   listTeacherLessons: pending("aulas do professor"),
+  listBlockedDates: pending("bloqueios de agenda"),
+  setDateBlocked: pending("bloqueios de agenda"),
   getEarnings: pending("recebimentos (AbacatePay)"),
+  getCommissionProgram: pending("comissão e incentivos"),
+  getReferralProgram: pending("indicações"),
 };

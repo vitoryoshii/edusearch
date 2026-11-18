@@ -19,6 +19,10 @@ const TeacherProfile = lazy(() => import("../pages/student/TeacherProfile"));
 const Schedule = lazy(() => import("../pages/student/Schedule"));
 const BookingSummary = lazy(() => import("../pages/student/BookingSummary"));
 const StudentLessons = lazy(() => import("../pages/student/Lessons"));
+const Checkout = lazy(() => import("../pages/student/Checkout"));
+const StudentOnlineLesson = lazy(() => import("../pages/shared/OnlineLesson").then((m) => ({ default: m.StudentOnlineLesson })));
+const TeacherOnlineLesson = lazy(() => import("../pages/shared/OnlineLesson").then((m) => ({ default: m.TeacherOnlineLesson })));
+const Benefits = lazy(() => import("../pages/teacher/Benefits"));
 const Progress = lazy(() => import("../pages/student/Progress"));
 const StudentProfile = lazy(() => import("../pages/student/Profile"));
 
@@ -39,7 +43,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   "/perfil-de-acesso": "Escolha seu perfil",
   "/aluno": "Início do aluno",
   "/aluno/buscar": "Buscar professores",
-  "/aluno/assistente": "Assistente de matching",
+  "/aluno/assistente": "Assistente EduSearch",
   "/aluno/recomendados": "Professores recomendados",
   "/aluno/agendamento/resumo": "Resumo do agendamento",
   "/aluno/aulas": "Minhas aulas",
@@ -52,6 +56,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   "/professor/agenda": "Agenda",
   "/professor/aulas": "Aulas agendadas",
   "/professor/recebimentos": "Recebimentos",
+  "/professor/beneficios": "Comissão e benefícios",
   "/professor/configuracoes": "Configurações",
 };
 
@@ -59,6 +64,8 @@ export function titleFor(pathname: string) {
   if (ROUTE_TITLES[pathname]) return ROUTE_TITLES[pathname];
   if (/^\/aluno\/professores\/[^/]+\/agendar$/.test(pathname)) return "Escolher horário";
   if (/^\/aluno\/professores\/[^/]+$/.test(pathname)) return "Perfil do professor";
+  if (/^\/(aluno|professor)\/aulas\/[^/]+$/.test(pathname)) return "Aula online";
+  if (/^\/aluno\/pagamento\/[^/]+$/.test(pathname)) return "Pagamento da aula";
   return "Página não encontrada";
 }
 
@@ -95,6 +102,8 @@ const routes: RouteObject[] = [
           { path: "professores/:id/agendar", element: <Schedule /> },
           { path: "agendamento/resumo", element: <BookingSummary /> },
           { path: "aulas", element: <StudentLessons /> },
+          { path: "aulas/:id", element: <StudentOnlineLesson /> },
+          { path: "pagamento/:lessonId", element: <Checkout /> },
           { path: "progresso", element: <Progress /> },
           { path: "perfil", element: <StudentProfile /> },
         ],
@@ -113,6 +122,8 @@ const routes: RouteObject[] = [
           { path: "disponibilidade", element: <Availability /> },
           { path: "agenda", element: <Agenda /> },
           { path: "aulas", element: <TeacherLessons /> },
+          { path: "aulas/:id", element: <TeacherOnlineLesson /> },
+          { path: "beneficios", element: <Benefits /> },
           { path: "recebimentos", element: <Earnings /> },
           { path: "configuracoes", element: <TeacherSettings /> },
         ],

@@ -7,6 +7,7 @@ import {
   ChartIcon,
   ClockIcon,
   Dropdown,
+  GiftIcon,
   GraduationIcon,
   HomeIcon,
   LoadingState,
@@ -27,15 +28,15 @@ import type { Role } from "../lib/api/types";
 import { dataSource } from "../lib/data/source";
 import { DemoBanner } from "./DemoNotice";
 
-type NavItem = { to: string; label: string; icon: IconComponent; end?: boolean; mobile?: boolean };
+type NavItem = { to: string; label: string; icon: IconComponent; end?: boolean; mobile?: boolean; short?: string };
 
 const NAV: Record<Role, NavItem[]> = {
   student: [
     { to: "/aluno", label: "Início", icon: HomeIcon, end: true, mobile: true },
     { to: "/aluno/buscar", label: "Buscar", icon: SearchIcon, mobile: true },
     { to: "/aluno/assistente", label: "Assistente IA", icon: SparkleIcon },
-    { to: "/aluno/aulas", label: "Minhas aulas", icon: CalendarIcon, mobile: true },
-    { to: "/aluno/progresso", label: "Progresso", icon: ChartIcon, mobile: true },
+    { to: "/aluno/aulas", label: "Minhas aulas", short: "Aulas", icon: CalendarIcon, mobile: true },
+    { to: "/aluno/progresso", label: "Progresso", icon: ChartIcon },
     { to: "/aluno/perfil", label: "Perfil", icon: UserIcon, mobile: true },
   ],
   teacher: [
@@ -43,6 +44,7 @@ const NAV: Record<Role, NavItem[]> = {
     { to: "/professor/agenda", label: "Agenda", icon: CalendarIcon, mobile: true },
     { to: "/professor/aulas", label: "Aulas", icon: BookIcon, mobile: true },
     { to: "/professor/recebimentos", label: "Recebimentos", icon: WalletIcon, mobile: true },
+    { to: "/professor/beneficios", label: "Benefícios", icon: GiftIcon },
     { to: "/professor/perfil", label: "Perfil profissional", icon: UserIcon },
     { to: "/professor/especialidades", label: "Especialidades", icon: GraduationIcon },
     { to: "/professor/disponibilidade", label: "Disponibilidade", icon: ClockIcon },
@@ -216,7 +218,7 @@ export function AppShell({ role }: { role: Role }) {
                     <span className={cn("flex h-7 w-12 items-center justify-center rounded-full", isActive && "bg-primary-soft")}>
                       <item.icon className="h-5 w-5" />
                     </span>
-                    {item.label}
+                    {item.short ?? item.label}
                   </>
                 )}
               </NavLink>

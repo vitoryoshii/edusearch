@@ -1,4 +1,4 @@
-import type { DayPeriod, Difficulty, LessonStatus, Level, Methodology } from "./api/types";
+import type { DayPeriod, Difficulty, FinancialStatus, LessonStatus, Level, Methodology, PaymentStatus } from "./api/types";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export const formatMoney = (cents: number) => brl.format(cents / 100);
@@ -55,9 +55,27 @@ export const PERIOD_LABELS: Record<DayPeriod, string> = {
 };
 
 export const STATUS_LABELS: Record<LessonStatus, string> = {
-  scheduled: "Agendada",
+  pending_payment: "Aguardando pagamento",
+  scheduled: "Confirmada",
   completed: "Concluída",
   cancelled: "Cancelada",
+};
+
+export const PAYMENT_LABELS: Record<PaymentStatus, string> = {
+  creating: "Criando cobrança",
+  pending: "Aguardando pagamento",
+  processing: "Em processamento",
+  confirmed: "Pagamento confirmado",
+  expired: "Cobrança expirada",
+  cancelled: "Cobrança cancelada",
+  failed: "Falha no pagamento",
+};
+
+export const FINANCIAL_LABELS: Record<FinancialStatus, string> = {
+  awaiting_payment: "Aguardando pagamento",
+  confirmed: "Pagamento confirmado",
+  cancelled: "Cancelada sem cobrança",
+  cancelled_after_payment: "Cancelada após pagamento",
 };
 
 export const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"] as const;
