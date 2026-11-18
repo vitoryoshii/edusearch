@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeftIcon, ArrowRightIcon, Badge, Button, Card, Chip, Select, SparkleIcon, Textarea } from "@edusearch/ui";
+import { ArrowLeftIcon, ArrowRightIcon, Button, Card, Chip, Select, SparkleIcon, Textarea } from "@edusearch/ui";
 import { DemoNotice } from "../../components/DemoNotice";
 import { PageHeader } from "../../components/PageHeader";
 import type { DayPeriod, Difficulty, Level, MatchRequest, Methodology } from "../../lib/api/types";
@@ -18,6 +18,44 @@ const BUDGETS = [
 const STEPS = ["Objetivo", "Preferências", "Revisão"] as const;
 
 const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+
+/** Pergunta do assistente (a pergunta atual é o título da etapa e recebe o foco). */
+function AssistantBubble({
+  children,
+  current,
+  headingRef,
+}: {
+  children: React.ReactNode;
+  current?: boolean;
+  headingRef?: React.RefObject<HTMLHeadingElement | null>;
+}) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-soft text-link" aria-hidden="true">
+        <SparkleIcon className="h-4 w-4" />
+      </span>
+      {current ? (
+        <h2 ref={headingRef} tabIndex={-1} className="rounded-2xl rounded-tl-md bg-surface px-4 py-2.5 text-base font-semibold text-fg-strong shadow-card outline-none">
+          {children}
+        </h2>
+      ) : (
+        <p className="rounded-2xl rounded-tl-md bg-surface px-4 py-2.5 text-sm font-medium text-fg-strong shadow-card">{children}</p>
+      )}
+    </div>
+  );
+}
+
+/** Resposta do aluno já enviada. */
+function UserBubble({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex justify-end">
+      <p className="max-w-[85%] rounded-2xl rounded-tr-md bg-soft px-4 py-2.5 text-sm break-words text-fg-strong">
+        <span className="sr-only">Sua resposta: </span>
+        {children}
+      </p>
+    </div>
+  );
+}
 
 export default function Matching() {
   const navigate = useNavigate();
@@ -71,37 +109,67 @@ export default function Matching() {
 
   return (
     <>
-      <PageHeader
-        title="Assistente de matching"
-        description="Conte o que você precisa e indicaremos professores compatíveis com seu objetivo e seu jeito de aprender."
-        eyebrow={
-          <Badge tone="primary" icon={<SparkleIcon />}>
-            Matching pedagógico
-          </Badge>
-        }
-      />
+      <PageHeader title="Assistente EduSearch" />
 
-      <ol className="mb-6 flex gap-2" aria-label="Etapas">
-        {STEPS.map((s, i) => (
-          <li key={s} className="flex-1" aria-current={i === step ? "step" : undefined}>
-            <span className={`block h-1.5 rounded-full ${i <= step ? "bg-primary" : "bg-surface-muted"}`} aria-hidden="true" />
-            <span className={`mt-2 block text-xs font-medium ${i === step ? "text-fg-strong" : "text-fg-muted"}`}>
-              {i + 1}. {s}
-              {i < step && <span className="sr-only"> (concluída)</span>}
-            </span>
-          </li>
-        ))}
-      </ol>
+      <div className="mx-auto max-w-2xl">
+        {/* Apresentação como no mockup aprovado */}
+        <div className="text-center">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-panel bg-soft text-link shadow-card">
+            <SparkleIcon className="h-7 w-7" />
+          </span>
+          <p className="mt-4 text-xl font-semibold text-fg-strong">Como posso te ajudar?</p>
+          <p className="mt-1 text-sm text-fg-muted">Encontre o professor ideal para o seu objetivo em três passos.</p>
+        </div>
 
-      <Card padding="lg" className="max-w-2xl">
-        <h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-fg-strong outline-none">
-          {step === 0 && "O que você quer aprender?"}
-          {step === 1 && "Como você prefere estudar?"}
-          {step === 2 && "Confira antes de buscar"}
-        </h2>
+        <ol className="mt-6 mb-6 flex gap-2" aria-label="Etapas">
+          {STEPS.map((st, i) => (
+            <li key={st} className="flex-1" aria-current={i === step ? "step" : undefined}>
+              <span className={`block h-1 rounded-full ${i <= step ? "bg-primary" : "bg-surface-muted"}`} aria-hidden="true" />
+              <span className={`mt-1.5 block text-xs font-medium ${i === step ? "text-fg-strong" : "text-fg-muted"}`}>
+                {i + 1}. {st}
+                {i < step && <span className="sr-only"> (concluída)</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
 
+        {/* Conversa: perguntas do assistente à esquerda, respostas do aluno à direita */}
+        <div className="space-y-3">
+          <AssistantBubble current={step === 0} headingRef={step === 0 ? headingRef : undefined}>
+            O que você quer aprender?
+          </AssistantBubble>
+          {step > 0 && (
+            <UserBubble>
+              {form.goal.trim()}
+              <span className="mt-1 block text-xs text-fg-muted">
+                {subjectName(form.subject)} · {form.level ? LEVEL_LABELS[form.level] : ""} · {form.difficulties.map((d) => DIFFICULTY_LABELS[d].toLowerCase()).join(", ")}
+              </span>
+            </UserBubble>
+          )}
+          {step >= 1 && (
+            <AssistantBubble current={step === 1} headingRef={step === 1 ? headingRef : undefined}>
+              Como você prefere estudar?
+            </AssistantBubble>
+          )}
+          {step > 1 && (
+            <UserBubble>
+              {[
+                form.methodologies.map((m) => METHODOLOGY_LABELS[m]).join(", ") || "Sem preferência de metodologia",
+                form.periods.map((pp) => PERIOD_LABELS[pp]).join(", ") || "Qualquer período",
+                BUDGETS.find((bb) => bb.value === form.budget)?.label ?? "",
+              ].join(" · ")}
+            </UserBubble>
+          )}
+          {step === 2 && (
+            <AssistantBubble current headingRef={headingRef}>
+              Confira antes de buscar
+            </AssistantBubble>
+          )}
+        </div>
+
+      <Card padding="lg" className="mt-4">
         {step === 0 && (
-          <div className="mt-5 space-y-5">
+          <div className="space-y-5">
             <Textarea
               label="Seu objetivo"
               placeholder="Ex.: Quero melhorar em funções e geometria para o ENEM deste ano."
@@ -112,7 +180,7 @@ export default function Matching() {
               error={errors.goal}
               onChange={(e) => setForm({ ...form, goal: e.target.value })}
             />
-            <div className="grid gap-5 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <Select
                 label="Disciplina"
                 placeholder="Selecione"
@@ -163,7 +231,7 @@ export default function Matching() {
         )}
 
         {step === 1 && (
-          <div className="mt-5 space-y-6">
+          <div className="space-y-6">
             <fieldset>
               <legend className="text-sm font-medium text-fg-strong">Metodologias que funcionam para você</legend>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -202,7 +270,7 @@ export default function Matching() {
         )}
 
         {step === 2 && (
-          <dl className="mt-5 divide-y divide-line text-sm">
+          <dl className="divide-y divide-line text-sm">
             {[
               ["Objetivo", form.goal],
               ["Disciplina", subjectName(form.subject)],
@@ -247,11 +315,12 @@ export default function Matching() {
       </Card>
 
       {isDemo && (
-        <DemoNotice className="mt-6 max-w-2xl">
+        <DemoNotice className="mt-6">
           Nesta demonstração, as recomendações usam regras simples no navegador. A análise com IA (Google Gemini) será feita
           pela API em fase futura.
         </DemoNotice>
       )}
+      </div>
     </>
   );
 }
