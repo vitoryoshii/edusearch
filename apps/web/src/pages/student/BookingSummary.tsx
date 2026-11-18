@@ -18,8 +18,8 @@ import { PageHeader, SectionTitle } from "../../components/PageHeader";
 import { ApiError, describeError } from "../../lib/api/client";
 import type { Teacher, TimeSlot } from "../../lib/api/types";
 import { subjectName } from "../../lib/catalog";
-import { DEMO_TEACHER_ID } from "../../lib/demo";
 import { dataSource } from "../../lib/data/source";
+import { firstName } from "../../lib/demo";
 import { formatDateLong, formatMoney, formatTimeRange } from "../../lib/format";
 
 export default function BookingSummary() {
@@ -62,10 +62,7 @@ export default function BookingSummary() {
       toast({
         tone: "success",
         title: "Aula reservada",
-        description:
-          teacher.id === DEMO_TEACHER_ID
-            ? "Ela também aparece na agenda da professora (visão do professor na demonstração)."
-            : "Confira os detalhes em Minhas aulas.",
+        description: `Também aparece na agenda de ${firstName(teacher.name)}, na visão do professor da demonstração.`,
       });
       // replace: voltar no navegador não reabre o resumo de uma reserva já feita.
       navigate("/aluno/aulas", { replace: true, state: { highlight: lesson.id } });

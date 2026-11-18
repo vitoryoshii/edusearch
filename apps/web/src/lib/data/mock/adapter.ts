@@ -2,9 +2,13 @@
  * Adapter de DEMONSTRAÇÃO: simula a API no navegador, com latência artificial.
  * Nada é enviado a servidores.
  *
- * Estado: um único "banco" em memória (aulas, perfil, especialidades e
- * disponibilidade da professora da demonstração), espelhado no sessionStorage
+ * Estado: um único "banco" em memória (aulas + perfil, especialidades e
+ * disponibilidade de CADA professor fictício), espelhado no sessionStorage
  * para sobreviver a recarregamentos durante a sessão. Somente dados fictícios.
+ *
+ * Visão do professor: o professor "logado" vem da sessão de demonstração
+ * (`teacherId`), do mesmo jeito que a API real vai identificá-lo pelo JWT.
+ * Por isso a interface DataSource não recebe o id do professor.
  *
  * Regras de reserva (ver docs/frontend/demo-journey.md):
  *   - Horários = grade do professor nos próximos 7 dias − aulas já agendadas.
@@ -29,6 +33,7 @@ import type {
   WeeklyAvailability,
 } from "../../api/types";
 import { LEVEL_LABELS, METHODOLOGY_LABELS, PERIOD_LABELS, DIFFICULTY_LABELS, formatMoney } from "../../format";
+import { DEMO_SESSION_KEY } from "../../demo";
 import type { DataSource } from "../source";
 import * as fx from "./fixtures";
 
@@ -59,23 +64,25 @@ async function respond<T>(value: T | (() => T), { list = false, write = false } 
 /* ------------------------------ Estado + persistência ------------------------------ */
 
 const STORAGE_KEY = "edusearch-demo-data";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 type DemoDb = {
   version: number;
   lessons: Lesson[];
-  profile: TeacherProfile;
-  specialties: Specialty[];
-  availability: WeeklyAvailability;
+  /** Dados editáveis por professor (chave = id do professor). */
+  profiles: Record<string, TeacherProfile>;
+  specialties: Record<string, Specialty[]>;
+  availability: Record<string, WeeklyAvailability>;
 };
 
 function initialDb(): DemoDb {
+  const byTeacher = <T,>(fn: (t: Teacher) => T) => Object.fromEntries(fx.teachers.map((t) => [t.id, fn(t)]));
   return {
     version: STORAGE_VERSION,
     lessons: fx.seedLessons(),
-    profile: clone(fx.teacherProfile),
-    specialties: clone(fx.specialties),
-    availability: clone(fx.availability),
+    profiles: byTeacher(fx.profileOf),
+    specialties: byTeacher(fx.specialtiesOf),
+    availability: byTeacher(fx.availabilityOf),
   };
 }
 
@@ -104,12 +111,24 @@ function persist() {
 
 /* ------------------------------- Professores ------------------------------- */
 
-/** Professor como o aluno o vê. A professora da demonstração reflete o perfil editado. */
+/** Professor "logado" na visão de professor da demonstração. */
+function actingTeacherId(): string {
+  try {
+    const s = JSON.parse(window.sessionStorage.getItem(DEMO_SESSION_KEY) ?? "null") as { role?: string; teacherId?: string } | null;
+    if (s?.role === "teacher" && s.teacherId && fx.teachers.some((t) => t.id === s.teacherId)) return s.teacherId;
+  } catch {
+    /* sessão ausente ou inválida */
+  }
+  return fx.DEMO_TEACHER_ID;
+}
+
+/** Professor como o aluno o vê, refletindo o perfil, as especialidades e a grade editados. */
 function teacherView(t: Teacher): Teacher {
-  if (t.id !== fx.DEMO_TEACHER_ID) return t;
-  const p = db.profile;
-  const subjects = db.specialties.map((s) => s.subject);
-  const levels = [...new Set(db.specialties.flatMap((s) => s.levels))];
+  const p = db.profiles[t.id];
+  const specs = db.specialties[t.id] ?? [];
+  if (!p) return t;
+  const subjects = specs.map((s) => s.subject);
+  const levels = [...new Set(specs.flatMap((s) => s.levels))];
   return {
     ...t,
     name: p.name,
@@ -141,7 +160,7 @@ const isActive = (l: Lesson) => l.status === "scheduled";
 /** Horários livres = candidatos futuros − aulas agendadas do professor. */
 function freeSlots(teacher: Teacher) {
   const now = new Date().toISOString();
-  const weekly = teacher.id === fx.DEMO_TEACHER_ID ? db.availability : null;
+  const weekly = db.availability[teacher.id] ?? fx.availabilityOf(teacher);
   const busy = db.lessons.filter((l) => l.teacherId === teacher.id && isActive(l));
   return fx.candidateSlots(teacher, weekly).filter((s) => s.start > now && !busy.some((l) => fx.overlaps(l, s)));
 }
@@ -215,7 +234,10 @@ function scoreTeacher(t: Teacher, r: MatchRequest): MatchResult | null {
 /* --------------------------------- Adapter --------------------------------- */
 
 const studentLessons = () => db.lessons.filter((l) => l.studentId === fx.DEMO_STUDENT_ID);
-const teacherLessons = () => db.lessons.filter((l) => l.teacherId === fx.DEMO_TEACHER_ID);
+const teacherLessons = () => {
+  const id = actingTeacherId();
+  return db.lessons.filter((l) => l.teacherId === id);
+};
 
 export const mockDataSource: DataSource = {
   kind: "mock",
@@ -268,7 +290,7 @@ export const mockDataSource: DataSource = {
         if (!teacher.subjects.includes(input.subject)) {
           throw new ApiError("http", "Este professor não ensina a disciplina escolhida.", { status: 422 });
         }
-        const slot = fx.candidateSlots(teacher, teacher.id === fx.DEMO_TEACHER_ID ? db.availability : null).find((s) => s.id === input.slotId);
+        const slot = fx.candidateSlots(teacher, db.availability[teacher.id] ?? fx.availabilityOf(teacher)).find((s) => s.id === input.slotId);
         if (!slot || slot.start <= new Date().toISOString()) {
           throw new ApiError("http", "Este horário não está mais disponível. Escolha outro.", { status: 409 });
         }
@@ -330,43 +352,51 @@ export const mockDataSource: DataSource = {
         lessonsThisWeek: upcoming.filter((l) => new Date(l.start).getTime() < weekAhead).length,
         nextLesson: upcoming[0] ?? null,
         expectedMonthCents: fx.buildEarnings(teacherLessons()).netCents,
-        profileChecklist: [
-          { id: "profile" as const, label: "Perfil profissional", done: Boolean(db.profile.bio) },
-          { id: "specialties" as const, label: "Especialidades", done: db.specialties.length > 0 },
-          { id: "availability" as const, label: "Disponibilidade semanal", done: db.availability.some((d) => d.enabled) },
-        ],
+        profileChecklist: (() => {
+          const id = actingTeacherId();
+          return [
+            { id: "profile" as const, label: "Perfil profissional", done: Boolean(db.profiles[id]?.bio) },
+            { id: "specialties" as const, label: "Especialidades", done: (db.specialties[id] ?? []).length > 0 },
+            { id: "availability" as const, label: "Disponibilidade semanal", done: (db.availability[id] ?? []).some((d) => d.enabled) },
+          ];
+        })(),
       };
     }),
 
-  getTeacherProfile: () => respond(() => db.profile),
+  getTeacherProfile: () => respond(() => db.profiles[actingTeacherId()]),
   saveTeacherProfile: (profile) =>
     respond(
       () => {
-        db.profile = clone(profile);
+        const id = actingTeacherId();
+        db.profiles[id] = clone(profile);
+        // Mantém o nome exibido nas aulas já existentes coerente com o perfil.
+        db.lessons.forEach((l) => l.teacherId === id && (l.teacherName = profile.name));
         persist();
-        return db.profile;
+        return db.profiles[id];
       },
       { write: true },
     ),
 
-  listSpecialties: () => respond(() => db.specialties, { list: true }),
+  listSpecialties: () => respond(() => db.specialties[actingTeacherId()] ?? [], { list: true }),
   saveSpecialties: (items) =>
     respond(
       () => {
-        db.specialties = clone(items);
+        const id = actingTeacherId();
+        db.specialties[id] = clone(items);
         persist();
-        return db.specialties;
+        return db.specialties[id];
       },
       { write: true },
     ),
 
-  getAvailability: () => respond(() => db.availability),
+  getAvailability: () => respond(() => db.availability[actingTeacherId()]),
   saveAvailability: (value) =>
     respond(
       () => {
-        db.availability = clone(value);
+        const id = actingTeacherId();
+        db.availability[id] = clone(value);
         persist();
-        return db.availability;
+        return db.availability[id];
       },
       { write: true },
     ),

@@ -15,7 +15,9 @@ import {
   useToast,
   type ThemePreference,
 } from "@edusearch/ui";
-import { homeFor, useSession } from "../app/session";
+import { studentSession, teacherSession, useSession } from "../app/session";
+import { DEMO_TEACHER_ID } from "../lib/demo";
+import { TeacherPicker } from "./TeacherPicker";
 import { useAppTheme } from "../app/theme";
 import { API_BASE_URL, describeError } from "../lib/api/client";
 import type { Role } from "../lib/api/types";
@@ -31,7 +33,7 @@ const THEMES: Array<{ value: ThemePreference; label: string; icon: typeof SunIco
 /** Preferências comuns a aluno e professor: tema, notificações, conexão e sessão. */
 export function SettingsPanel({ role }: { role: Role }) {
   const { preference, setPreference } = useAppTheme();
-  const { session, signIn, signOut } = useSession();
+  const { session, signIn, switchRole, signOut } = useSession();
   const navigate = useNavigate();
   const [notify, setNotify] = useState({ reminders: true, updates: false });
   const [api, setApi] = useState<{ status: "idle" | "checking" | "ok" | "error"; message?: string }>({ status: "idle" });
@@ -145,17 +147,30 @@ export function SettingsPanel({ role }: { role: Role }) {
 
       <section aria-labelledby="sessao">
         <SectionTitle id="sessao">Sessão de demonstração</SectionTitle>
+        {role === "teacher" && (
+          <Card className="mb-3">
+            <TeacherPicker
+              value={session?.teacherId ?? DEMO_TEACHER_ID}
+              label="Professor exibido"
+              hint="Troque para ver a agenda, as aulas e os recebimentos de outro professor fictício."
+              onChange={(t) => {
+                signIn(teacherSession(t));
+                toast({ title: `Visão de ${t.name}`, description: "Dados de demonstração." });
+                navigate("/professor");
+              }}
+            />
+          </Card>
+        )}
         <Card className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <p className="min-w-0 text-sm text-fg">
-            Explore a outra visão do produto sem sair da demonstração. Reservas da Ana com a Profa. Marina aparecem
-            nas duas visões.
+            Explore a outra visão do produto sem sair da demonstração. As reservas da Ana aparecem na agenda do
+            professor reservado.
           </p>
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
             <Button
               variant="secondary"
               onClick={() => {
-                signIn({ role: other, name: other === "student" ? "Ana" : "Marina" });
-                navigate(homeFor(other));
+                switchRole(other === "student" ? studentSession() : teacherSession());
               }}
             >
               Ver como {other === "student" ? "aluno" : "professor"}

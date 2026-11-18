@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { teacherSession, useSession } from "../app/session";
 import { Badge, Button, Dialog, EmptyState, Tabs, VideoIcon, useToast, type TabItem } from "@edusearch/ui";
 import { describeError } from "../lib/api/client";
 import type { Lesson } from "../lib/api/types";
@@ -29,6 +30,7 @@ export function LessonTabs({
   highlightId?: string;
 }) {
   const toast = useToast();
+  const { switchRole } = useSession();
   const [toCancel, setToCancel] = useState<Lesson | null>(null);
   const [details, setDetails] = useState<Lesson | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -155,6 +157,18 @@ export function LessonTabs({
                   }}
                 >
                   Cancelar aula
+                </Button>
+              )}
+              {perspective === "student" && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    // Demonstração: abre a visão do professor desta aula para conferir a reserva.
+                    setDetails(null);
+                    switchRole(teacherSession({ id: details.teacherId, name: details.teacherName }), "/professor/aulas");
+                  }}
+                >
+                  Ver na agenda do professor
                 </Button>
               )}
               <Button variant="secondary" onClick={() => setDetails(null)}>

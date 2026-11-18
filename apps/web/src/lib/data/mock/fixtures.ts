@@ -127,33 +127,21 @@ const plusMinutes = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
 /** Janela de agendamento: de amanhã até 7 dias à frente. */
 export const BOOKING_WINDOW_DAYS = 7;
 
-const PERIOD_HOURS: Record<DayPeriod, number[]> = { manha: [8, 10], tarde: [14, 16], noite: [19, 20] };
-
-/** Horários candidatos de um professor (antes de descontar as aulas já marcadas). */
-export function candidateSlots(teacher: Teacher, weekly: WeeklyAvailability | null): TimeSlot[] {
+/** Horários candidatos de um professor: de hora em hora dentro da grade semanal (antes de descontar as aulas marcadas). */
+export function candidateSlots(teacher: Teacher, weekly: WeeklyAvailability): TimeSlot[] {
   const slots: TimeSlot[] = [];
   for (let day = 1; day <= BOOKING_WINDOW_DAYS; day++) {
     const weekday = at(day, 0).getDay();
-    let hours: number[];
-    if (weekly) {
-      // Professor da demonstração: horários vêm da grade semanal editável.
-      const d = weekly.find((w) => w.weekday === weekday);
-      hours = [];
-      if (d?.enabled) {
-        for (const r of d.ranges) {
-          const [sh] = r.start.split(":").map(Number);
-          const [eh, em] = r.end.split(":").map(Number);
-          for (let h = sh; h * 60 + teacher.lessonMinutes <= eh * 60 + em; h++) hours.push(h);
-        }
-      }
-    } else {
-      if (weekday === 0) continue; // sem aulas aos domingos
-      hours = teacher.periods
-        .flatMap((p) => PERIOD_HOURS[p])
-        // Ocupação pseudoaleatória e determinística, para a agenda parecer real.
-        .filter((h) => (day * 7 + h + teacher.id.length) % 3 !== 0);
+    const d = weekly.find((w) => w.weekday === weekday);
+    if (!d?.enabled) continue;
+    const hours = new Set<number>();
+    for (const r of d.ranges) {
+      const [sh] = r.start.split(":").map(Number);
+      const [eh, em] = r.end.split(":").map(Number);
+      // A aula precisa terminar dentro do intervalo.
+      for (let h = sh; h * 60 + teacher.lessonMinutes <= eh * 60 + em; h++) hours.add(h);
     }
-    for (const h of [...new Set(hours)].sort((a, b) => a - b)) {
+    for (const h of [...hours].sort((x, y) => x - y)) {
       const start = at(day, h);
       slots.push({ id: `${teacher.id}-${iso(start)}`, teacherId: teacher.id, start: iso(start), end: iso(plusMinutes(start, teacher.lessonMinutes)) });
     }
@@ -218,6 +206,10 @@ export function seedLessons(): Lesson[] {
     lesson("l-11", marina, other("Bruno T."), "matematica", at(-2, 14), "completed", "Trigonometria"),
     lesson("l-12", marina, other("Fábio C."), "fisica", at(-6, 16), "completed"),
     lesson("l-13", marina, other("Carla M."), "fisica", at(-8, 16), "cancelled"),
+    // Outros professores também têm agenda própria
+    lesson("l-14", rafael, other("Gabriel P."), "redacao", at(4, 19), "scheduled", "Repertório sociocultural"),
+    lesson("l-15", rafael, other("Júlia N."), "redacao", at(-4, 20), "completed"),
+    lesson("l-16", teachers[4], other("Igor S."), "biologia", at(3, 8), "scheduled", "Genética"),
   ];
 }
 
@@ -237,26 +229,51 @@ export const studentProgress: LearningProgress = {
   ],
 };
 
-export const teacherProfile: TeacherProfile = {
-  name: marina.name,
-  headline: marina.headline,
-  bio: marina.bio,
-  education: marina.education.join("\n"),
-  priceCents: marina.priceCents,
-  lessonMinutes: marina.lessonMinutes,
-  methodologies: marina.methodologies,
+/* ------------------- Dados editáveis de cada professor ------------------- */
+
+/** Perfil profissional inicial, derivado do cadastro fictício do professor. */
+export function profileOf(t: Teacher): TeacherProfile {
+  return {
+    name: t.name,
+    headline: t.headline,
+    bio: t.bio,
+    education: t.education.join("\n"),
+    priceCents: t.priceCents,
+    lessonMinutes: t.lessonMinutes,
+    methodologies: t.methodologies,
+  };
+}
+
+/** Especialidades iniciais: cada disciplina do professor em todos os níveis que ele atende. */
+export function specialtiesOf(t: Teacher): Specialty[] {
+  return t.subjects.map((subject) => ({ subject, levels: [...t.levels] }));
+}
+
+const PERIOD_RANGES: Record<DayPeriod, { start: string; end: string }> = {
+  manha: { start: "08:00", end: "12:00" },
+  tarde: { start: "14:00", end: "18:00" },
+  noite: { start: "19:00", end: "21:00" },
 };
 
-export const specialties: Specialty[] = [
-  { subject: "matematica", levels: ["medio", "pre-vestibular"] },
-  { subject: "fisica", levels: ["medio"] },
-];
-
-export const availability: WeeklyAvailability = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
-  weekday,
-  enabled: weekday >= 1 && weekday <= 5,
-  ranges: weekday >= 1 && weekday <= 5 ? [{ start: "14:00", end: "17:00" }, { start: "19:00", end: "21:00" }] : [],
-}));
+/**
+ * Grade semanal inicial. A Profa. Marina tem uma grade própria (seg–sex);
+ * os demais professores atendem de segunda a sábado nos seus períodos.
+ */
+export function availabilityOf(t: Teacher): WeeklyAvailability {
+  if (t.id === DEMO_TEACHER_ID) {
+    return [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+      weekday,
+      enabled: weekday >= 1 && weekday <= 5,
+      ranges: weekday >= 1 && weekday <= 5 ? [{ start: "14:00", end: "17:00" }, { start: "19:00", end: "21:00" }] : [],
+    }));
+  }
+  const ranges = (["manha", "tarde", "noite"] as const).filter((p) => t.periods.includes(p)).map((p) => ({ ...PERIOD_RANGES[p] }));
+  return [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+    weekday,
+    enabled: weekday !== 0,
+    ranges: weekday !== 0 ? ranges.map((r) => ({ ...r })) : [],
+  }));
+}
 
 export function buildEarnings(lessons: Lesson[], feeRate = 0.1): EarningsSummary {
   const items = lessons

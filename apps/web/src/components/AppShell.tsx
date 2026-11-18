@@ -22,7 +22,7 @@ import {
   cn,
   type IconComponent,
 } from "@edusearch/ui";
-import { homeFor, useSession } from "../app/session";
+import { homeFor, studentSession, teacherSession, useSession } from "../app/session";
 import type { Role } from "../lib/api/types";
 import { dataSource } from "../lib/data/source";
 import { DemoBanner } from "./DemoNotice";
@@ -52,7 +52,7 @@ const NAV: Record<Role, NavItem[]> = {
 
 /** Layout das áreas logadas: barra lateral no desktop e barra inferior no mobile. */
 export function AppShell({ role }: { role: Role }) {
-  const { session, signIn, signOut } = useSession();
+  const { session, switchRole, signOut } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
@@ -74,8 +74,7 @@ export function AppShell({ role }: { role: Role }) {
       label: other === "teacher" ? "Ver como professor (demo)" : "Ver como aluno (demo)",
       icon: <UsersIcon />,
       onSelect: () => {
-        signIn({ role: other, name: other === "student" ? "Ana" : "Marina" });
-        navigate(homeFor(other));
+        switchRole(other === "student" ? studentSession() : teacherSession());
       },
     },
     {
