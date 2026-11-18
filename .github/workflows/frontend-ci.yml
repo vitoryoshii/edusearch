@@ -3,7 +3,7 @@
 # - checks: roda em todo Pull Request que toca o frontend. Leve (~3–5 min):
 #   instalação com lockfile, typecheck, lint (efeitos React), testes unitários,
 #   build e testes rápidos no servidor de desenvolvimento (StrictMode): smoke, a11y
-#   e login Google (contra um Supabase falso interceptado no navegador).
+#   e login Google (GIS e Supabase FALSOS, interceptados no navegador; sem credenciais reais).
 # - journey: jornada completa (Chrome headless do runner) + capturas de tela em
 #   375/390/768/1440 px, claro e escuro (artefatos). Roda em PRs em rascunho
 #   (Draft), em PRs com o rótulo "journey" ou sob demanda (Run workflow), para
@@ -74,32 +74,47 @@ jobs:
       - name: Build (website, app e design system)
         run: pnpm -r build
 
+      - name: Sem segredos nos bundles (Client Secret do Google, secret key do Supabase)
+        run: |
+          if grep -rEl "GOCSPX-[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]{10,}" apps/web/dist apps/website/dist; then
+            echo "Segredo encontrado no bundle"; exit 1
+          fi
+
       - name: Servidor de desenvolvimento (StrictMode) na porta 5190
         run: |
           pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite.log"; exit 1
 
-      - name: Smoke test (31 rotas, console, overflow)
+      - name: Smoke test (30 rotas, console, overflow)
         run: pnpm --filter @edusearch/web smoke
 
       - name: Acessibilidade (axe + teclado em diálogos, menus e abas)
         run: pnpm --filter @edusearch/web a11y
 
-      # Login real em modo de testes contra um Supabase FALSO: o script intercepta
-      # todas as requisições a *.supabase.co no navegador. Valores fictícios, sem segredos.
-      - name: Servidor com login Google de testes (Supabase falso) na porta 5191
+      # Login real em modo de testes com valores FICTÍCIOS (não são segredos). O script
+      # intercepta no navegador o GIS (accounts.google.com) e o Supabase (*.supabase.co).
+      - name: Servidor com login Google de testes (GIS e Supabase falsos) na porta 5191
         env:
-          VITE_AUTH_GOOGLE_ENABLED: "true"
           VITE_SUPABASE_URL: https://edusearch-ci-fake.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_fake_key
+          VITE_GOOGLE_CLIENT_ID: 1234567890-edusearchci.apps.googleusercontent.com
         run: |
           pnpm --filter @edusearch/web exec vite --port 5191 --strictPort > "$RUNNER_TEMP/vite-auth.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://localhost:5191 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite-auth.log"; exit 1
 
-      - name: Login Google (botão, escopos, PKCE, callback e erros, logout, versão pública)
-        run: node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191
+      - name: Login Google (GIS, nonce, sucesso, cancelamento, erros, sessão, avatar, logout, demo)
+        run: node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191 "$RUNNER_TEMP/auth-screens"
+
+      - name: Artefato — capturas do login e da conta
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-auth
+          path: ${{ runner.temp }}/auth-screens
+          if-no-files-found: warn
+          retention-days: 14
 
   journey:
     name: Jornada completa e capturas de tela
