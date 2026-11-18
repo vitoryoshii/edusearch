@@ -5,6 +5,7 @@ import { ToastProvider } from "@edusearch/ui";
 import "@fontsource-variable/inter";
 import "./index.css";
 import { router, titleFor } from "./app/router";
+import { AuthProvider } from "./app/auth";
 import { SessionProvider } from "./app/session";
 import { ThemeProvider } from "./app/theme";
 import { registerServiceWorker } from "./pwa/register";
@@ -34,11 +35,14 @@ function App() {
   useDocumentTitle();
   return (
     <ThemeProvider>
-      <SessionProvider>
-        <ToastProvider>
-          <RouterProvider router={router} />
-        </ToastProvider>
-      </SessionProvider>
+      {/* Sessão real (Supabase) e sessão de demonstração são independentes. */}
+      <AuthProvider>
+        <SessionProvider>
+          <ToastProvider>
+            <RouterProvider router={router} />
+          </ToastProvider>
+        </SessionProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

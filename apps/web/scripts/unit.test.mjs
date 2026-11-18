@@ -103,3 +103,134 @@ describe("Google Meet", () => {
     assert.equal(onlineLessonState(lesson("pending_payment"), at(-10)), "awaiting_payment");
   });
 });
+
+/* ------------------------- Autenticação (Google OAuth) ------------------------- */
+import {
+  ACCOUNT_HOME,
+  GOOGLE_LOGIN_SCOPES,
+  INTENT_MAX_AGE_MS,
+  buildRedirectTo,
+  createIntent,
+  parseCallback,
+  parseIntent,
+  randomNonce,
+  sanitizeNext,
+  stripProviderTokens,
+  toIdentity,
+  verifyIntent,
+} from "../src/lib/auth/oauth.ts";
+
+describe("login Google: escopos e redirecionamento", () => {
+  test("somente escopos básicos (sem Google Agenda)", () => {
+    assert.deepEqual([...GOOGLE_LOGIN_SCOPES], ["openid", "email", "profile"]);
+    assert.ok(!GOOGLE_LOGIN_SCOPES.some((s) => /calendar/i.test(s)));
+  });
+
+  test("redirectTo aponta para /auth/callback da própria origem, com o nonce", () => {
+    assert.equal(buildRedirectTo("https://app.edusearch.dev", "ab".repeat(16)), `https://app.edusearch.dev/auth/callback?s=${"ab".repeat(16)}`);
+  });
+
+  test("destino pós-login aceita apenas caminhos internos da conta", () => {
+    assert.equal(sanitizeNext("/conta"), "/conta");
+    assert.equal(sanitizeNext("/conta/perfil?x=1"), "/conta/perfil?x=1");
+    for (const bad of [
+      "https://evil.com", "//evil.com", "/\evil.com", "/conta/../aluno", "javascript:alert(1)", "/javascript:x",
+      "/aluno", "/contas", "", null, undefined, 42, "/conta\n", "/" + "a".repeat(300),
+    ]) {
+      assert.equal(sanitizeNext(bad), ACCOUNT_HOME, `deveria recusar ${JSON.stringify(bad)}`);
+    }
+  });
+});
+
+describe("login Google: estado (intenção) do OAuth", () => {
+  const nonce = randomNonce();
+  const now = 1_800_000_000_000;
+
+  test("nonce aleatório com 32 caracteres hexadecimais", () => {
+    assert.match(nonce, /^[0-9a-f]{32}$/);
+    assert.notEqual(randomNonce(), nonce);
+  });
+
+  test("intenção válida e recente é aceita", () => {
+    const intent = parseIntent(JSON.stringify(createIntent("/conta", now, nonce)));
+    assert.equal(verifyIntent(intent, nonce, now + 5_000), null);
+  });
+
+  test("estado ausente, diferente ou sem intenção é recusado", () => {
+    const intent = createIntent("/conta", now, nonce);
+    assert.equal(verifyIntent(intent, null, now), "invalid_state");
+    assert.equal(verifyIntent(intent, randomNonce(), now), "invalid_state");
+    assert.equal(verifyIntent(null, nonce, now), "invalid_state");
+  });
+
+  test("intenção expirada (mais de 10 minutos) é recusada", () => {
+    const intent = createIntent("/conta", now, nonce);
+    assert.equal(verifyIntent(intent, nonce, now + INTENT_MAX_AGE_MS + 1), "expired_state");
+  });
+
+  test("intenção corrompida ou adulterada vira null; next adulterado é saneado", () => {
+    assert.equal(parseIntent("{"), null);
+    assert.equal(parseIntent(JSON.stringify({ nonce: "x", createdAt: now })), null);
+    assert.equal(parseIntent(JSON.stringify({ nonce, createdAt: "ontem" })), null);
+    assert.equal(parseIntent(JSON.stringify({ nonce, createdAt: now, next: "https://evil.com" }))?.next, ACCOUNT_HOME);
+  });
+});
+
+describe("login Google: retorno do callback", () => {
+  test("código válido com estado", () => {
+    assert.deepEqual(parseCallback("?code=abc12345-XYZ&s=ff", ""), { kind: "code", code: "abc12345-XYZ", state: "ff" });
+  });
+
+  test("usuário cancelou no Google", () => {
+    const r = parseCallback("?error=access_denied&error_description=The+user+denied", "");
+    assert.equal(r.kind, "error");
+    assert.equal(r.failure, "access_denied");
+  });
+
+  test("erro no fragmento (#) também é reconhecido", () => {
+    const r = parseCallback("", "#error=server_error&error_description=Unable+to+exchange+external+code");
+    assert.equal(r.failure, "provider_error");
+  });
+
+  test("cadastro bloqueado (usuário fora da lista de testes)", () => {
+    assert.equal(parseCallback("?error=access_denied&error_code=signup_disabled", "").failure, "not_allowed");
+    assert.equal(parseCallback("?error=server_error&error_description=Hook+rejected", "").failure, "not_allowed");
+  });
+
+  test("sem código ou código malformado", () => {
+    assert.equal(parseCallback("", "").failure, "missing_code");
+    assert.equal(parseCallback("?code=<script>", "").failure, "missing_code");
+  });
+});
+
+describe("login Google: dados do usuário e tokens", () => {
+  test("tokens do Google são removidos antes de persistir a sessão", () => {
+    const session = { access_token: "a", refresh_token: "r", provider_token: "g", provider_refresh_token: "gr", user: { id: "u" } };
+    const stored = JSON.parse(stripProviderTokens(JSON.stringify(session)));
+    assert.equal(stored.provider_token, undefined);
+    assert.equal(stored.provider_refresh_token, undefined);
+    assert.equal(stored.access_token, "a");
+    assert.equal(stripProviderTokens("pkce-verifier-string"), "pkce-verifier-string");
+  });
+
+  test("identidade de exibição a partir do usuário do Supabase", () => {
+    const id = toIdentity({
+      id: "u1",
+      email: "ana@example.com",
+      email_confirmed_at: "2026-11-18T10:00:00Z",
+      app_metadata: { provider: "google" },
+      user_metadata: { full_name: "Ana Souza", avatar_url: "https://lh3.googleusercontent.com/a/xyz" },
+    });
+    assert.deepEqual(id, {
+      id: "u1", email: "ana@example.com", name: "Ana Souza", avatarUrl: "https://lh3.googleusercontent.com/a/xyz",
+      provider: "google", emailVerified: true,
+    });
+  });
+
+  test("foto fora do domínio do Google é ignorada; nome cai para o e-mail", () => {
+    const id = toIdentity({ id: "u2", email: "joao@example.com", user_metadata: { avatar_url: "http://evil.com/x.png" } });
+    assert.equal(id.avatarUrl, null);
+    assert.equal(id.name, "joao");
+    assert.equal(id.emailVerified, false);
+  });
+});
