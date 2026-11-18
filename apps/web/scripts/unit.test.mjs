@@ -371,3 +371,21 @@ describe("onboarding: seleção por chips", () => {
     assert.deepEqual(base, ["a"]);
   });
 });
+
+/* -------------- Exemplo financeiro do onboarding do professor -------------- */
+import { formatMoney } from "../src/lib/format.ts";
+
+describe("onboarding do professor: exemplo da comissão padrão", () => {
+  test("R$ 80,00 → R$ 12,00 EduSearch (1.500 bps) e R$ 68,00 ao professor, em centavos inteiros", () => {
+    const cents = parsePriceToCents("80");
+    assert.equal(cents, 8000);
+    assert.equal(STANDARD_COMMISSION_BPS, 1500);
+    assert.deepEqual(splitLessonAmount(cents), { commissionCents: 1200, teacherShareCents: 6800 });
+  });
+  test("formatação pt-BR usa espaço não separável (normalizado só na comparação)", () => {
+    const shown = formatMoney(1200);
+    assert.match(shown, /^R\$[   ]12,00$/);
+    assert.equal(shown.replace(/[  ]/g, " "), "R$ 12,00");
+    assert.equal(formatMoney(6800).replace(/[  ]/g, " "), "R$ 68,00");
+  });
+});

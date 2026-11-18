@@ -231,7 +231,9 @@ b.on(async (m) => {
 /* ------------------------------- Auxiliares ------------------------------- */
 const WIDTHS = [320, 375, 390, 768, 1440];
 const failureIs = (code) => `document.querySelector('[data-failure]')?.getAttribute('data-failure') === '${code}'`;
-const text = (s) => `document.body.innerText.includes(${JSON.stringify(s)})`;
+/** innerText com espaços Unicode (U+00A0, U+202F) normalizados — só para comparação. */
+const PAGE_TEXT = `document.body.innerText.replace(/[\\u00a0\\u202f]/g, ' ')`;
+const text = (s) => `${PAGE_TEXT}.includes(${JSON.stringify(s)})`;
 const stepIs = (id) => `document.querySelector('section[data-step]')?.dataset.step === '${id}'`;
 const storageHas = (needle) =>
   `(() => { const all = [localStorage, sessionStorage].flatMap((st) => Object.keys(st).map((k) => k + '=' + st.getItem(k))).join('\\n'); return all.includes(${needle}); })()`;
@@ -278,6 +280,11 @@ const signOutFromSettings = async () => {
 
 /** axe-core (WCAG 2.2 AA) na tela atual. */
 async function axe(label) {
+  const settled = await waitFor(
+    `document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity)`,
+    4000,
+  );
+  if (!settled) await check(false, `animações não estabilizaram antes do axe: ${label}`);
   if (!(await b.evaluate("!!window.axe"))) await b.evaluate(`${AXE};1`);
   const v = await b.evaluate(
     `axe.run(document, { runOnly: { type: "tag", values: ["wcag2a","wcag2aa","wcag21a","wcag21aa","wcag22aa"] } })
@@ -513,7 +520,7 @@ await check(await waitFor(stepIs("aulas")), "formação → aulas");
 await clickChip("Metodologia", "Resolução de exercícios");
 await setField("Valor da aula", "80");
 await check(
-  await waitFor(`(() => { const t = document.querySelector('[data-testid=commission-preview]')?.textContent ?? ''; return t.includes('15%') && t.includes('R$ 12,00') && t.includes('R$ 68,00'); })()`),
+  await waitFor(`(() => { const t = (document.querySelector('[data-testid=commission-preview]')?.textContent ?? '').replace(/[\\u00a0\\u202f]/g, ' '); return t.includes('15%') && t.includes('R$ 12,00') && t.includes('R$ 68,00'); })()`),
   "comissão padrão de 15%: R$ 80,00 → R$ 12,00 EduSearch e R$ 68,00 ao professor",
 );
 await check(await b.evaluate(text("ainda não se aplicam")), "descontos e premiações indicados como planejados, sem taxa reduzida");
@@ -572,6 +579,7 @@ await check(await waitFor(text("Ana Teste")), "conta real permanece separada da 
 b.setStep("logout");
 await signOutFromSettings();
 await check(await waitFor(`location.pathname === '/' && !!document.querySelector('[data-fake-gis]')`), "logout volta para a entrada única");
+await check(await b.evaluate(`location.search === ''`), "logout voluntário não guarda destino (?next) da área da conta");
 await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null && localStorage.getItem('${ROLE_KEY}') === null`), "logout remove a sessão e a preferência local");
 await check(seen.some((r) => r.path === "/auth/v1/logout" && r.url.includes("scope=local")), "logout revoga a sessão deste dispositivo");
 await b.go(testBase + "/conta", 1200);
@@ -592,12 +600,25 @@ await signOutFromSettings();
 userVariant = "broken-photo";
 await waitFor(`!!document.querySelector('[data-fake-gis]')`);
 await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
-await waitFor(`location.pathname === '/conta/boas-vindas'`);
-await check(
-  await waitFor(`!document.querySelector('img[src*="googleusercontent"]') && !!document.querySelector('header [aria-hidden=true].rounded-full')`),
-  "foto que falha ao carregar cai para iniciais sem quebrar o layout",
-);
-await check(await b.evaluate(`document.documentElement.scrollWidth <= innerWidth + 1`), "sem rolagem horizontal");
+await check(await waitFor(`location.pathname === '/conta/boas-vindas'`), "login com foto indisponível segue para as boas-vindas");
+/** Avatares visíveis: nenhuma <img> do Google quebrada; iniciais no lugar. */
+const AVATAR_FALLBACK = `(() => {
+  const visible = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const imgs = [...document.querySelectorAll('img[src*="googleusercontent"]')].filter(visible);
+  const initials = [...document.querySelectorAll('span[aria-hidden=true].rounded-full')].filter((e) => visible(e) && /^[A-Z]{1,2}$/.test(e.textContent.trim()));
+  const broken = [...document.querySelectorAll('img')].filter((i) => visible(i) && i.complete && i.naturalWidth === 0);
+  return imgs.length === 0 && broken.length === 0 && initials.length > 0 && document.documentElement.scrollWidth <= innerWidth + 1;
+})()`;
+for (const [where, path] of [["onboarding", "/conta/boas-vindas"], ["conta", "/conta/configuracoes"]]) {
+  if (where === "conta") await b.go(testBase + path, 1500);
+  for (const w of [390, 1440]) {
+    for (const dark of [false, true]) {
+      await b.viewport(w, { dark });
+      await check(await waitFor(AVATAR_FALLBACK), `foto indisponível → iniciais (${where}, ${w}px, ${dark ? "escuro" : "claro"})`);
+    }
+  }
+}
+await b.viewport(1280);
 ignoreExpectedNetworkErrors();
 
 b.setStep("sessão expirada/revogada");
