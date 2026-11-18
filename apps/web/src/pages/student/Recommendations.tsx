@@ -1,22 +1,25 @@
 import { useMemo } from "react";
 import { Link, useLocation } from "react-router";
-import { Badge, CheckIcon, EmptyState, SparkleIcon, buttonClasses } from "@edusearch/ui";
+import { AlertIcon, Badge, Card, CheckIcon, EmptyState, SparkleIcon, buttonClasses } from "@edusearch/ui";
 import { AsyncContent } from "../../components/AsyncContent";
 import { DemoNotice } from "../../components/DemoNotice";
 import { PageHeader } from "../../components/PageHeader";
 import { TeacherCard } from "../../components/TeacherCard";
 import type { MatchRequest } from "../../lib/api/types";
 import { subjectName } from "../../lib/catalog";
+import { MATCH_WEIGHTS } from "../../lib/data/mock/adapter";
 import { dataSource, isDemo } from "../../lib/data/source";
 import { useAsync } from "../../lib/hooks/useAsync";
 import { MATCH_REQUEST_KEY } from "./Matching";
 
 function readRequest(state: unknown): MatchRequest | null {
+  // Pedidos salvos antes do campo "dificuldades" continuam válidos.
+  const normalize = (r: MatchRequest): MatchRequest => ({ ...r, difficulties: r.difficulties ?? [] });
   const fromState = (state as { request?: MatchRequest } | null)?.request;
-  if (fromState) return fromState;
+  if (fromState) return normalize(fromState);
   try {
     const raw = sessionStorage.getItem(MATCH_REQUEST_KEY);
-    return raw ? (JSON.parse(raw) as MatchRequest) : null;
+    return raw ? normalize(JSON.parse(raw) as MatchRequest) : null;
   } catch {
     return null;
   }
@@ -55,9 +58,25 @@ export default function Recommendations() {
       />
 
       {isDemo && (
-        <DemoNotice className="mb-6">
-          Recomendação simulada com dados fictícios. A compatibilidade é uma estimativa ilustrativa, sem uso de IA.
-        </DemoNotice>
+        <Card tone="muted" padding="sm" className="mb-6 sm:px-5">
+          <DemoNotice className="bg-transparent p-0">
+            Recomendação de demonstração, calculada por regras simples no seu navegador. Não é uma análise de IA (Gemini).
+          </DemoNotice>
+          <details className="group mt-3 text-sm">
+            <summary className="inline-flex min-h-9 cursor-pointer items-center font-medium text-link marker:content-none hover:underline">
+              Como a compatibilidade é calculada
+            </summary>
+            <ul className="mt-2 grid gap-1 text-fg sm:grid-cols-2">
+              <li>Disciplina (obrigatória): {MATCH_WEIGHTS.subject} pontos</li>
+              <li>Nível de ensino: {MATCH_WEIGHTS.level} pontos</li>
+              <li>Metodologia preferida: {MATCH_WEIGHTS.methodology} pontos</li>
+              <li>Ajuda nas suas dificuldades: {MATCH_WEIGHTS.difficulties} pontos</li>
+              <li>Horários compatíveis: {MATCH_WEIGHTS.periods} pontos</li>
+              <li>Dentro do orçamento: {MATCH_WEIGHTS.budget} pontos</li>
+            </ul>
+            <p className="mt-2 text-fg-muted">Critérios sem preferência informada contam como compatíveis.</p>
+          </details>
+        </Card>
       )}
 
       <AsyncContent
@@ -96,6 +115,16 @@ export default function Recommendations() {
                             </li>
                           ))}
                         </ul>
+                        {m.cautions.length > 0 && (
+                          <ul className="mt-2 space-y-1">
+                            {m.cautions.map((c) => (
+                              <li key={c} className="flex items-start gap-2 text-sm text-warning-text">
+                                <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                                {c}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                       <Link
                         to={`/aluno/professores/${m.teacher.id}/agendar`}

@@ -3,9 +3,9 @@ import { useNavigate } from "react-router";
 import { ArrowLeftIcon, ArrowRightIcon, Badge, Button, Card, Chip, Select, SparkleIcon, Textarea } from "@edusearch/ui";
 import { DemoNotice } from "../../components/DemoNotice";
 import { PageHeader } from "../../components/PageHeader";
-import type { DayPeriod, Level, MatchRequest, Methodology } from "../../lib/api/types";
+import type { DayPeriod, Difficulty, Level, MatchRequest, Methodology } from "../../lib/api/types";
 import { subjectName, subjectOptions } from "../../lib/catalog";
-import { LEVEL_LABELS, METHODOLOGY_LABELS, PERIOD_LABELS, formatMoney, options } from "../../lib/format";
+import { DIFFICULTY_LABELS, LEVEL_LABELS, METHODOLOGY_LABELS, PERIOD_LABELS, formatMoney, options } from "../../lib/format";
 import { isDemo } from "../../lib/data/source";
 
 export const MATCH_REQUEST_KEY = "edusearch-match-request";
@@ -23,11 +23,12 @@ export default function Matching() {
   const navigate = useNavigate();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [step, setStep] = useState(0);
-  const [errors, setErrors] = useState<{ goal?: string; subject?: string; level?: string }>({});
+  const [errors, setErrors] = useState<{ goal?: string; subject?: string; level?: string; difficulties?: string }>({});
   const [form, setForm] = useState({
     goal: "",
     subject: "",
     level: "" as Level | "",
+    difficulties: [] as Difficulty[],
     methodologies: [] as Methodology[],
     periods: [] as DayPeriod[],
     budget: "",
@@ -43,6 +44,7 @@ export default function Matching() {
     if (form.goal.trim().length < 10) e.goal = "Descreva seu objetivo com pelo menos 10 caracteres.";
     if (!form.subject) e.subject = "Escolha a disciplina.";
     if (!form.level) e.level = "Escolha seu nível.";
+    if (!form.difficulties.length) e.difficulties = "Escolha pelo menos uma dificuldade.";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -53,6 +55,7 @@ export default function Matching() {
       subject: form.subject,
       level: form.level as Level,
       methodologies: form.methodologies,
+      difficulties: form.difficulties,
       periods: form.periods,
       maxPriceCents: form.budget ? Number(form.budget) : undefined,
     };
@@ -129,6 +132,33 @@ export default function Matching() {
                 onChange={(e) => setForm({ ...form, level: e.target.value as Level })}
               />
             </div>
+            <fieldset aria-describedby={errors.difficulties ? "dificuldades-erro" : "dificuldades-dica"}>
+              <legend className="text-sm font-medium text-fg-strong">
+                Principais dificuldades<span className="text-danger-text" aria-hidden="true"> *</span>
+              </legend>
+              <p id="dificuldades-dica" className="mt-0.5 text-sm text-fg-muted">
+                Escolha uma ou mais.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {options(DIFFICULTY_LABELS).map((o) => (
+                  <Chip
+                    key={o.value}
+                    selected={form.difficulties.includes(o.value)}
+                    onClick={() => {
+                      setForm({ ...form, difficulties: toggle(form.difficulties, o.value) });
+                      setErrors((er) => ({ ...er, difficulties: undefined }));
+                    }}
+                  >
+                    {o.label}
+                  </Chip>
+                ))}
+              </div>
+              {errors.difficulties && (
+                <p id="dificuldades-erro" role="alert" className="mt-2 text-sm text-danger-text">
+                  {errors.difficulties}
+                </p>
+              )}
+            </fieldset>
           </div>
         )}
 
@@ -177,6 +207,7 @@ export default function Matching() {
               ["Objetivo", form.goal],
               ["Disciplina", subjectName(form.subject)],
               ["Nível", form.level ? LEVEL_LABELS[form.level] : "—"],
+              ["Dificuldades", form.difficulties.map((d) => DIFFICULTY_LABELS[d]).join(", ")],
               ["Metodologias", form.methodologies.map((m) => METHODOLOGY_LABELS[m]).join(", ") || "Sem preferência"],
               ["Períodos", form.periods.map((p) => PERIOD_LABELS[p]).join(", ") || "Qualquer período"],
               ["Orçamento", BUDGETS.find((b) => b.value === form.budget)?.label ?? "—"],

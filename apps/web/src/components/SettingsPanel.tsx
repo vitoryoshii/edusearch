@@ -12,9 +12,12 @@ import {
   SunIcon,
   Switch,
   cn,
+  useToast,
   type ThemePreference,
 } from "@edusearch/ui";
-import { homeFor, useSession } from "../app/session";
+import { studentSession, teacherSession, useSession } from "../app/session";
+import { DEMO_TEACHER_ID } from "../lib/demo";
+import { TeacherPicker } from "./TeacherPicker";
 import { useAppTheme } from "../app/theme";
 import { API_BASE_URL, describeError } from "../lib/api/client";
 import type { Role } from "../lib/api/types";
@@ -30,11 +33,21 @@ const THEMES: Array<{ value: ThemePreference; label: string; icon: typeof SunIco
 /** Preferências comuns a aluno e professor: tema, notificações, conexão e sessão. */
 export function SettingsPanel({ role }: { role: Role }) {
   const { preference, setPreference } = useAppTheme();
-  const { session, signIn, signOut } = useSession();
+  const { session, signIn, switchRole, signOut } = useSession();
   const navigate = useNavigate();
   const [notify, setNotify] = useState({ reminders: true, updates: false });
   const [api, setApi] = useState<{ status: "idle" | "checking" | "ok" | "error"; message?: string }>({ status: "idle" });
   const [confirmExit, setConfirmExit] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const toast = useToast();
+
+  const resetDemo = async () => {
+    if (!dataSource.resetDemoData) return;
+    setResetting(true);
+    await dataSource.resetDemoData();
+    setResetting(false);
+    toast({ tone: "success", title: "Demonstração restaurada", description: "Aulas, perfil e disponibilidade voltaram ao estado inicial." });
+  };
   const other: Role = role === "student" ? "teacher" : "student";
 
   const checkApi = async () => {
@@ -134,16 +147,30 @@ export function SettingsPanel({ role }: { role: Role }) {
 
       <section aria-labelledby="sessao">
         <SectionTitle id="sessao">Sessão de demonstração</SectionTitle>
-        <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-fg">
-            Explore a outra visão do produto sem sair da demonstração.
+        {role === "teacher" && (
+          <Card className="mb-3">
+            <TeacherPicker
+              value={session?.teacherId ?? DEMO_TEACHER_ID}
+              label="Professor exibido"
+              hint="Troque para ver a agenda, as aulas e os recebimentos de outro professor fictício."
+              onChange={(t) => {
+                signIn(teacherSession(t));
+                toast({ title: `Visão de ${t.name}`, description: "Dados de demonstração." });
+                navigate("/professor");
+              }}
+            />
+          </Card>
+        )}
+        <Card className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <p className="min-w-0 text-sm text-fg">
+            Explore a outra visão do produto sem sair da demonstração. As reservas da Ana aparecem na agenda do
+            professor reservado.
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
             <Button
               variant="secondary"
               onClick={() => {
-                signIn({ role: other, name: other === "student" ? "Ana" : "Marina" });
-                navigate(homeFor(other));
+                switchRole(other === "student" ? studentSession() : teacherSession());
               }}
             >
               Ver como {other === "student" ? "aluno" : "professor"}
@@ -155,11 +182,25 @@ export function SettingsPanel({ role }: { role: Role }) {
         </Card>
       </section>
 
+      {dataSource.resetDemoData && (
+        <section aria-labelledby="dados-demo">
+          <SectionTitle id="dados-demo">Dados da demonstração</SectionTitle>
+          <Card className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <p className="min-w-0 text-sm text-fg">
+              As reservas e edições ficam salvas nesta aba do navegador enquanto ela estiver aberta. Restaure para recomeçar.
+            </p>
+            <Button variant="secondary" loading={resetting} onClick={resetDemo}>
+              Restaurar dados
+            </Button>
+          </Card>
+        </section>
+      )}
+
       <Dialog
         open={confirmExit}
         onClose={() => setConfirmExit(false)}
         title="Sair da demonstração?"
-        description={`Você sairá como ${session?.name ?? "visitante"}. Os dados fictícios voltam ao estado inicial ao recarregar.`}
+        description={`Você sairá como ${session?.name ?? "visitante"}. Suas reservas de demonstração serão descartadas.`}
         size="sm"
         footer={
           <>
@@ -169,6 +210,7 @@ export function SettingsPanel({ role }: { role: Role }) {
             <Button
               onClick={() => {
                 signOut();
+                void dataSource.resetDemoData?.();
                 navigate("/", { replace: true });
               }}
             >

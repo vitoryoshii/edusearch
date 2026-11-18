@@ -13,6 +13,7 @@ import {
   cn,
 } from "@edusearch/ui";
 import { AsyncContent } from "../../components/AsyncContent";
+import { NextSlots } from "../../components/NextSlots";
 import { PageHeader, SectionTitle } from "../../components/PageHeader";
 import { subjectName } from "../../lib/catalog";
 import { dataSource, isDemo } from "../../lib/data/source";
@@ -65,6 +66,8 @@ export default function TeacherProfile() {
                   </div>
                 </div>
               </Card>
+
+              <NextSlots teacherId={t.id} />
 
               <section aria-labelledby="sobre-prof">
                 <SectionTitle id="sobre-prof">Sobre</SectionTitle>

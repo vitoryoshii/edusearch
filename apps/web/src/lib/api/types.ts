@@ -17,6 +17,9 @@ export type Methodology = "pratica" | "teorica" | "exercicios" | "conversacao" |
 
 export type DayPeriod = "manha" | "tarde" | "noite";
 
+/** Dificuldades declaradas pelo aluno no matching (lista fechada, explicável). */
+export type Difficulty = "base" | "exercicios" | "pratica" | "fala" | "organizacao";
+
 export type Subject = { id: string; name: string };
 
 export type Teacher = {
@@ -51,6 +54,7 @@ export type Lesson = {
   id: string;
   teacherId: string;
   teacherName: string;
+  studentId: string;
   studentName: string;
   subject: string; // id de Subject
   topic?: string;
@@ -69,6 +73,7 @@ export type MatchRequest = {
   subject: string;
   level: Level;
   methodologies: Methodology[];
+  difficulties: Difficulty[];
   periods: DayPeriod[];
   maxPriceCents?: number;
 };
@@ -78,6 +83,8 @@ export type MatchResult = {
   /** 0–100. Na demonstração é calculado localmente, sem IA. */
   score: number;
   reasons: string[];
+  /** Pontos de atenção (ex.: acima do orçamento). */
+  cautions: string[];
 };
 
 export type LearningGoal = { id: string; title: string; done: number; total: number };

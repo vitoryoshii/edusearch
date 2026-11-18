@@ -8,6 +8,13 @@ import { router, titleFor } from "./app/router";
 import { SessionProvider } from "./app/session";
 import { ThemeProvider } from "./app/theme";
 import { registerServiceWorker } from "./pwa/register";
+import { dataSource, isDemo } from "./lib/data/source";
+
+// Somente em desenvolvimento: permite que os testes de jornada simulem outra
+// pessoa reservando o mesmo horário. Não existe no build de produção.
+if (import.meta.env.DEV && isDemo) {
+  (window as unknown as { __edusearchDemo: unknown }).__edusearchDemo = { dataSource };
+}
 
 /** Atualiza o título da aba a cada navegação (anunciado por leitores de tela). */
 function useDocumentTitle() {

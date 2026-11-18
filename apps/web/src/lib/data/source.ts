@@ -25,6 +25,9 @@ import { mockDataSource } from "./mock/adapter";
 export interface DataSource {
   readonly kind: "mock" | "api";
 
+  /** Somente na demonstração: volta os dados fictícios ao estado inicial. */
+  resetDemoData?(): Promise<void>;
+
   health(): Promise<HealthResponse>;
 
   // Aluno

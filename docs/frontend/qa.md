@@ -83,3 +83,95 @@ Em [`screenshots/fase-2.1/`](screenshots/fase-2.1/):
 - Cadastro: desktop, 320px e validação (claro e escuro).
 - Boas-vindas: desktop e mobile, claro e escuro.
 - Escolha de perfil (390px), aulas do aluno (mobile), início do aluno (escuro) e recebimentos (1024px).
+
+---
+
+## Fase 2.2 — Jornada funcional do marketplace
+
+Executado no **servidor de desenvolvimento** (`localhost:5190`, React StrictMode) e no build de produção.
+
+| Verificação | Resultado |
+| ----------- | --------- |
+| `pnpm -r typecheck` | ✅ |
+| `pnpm --filter @edusearch/web lint` (`check-effects`) | ✅ |
+| `pnpm -r build` | ✅ |
+| `smoke` (24 rotas, dev) | ✅ 0 erros |
+| `journey` (dev): jornada completa em 1440px claro e essencial em 768px claro, 375px claro/escuro e 1440px escuro | ✅ **29/29 etapas** |
+| Teste de mutação: guarda de reserva duplicada desligada temporariamente | ❌ detectado pela etapa "conflito" (prova que o teste protege a regra) |
+| axe-core WCAG 2.2 AA, aluno: 7 rotas × 375/768/1440 × claro/escuro (42) | ✅ 0 violações, 0 overflow, 0 erros de console |
+| axe-core, professor: 4 rotas × 375/768/1440 × claro/escuro (24) | ✅ 0 violações |
+
+### Cobertura do teste de jornada (`scripts/journey.mjs`)
+
+1. Acesso em modo demonstração → perfil Aluno → dashboard com as ações de busca.
+2. Busca: disciplina (3) → orçamento (2) → período "Noite" (1) → nível sem resultados (estado vazio) → limpar filtros (6). No mobile, filtros pelo painel inferior.
+3. Matching: validação de dificuldade obrigatória → preferências → revisão → recomendações. A 1ª é a Profa. Marina, com 100%, motivo de dificuldade, ponto de atenção de orçamento e explicação dos critérios.
+4. Perfil: especialidade, metodologia, preço e próximos horários; sem avaliações reais nem "verificado".
+5. Reserva: horário pré-selecionado → resumo → confirmação → aviso de sucesso → "Nova reserva".
+6. O horário reservado some da agenda (interface e dados).
+7. Conflito: outra "aba" reserva o mesmo horário antes da confirmação. Resultado: 409, mensagem, botão desabilitado e atalho para outro horário.
+8. O aluno não pode reservar duas aulas sobrepostas (professores diferentes).
+9. Detalhes da aula (código, pagamento não cobrado) → cancelamento → o horário volta a ficar livre → aba Canceladas.
+10. Troca para a visão do professor: a reserva aparece em Aulas e na Agenda semanal.
+11. O cancelamento feito pela professora aparece para o aluno.
+12. Persistência ao recarregar (`sessionStorage`).
+13. Tema aplicado corretamente (claro e escuro), sem rolagem horizontal e sem erros de console em todas as etapas.
+
+### Encontrado e corrigido durante o QA
+
+- A rolagem horizontal entre 768 e 800px em *Configurações* foi causada pela nova seção "Dados da demonstração". Agora os cartões só ficam em linha a partir de 1024px.
+
+### Capturas
+
+Em [`screenshots/fase-2.2/`](screenshots/fase-2.2/), na ordem da jornada (1440, 768 e 375px, claro e escuro):
+
+- Dashboard, busca filtrada e vazia, filtros mobile.
+- Recomendações e perfil.
+- Horário, resumo e conflito.
+- Minhas aulas e detalhes.
+- Aulas e agenda do professor.
+
+---
+
+## Fase 2.2 — Estabilização para o Pull Request
+
+Todas as validações rodaram **em sequência**, com um único servidor de desenvolvimento (`localhost:5190`, StrictMode) e um Chrome headless por vez.
+
+### Correções
+
+| Problema | Correção |
+| -------- | -------- |
+| A visão do professor era fixa na Profa. Marina: reservas com outros professores não apareciam em nenhuma agenda | Professor exibido configurável (sessão `teacherId`). Perfil, especialidades e grade agora existem **por professor**. Horários de todos os professores vêm da grade editável. Novo seletor em *Escolha seu perfil* e *Configurações* e atalho *Ver na agenda do professor* |
+| A troca de perfil para uma rota específica caía na home do professor: o guard da área antiga redirecionava antes do `navigate` assíncrono (encontrado pelo novo teste de jornada) | `switchRole(sessão, destino)`: a sessão e o destino mudam juntos e o `RequireRole` respeita o destino |
+| Texto do aviso de reserva ("na agenda de Prof. Rafael Nogueira") | Primeiro nome: "na agenda de Rafael" |
+| 4 servidores Vite órfãos de execuções anteriores (portas 4173, 4174, 5174 e 5190, ~160 MB) | Encerrados só os processos com `EDUSEARCH` na linha de comando. Daí em diante, um servidor e um teste por vez |
+
+### Acessibilidade de componentes interativos (`a11y`: 29 verificações)
+
+| Estado ou interação | Resultado |
+| ------------------- | --------- |
+| axe: escolha de perfil com seletor, menu da conta aberto, recomendações expandidas (claro e escuro), diálogo de detalhes (claro e escuro), confirmação de cancelamento, painel de filtros mobile, Configurações do professor | ✅ 0 violações |
+| Menu da conta: `Enter` abre e foca o 1º item, `ArrowDown` move, `Escape` fecha e devolve o foco; `aria-expanded` e nome acessível | ✅ |
+| Abas: `ArrowRight` seleciona e foca a próxima; `Home` volta à primeira | ✅ |
+| `<summary>` dos critérios: `Enter` expande | ✅ |
+| Diálogos: foco entra ao abrir, `Tab` não vai para o fundo, `Escape` fecha e devolve o foco ao gatilho; nome (`aria-labelledby`) e descrição (`aria-describedby`) presentes; `Escape` não confirma o cancelamento | ✅ |
+| Avisos (toasts) em região `aria-live="polite"` | ✅ |
+
+Durante a análise, o axe apontou contraste no diálogo escuro. Era um falso positivo: a medição ocorreu durante a animação de entrada (opacidade). Com a animação concluída, passa (`fg-muted` `#94A3B8` sobre `#102E46`, 5,46:1). Nenhuma mudança visual foi necessária.
+
+### Validação final
+
+| Verificação | Resultado |
+| ----------- | --------- |
+| `pnpm -r typecheck` | ✅ |
+| `pnpm --filter @edusearch/web lint` (efeitos React) | ✅ |
+| `pnpm -r build` | ✅ |
+| `smoke` (24 rotas, dev) | ✅ 0 erros |
+| `a11y` (dev) | ✅ 29/29 |
+| `journey` (dev) | ✅ **31/31 etapas**, incluindo as 2 novas: reserva com o Prof. Rafael vai para a agenda dele e não para a da Marina; escolha da Profa. Luiza na tela de perfil |
+| Responsividade e console: 15 rotas (4 públicas, 8 do aluno, 8 do professor) × 375/768/1440 × claro/escuro, 120 renderizações | ✅ 0 overflow, 0 violações axe, 0 erros de console |
+| `apps/website`, `apps/api`, `supabase` e `docs/database-design.md` | ✅ sem alterações em relação à `main` |
+
+### CI
+
+`.github/workflows/frontend-ci.yml` foi criado e validado como YAML. **Ainda não foi executado no GitHub**, porque a branch não foi publicada. O lockfile contém os binários nativos para Linux (TypeScript 7, rolldown, Tailwind oxide, lightningcss). No CI, o Chrome roda com `--no-sandbox` (exigência dos runners Ubuntu 24.04), só quando `CI` está definido.

@@ -1,0 +1,113 @@
+# CI do frontend (website, app e design system).
+#
+# - checks: roda em todo Pull Request que toca o frontend. Leve (~3–5 min):
+#   instalação com lockfile, typecheck, lint (efeitos React), build e testes
+#   rápidos no servidor de desenvolvimento (React StrictMode): smoke e a11y.
+# - journey: teste de jornada completo (~5 min, Chrome headless). Complementar:
+#   roda sob demanda (Actions → Frontend CI → Run workflow) ou em PRs com o
+#   rótulo "journey", para não consumir recursos em todo commit.
+#
+# Não usa segredos, não faz deploy e não toca a API (apps/api).
+name: Frontend CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - "apps/web/**"
+      - "apps/website/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/frontend-ci.yml"
+  workflow_dispatch:
+    inputs:
+      journey:
+        description: "Executar também o teste de jornada completo"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, lint, build e testes leves
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Evita rodar de novo quando o único evento é a adição de outro rótulo.
+    if: github.event.action != 'labeled' || github.event.label.name == 'journey'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pnpm (versão do packageManager)
+        uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependências (lockfile congelado)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Lint (efeitos React não podem retornar valor)
+        run: pnpm --filter @edusearch/web lint
+
+      - name: Build (website, app e design system)
+        run: pnpm -r build
+
+      - name: Servidor de desenvolvimento (StrictMode) na porta 5190
+        run: |
+          pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/vite.log"; exit 1
+
+      - name: Smoke test (24 rotas, console, overflow)
+        run: pnpm --filter @edusearch/web smoke
+
+      - name: Acessibilidade (axe + teclado em diálogos, menus e abas)
+        run: pnpm --filter @edusearch/web a11y
+
+  journey:
+    name: Jornada completa do marketplace (complementar)
+    needs: checks
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.journey) ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'journey'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Servidor de desenvolvimento na porta 5190
+        run: |
+          pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/vite.log"; exit 1
+
+      - name: Teste de jornada (1440, 768 e 375px, claro e escuro)
+        run: node apps/web/scripts/journey.mjs http://localhost:5190 "$RUNNER_TEMP/journey-shots"
+
+      - name: Capturas da jornada
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journey-screenshots
+          path: ${{ runner.temp }}/journey-shots
+          if-no-files-found: ignore
+          retention-days: 7

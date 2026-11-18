@@ -13,12 +13,14 @@ import type {
   Specialty,
   Teacher,
   TeacherProfile,
+  TimeSlot,
   WeeklyAvailability,
 } from "../../api/types";
 import { SUBJECTS, subjectName } from "../../catalog";
 
-export const DEMO_STUDENT_NAME = "Ana (demonstração)";
-export const DEMO_TEACHER_ID = "t-marina";
+import { DEMO_STUDENT_ID, DEMO_STUDENT_NAME, DEMO_TEACHER_ID } from "../../demo";
+
+export { DEMO_STUDENT_ID, DEMO_STUDENT_NAME, DEMO_TEACHER_ID };
 
 export const subjects = SUBJECTS;
 export { subjectName };
@@ -122,30 +124,41 @@ export function at(dayOffset: number, hour: number, minute = 0): Date {
 const iso = (d: Date) => d.toISOString();
 const plusMinutes = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
 
-const PERIOD_HOURS: Record<DayPeriod, number[]> = { manha: [8, 10], tarde: [14, 16], noite: [19, 20] };
+/** Janela de agendamento: de amanhã até 7 dias à frente. */
+export const BOOKING_WINDOW_DAYS = 7;
 
-/** Gera horários livres nos próximos 7 dias, com alguns dias vazios. */
-export function generateSlots(teacher: Teacher) {
-  const slots = [];
-  for (let day = 1; day <= 7; day++) {
+/** Horários candidatos de um professor: de hora em hora dentro da grade semanal (antes de descontar as aulas marcadas). */
+export function candidateSlots(teacher: Teacher, weekly: WeeklyAvailability): TimeSlot[] {
+  const slots: TimeSlot[] = [];
+  for (let day = 1; day <= BOOKING_WINDOW_DAYS; day++) {
     const weekday = at(day, 0).getDay();
-    if (weekday === 0) continue; // sem aulas aos domingos
-    for (const p of teacher.periods) {
-      for (const h of PERIOD_HOURS[p]) {
-        // Ocupação pseudoaleatória e determinística.
-        if ((day * 7 + h + teacher.id.length) % 3 === 0) continue;
-        const start = at(day, h);
-        slots.push({ id: `${teacher.id}-${day}-${h}`, teacherId: teacher.id, start: iso(start), end: iso(plusMinutes(start, teacher.lessonMinutes)) });
-      }
+    const d = weekly.find((w) => w.weekday === weekday);
+    if (!d?.enabled) continue;
+    const hours = new Set<number>();
+    for (const r of d.ranges) {
+      const [sh] = r.start.split(":").map(Number);
+      const [eh, em] = r.end.split(":").map(Number);
+      // A aula precisa terminar dentro do intervalo.
+      for (let h = sh; h * 60 + teacher.lessonMinutes <= eh * 60 + em; h++) hours.add(h);
+    }
+    for (const h of [...hours].sort((x, y) => x - y)) {
+      const start = at(day, h);
+      slots.push({ id: `${teacher.id}-${iso(start)}`, teacherId: teacher.id, start: iso(start), end: iso(plusMinutes(start, teacher.lessonMinutes)) });
     }
   }
   return slots;
 }
 
+/** Duas faixas de horário se sobrepõem? */
+export const overlaps = (a: { start: string; end: string }, b: { start: string; end: string }) =>
+  a.start < b.end && b.start < a.end;
+
+/* --------------------------------- Aulas ---------------------------------- */
+
 function lesson(
   id: string,
   teacher: Teacher,
-  studentName: string,
+  student: { id: string; name: string },
   subject: string,
   start: Date,
   status: Lesson["status"],
@@ -155,7 +168,8 @@ function lesson(
     id,
     teacherId: teacher.id,
     teacherName: teacher.name,
-    studentName,
+    studentId: student.id,
+    studentName: student.name,
     subject,
     topic,
     start: iso(start),
@@ -166,34 +180,40 @@ function lesson(
   };
 }
 
-const [marina, rafael, helena] = teachers;
-
-export function initialStudentLessons(): Lesson[] {
+/**
+ * Uma única lista de aulas para toda a demonstração.
+ * - Visão do aluno: aulas com studentId = DEMO_STUDENT_ID.
+ * - Visão do professor: aulas com teacherId = DEMO_TEACHER_ID.
+ * Assim, uma reserva feita pela Ana com a Profa. Marina aparece nas duas visões.
+ */
+export function seedLessons(): Lesson[] {
+  const [marina, rafael, helena] = teachers;
+  const ana = { id: DEMO_STUDENT_ID, name: DEMO_STUDENT_NAME };
+  const other = (n: string) => ({ id: `s-${n.toLowerCase().replace(/\W/g, "")}`, name: `${n} (fictício)` });
   return [
-    lesson("l-1", marina, DEMO_STUDENT_NAME, "matematica", at(2, 19), "scheduled", "Funções do 1º e 2º grau"),
-    lesson("l-2", rafael, DEMO_STUDENT_NAME, "redacao", at(5, 8), "scheduled", "Proposta de intervenção"),
-    lesson("l-3", marina, DEMO_STUDENT_NAME, "matematica", at(-5, 19), "completed", "Porcentagem e juros"),
-    lesson("l-4", rafael, DEMO_STUDENT_NAME, "redacao", at(-9, 8), "completed", "Estrutura da dissertação"),
-    lesson("l-5", marina, DEMO_STUDENT_NAME, "matematica", at(-12, 19), "completed", "Razão e proporção"),
-    lesson("l-6", helena, DEMO_STUDENT_NAME, "ingles", at(-3, 10), "cancelled"),
+    // Aulas da Ana (aluna da demonstração)
+    lesson("l-1", marina, ana, "matematica", at(2, 19), "scheduled", "Funções do 1º e 2º grau"),
+    lesson("l-2", rafael, ana, "redacao", at(5, 8), "scheduled", "Proposta de intervenção"),
+    lesson("l-3", marina, ana, "matematica", at(-5, 19), "completed", "Porcentagem e juros"),
+    lesson("l-4", rafael, ana, "redacao", at(-9, 8), "completed", "Estrutura da dissertação"),
+    lesson("l-5", marina, ana, "matematica", at(-12, 19), "completed", "Razão e proporção"),
+    lesson("l-6", helena, ana, "ingles", at(-3, 10), "cancelled"),
+    // Outros alunos da Profa. Marina (professora da demonstração)
+    lesson("l-7", marina, other("Bruno T."), "matematica", at(1, 14), "scheduled", "Geometria plana"),
+    lesson("l-8", marina, other("Carla M."), "fisica", at(1, 16), "scheduled", "Cinemática"),
+    lesson("l-9", marina, other("Diego R."), "matematica", at(3, 19), "scheduled", "Probabilidade"),
+    lesson("l-10", marina, other("Eduarda L."), "matematica", at(9, 14), "scheduled", "Estatística"),
+    lesson("l-11", marina, other("Bruno T."), "matematica", at(-2, 14), "completed", "Trigonometria"),
+    lesson("l-12", marina, other("Fábio C."), "fisica", at(-6, 16), "completed"),
+    lesson("l-13", marina, other("Carla M."), "fisica", at(-8, 16), "cancelled"),
+    // Outros professores também têm agenda própria
+    lesson("l-14", rafael, other("Gabriel P."), "redacao", at(4, 19), "scheduled", "Repertório sociocultural"),
+    lesson("l-15", rafael, other("Júlia N."), "redacao", at(-4, 20), "completed"),
+    lesson("l-16", teachers[4], other("Igor S."), "biologia", at(3, 8), "scheduled", "Genética"),
   ];
 }
 
-export function initialTeacherLessons(): Lesson[] {
-  const s = (n: string) => `${n} (fictício)`;
-  return [
-    lesson("tl-1", marina, s("Ana S."), "matematica", at(0, 19), "scheduled", "Funções"),
-    lesson("tl-2", marina, s("Bruno T."), "matematica", at(1, 14), "scheduled", "Geometria plana"),
-    lesson("tl-3", marina, s("Carla M."), "fisica", at(1, 16), "scheduled", "Cinemática"),
-    lesson("tl-4", marina, s("Diego R."), "matematica", at(3, 19), "scheduled", "Probabilidade"),
-    lesson("tl-5", marina, s("Ana S."), "matematica", at(5, 20), "scheduled"),
-    lesson("tl-6", marina, s("Eduarda L."), "matematica", at(9, 14), "scheduled", "Estatística"),
-    lesson("tl-7", marina, s("Bruno T."), "matematica", at(-2, 14), "completed", "Trigonometria"),
-    lesson("tl-8", marina, s("Ana S."), "matematica", at(-5, 19), "completed", "Porcentagem e juros"),
-    lesson("tl-9", marina, s("Fábio C."), "fisica", at(-6, 16), "completed"),
-    lesson("tl-10", marina, s("Carla M."), "fisica", at(-8, 16), "cancelled"),
-  ];
-}
+const [marina, rafael] = teachers;
 
 export const studentProgress: LearningProgress = {
   lessonsCompleted: 3,
@@ -209,26 +229,51 @@ export const studentProgress: LearningProgress = {
   ],
 };
 
-export const teacherProfile: TeacherProfile = {
-  name: marina.name,
-  headline: marina.headline,
-  bio: marina.bio,
-  education: marina.education.join("\n"),
-  priceCents: marina.priceCents,
-  lessonMinutes: marina.lessonMinutes,
-  methodologies: marina.methodologies,
+/* ------------------- Dados editáveis de cada professor ------------------- */
+
+/** Perfil profissional inicial, derivado do cadastro fictício do professor. */
+export function profileOf(t: Teacher): TeacherProfile {
+  return {
+    name: t.name,
+    headline: t.headline,
+    bio: t.bio,
+    education: t.education.join("\n"),
+    priceCents: t.priceCents,
+    lessonMinutes: t.lessonMinutes,
+    methodologies: t.methodologies,
+  };
+}
+
+/** Especialidades iniciais: cada disciplina do professor em todos os níveis que ele atende. */
+export function specialtiesOf(t: Teacher): Specialty[] {
+  return t.subjects.map((subject) => ({ subject, levels: [...t.levels] }));
+}
+
+const PERIOD_RANGES: Record<DayPeriod, { start: string; end: string }> = {
+  manha: { start: "08:00", end: "12:00" },
+  tarde: { start: "14:00", end: "18:00" },
+  noite: { start: "19:00", end: "21:00" },
 };
 
-export const specialties: Specialty[] = [
-  { subject: "matematica", levels: ["medio", "pre-vestibular"] },
-  { subject: "fisica", levels: ["medio"] },
-];
-
-export const availability: WeeklyAvailability = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
-  weekday,
-  enabled: weekday >= 1 && weekday <= 5,
-  ranges: weekday >= 1 && weekday <= 5 ? [{ start: "14:00", end: "17:00" }, { start: "19:00", end: "21:00" }] : [],
-}));
+/**
+ * Grade semanal inicial. A Profa. Marina tem uma grade própria (seg–sex);
+ * os demais professores atendem de segunda a sábado nos seus períodos.
+ */
+export function availabilityOf(t: Teacher): WeeklyAvailability {
+  if (t.id === DEMO_TEACHER_ID) {
+    return [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+      weekday,
+      enabled: weekday >= 1 && weekday <= 5,
+      ranges: weekday >= 1 && weekday <= 5 ? [{ start: "14:00", end: "17:00" }, { start: "19:00", end: "21:00" }] : [],
+    }));
+  }
+  const ranges = (["manha", "tarde", "noite"] as const).filter((p) => t.periods.includes(p)).map((p) => ({ ...PERIOD_RANGES[p] }));
+  return [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+    weekday,
+    enabled: weekday !== 0,
+    ranges: weekday !== 0 ? ranges.map((r) => ({ ...r })) : [],
+  }));
+}
 
 export function buildEarnings(lessons: Lesson[], feeRate = 0.1): EarningsSummary {
   const items = lessons

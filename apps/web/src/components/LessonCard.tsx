@@ -16,11 +16,13 @@ export function LessonCard({
   perspective,
   actions,
   highlight = false,
+  badge,
 }: {
   lesson: Lesson;
   perspective: "student" | "teacher";
   actions?: ReactNode;
   highlight?: boolean;
+  badge?: ReactNode;
 }) {
   const person = perspective === "student" ? `com ${lesson.teacherName}` : `com ${lesson.studentName}`;
   return (
@@ -38,6 +40,7 @@ export function LessonCard({
             <Badge tone={statusTone[lesson.status]} dot>
               {STATUS_LABELS[lesson.status]}
             </Badge>
+            {badge}
           </div>
           <p className="mt-0.5 text-sm text-fg-muted">{person}</p>
           <p className="mt-2 text-sm font-medium text-fg-strong">

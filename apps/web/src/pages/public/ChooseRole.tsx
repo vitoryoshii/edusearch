@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Button, GraduationIcon, UsersIcon, cn } from "@edusearch/ui";
-import { homeFor, useSession } from "../../app/session";
+import { homeFor, studentSession, teacherSession, useSession } from "../../app/session";
+import { TeacherPicker } from "../../components/TeacherPicker";
+import { DEMO_TEACHER_ID, DEMO_TEACHER_NAME } from "../../lib/demo";
 import type { Role } from "../../lib/api/types";
 
 const ROLES: Array<{ value: Role; title: string; text: string; icon: typeof UsersIcon }> = [
@@ -21,12 +23,13 @@ const ROLES: Array<{ value: Role; title: string; text: string; icon: typeof User
 
 export default function ChooseRole() {
   const [role, setRole] = useState<Role>("student");
+  const [teacher, setTeacher] = useState({ id: DEMO_TEACHER_ID, name: DEMO_TEACHER_NAME });
   const { pendingName, setPendingName, signIn } = useSession();
   const navigate = useNavigate();
 
   const onContinue = () => {
-    const name = pendingName || (role === "student" ? "Ana" : "Marina");
-    signIn({ role, name });
+    // Aluno usa o nome do cadastro demonstrativo; professor usa o professor fictício escolhido.
+    signIn(role === "student" ? studentSession(pendingName || "Ana") : teacherSession(teacher));
     setPendingName(null);
     navigate(homeFor(role), { replace: true });
   };
@@ -81,6 +84,12 @@ export default function ChooseRole() {
           })}
         </div>
       </fieldset>
+
+      {role === "teacher" && (
+        <div className="mt-6 max-w-md animate-fade-in">
+          <TeacherPicker value={teacher.id} onChange={(t) => setTeacher({ id: t.id, name: t.name })} />
+        </div>
+      )}
 
       <Button size="lg" className="mt-8 w-full sm:w-auto" onClick={onContinue}>
         Continuar como {role === "student" ? "aluno" : "professor"}

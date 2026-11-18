@@ -1,4 +1,4 @@
-import type { DayPeriod, LessonStatus, Level, Methodology } from "./api/types";
+import type { DayPeriod, Difficulty, LessonStatus, Level, Methodology } from "./api/types";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export const formatMoney = (cents: number) => brl.format(cents / 100);
@@ -38,6 +38,14 @@ export const METHODOLOGY_LABELS: Record<Methodology, string> = {
   exercicios: "Resolução de exercícios",
   conversacao: "Conversação",
   projetos: "Projetos",
+};
+
+export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  base: "Falta de base no conteúdo",
+  exercicios: "Resolver exercícios e provas",
+  pratica: "Aplicar na prática",
+  fala: "Falar e me expressar",
+  organizacao: "Organizar os estudos",
 };
 
 export const PERIOD_LABELS: Record<DayPeriod, string> = {

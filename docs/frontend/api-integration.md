@@ -33,8 +33,8 @@ Telas ──▶ dataSource (interface DataSource, src/lib/data/source.ts)
 | 4 | Catálogo | Lista oficial de disciplinas, níveis e metodologias | `listSubjects` |
 | 5 | Perfil do professor | Dados públicos do professor | `getTeacher` |
 | 6 | Horários | Horários livres de um professor em um intervalo de datas, com fuso | `listTeacherSlots` |
-| 7 | Matching (Gemini) | Enviar objetivo, disciplina, nível, preferências e orçamento. Receber professores ordenados, pontuação e **motivos legíveis**. Definir tempo máximo de resposta e o comportamento em caso de falha da IA. | `matchTeachers` |
-| 8 | Agendamento | Criar aula para um horário. Tratar conflito (horário ocupado, **409**). Retornar a aula criada e o status do pagamento. | `createBooking` |
+| 7 | Matching (Gemini) | Enviar objetivo, disciplina, nível, **dificuldades**, preferências e orçamento. Receber professores ordenados, pontuação, **motivos legíveis** e **pontos de atenção** (`reasons[]`, `cautions[]`). Definir tempo máximo de resposta e o comportamento em caso de falha da IA. | `matchTeachers` |
+| 8 | Agendamento | Criar aula para um horário. Tratar conflito (horário ocupado ou aula sobreposta do aluno, **409**; regras em [demo-journey.md](demo-journey.md)). Retornar a aula criada e o status do pagamento. | `createBooking` |
 | 9 | Pagamento Pix | QR Code / copia-e-cola, expiração e status (AbacatePay). Definir se o agendamento só é confirmado após o pagamento. | — (novo) |
 | 10 | Minhas aulas | Aulas do aluno e do professor, com status e `meetingUrl` (Google Meet) | `listStudentLessons`, `listTeacherLessons` |
 | 11 | Cancelamento | Cancelar a aula, com política de prazo e reembolso | `cancelLesson` |

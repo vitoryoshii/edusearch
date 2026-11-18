@@ -12,12 +12,12 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
 
 /aluno                          Início: busca rápida, assistente, próxima aula, destaques
 /aluno/buscar                   Busca + filtros (disciplina, nível, metodologia, período, valor); filtros na URL
-/aluno/assistente               Matching pedagógico em 3 etapas (objetivo → preferências → revisão)
+/aluno/assistente               Matching pedagógico em 3 etapas (objetivo + dificuldades → preferências → revisão)
 /aluno/recomendados             Professores recomendados com compatibilidade e motivos
-/aluno/professores/:id          Perfil do professor
-/aluno/professores/:id/agendar  Seleção de dia e horário
+/aluno/professores/:id          Perfil do professor + próximos horários disponíveis
+/aluno/professores/:id/agendar  Seleção de dia e horário (?horario=<id> pré-seleciona)
 /aluno/agendamento/resumo       Resumo e confirmação do agendamento
-/aluno/aulas                    Minhas aulas (próximas / concluídas / canceladas), cancelamento
+/aluno/aulas                    Minhas aulas (próximas / concluídas / canceladas), detalhes e cancelamento
 /aluno/progresso                Acompanhamento: metas, tempo de estudo, anotações
 /aluno/perfil                   Perfil e configurações
 
@@ -71,9 +71,15 @@ Para revisar sem backend, adicione à URL:
 
 Ex.: `/aluno/buscar?demo=vazio`.
 
+## Jornada de demonstração
+
+A jornada completa (busca → matching → perfil → reserva → minhas aulas → agenda do professor), com regras e estado, está em [demo-journey.md](demo-journey.md).
+
 ## Sessão de demonstração
 
-`sessionStorage` (`edusearch-demo-session`) guarda apenas `{ role, name }`. Nenhuma senha ou token é armazenado, e os formulários de login e cadastro descartam a senha. Em *Configurações* é possível alternar entre aluno e professor.
+`sessionStorage` (`edusearch-demo-session`) guarda apenas `{ role, name }`. Nenhuma senha ou token é armazenado, e os formulários de login e cadastro descartam a senha. Para alternar entre aluno e professor, use o menu da conta (avatar) ou *Configurações*. Para escolher **qual professor fictício** é exibido, use *Escolha seu perfil*, *Configurações → Professor exibido* ou o atalho *Ver na agenda do professor* nos detalhes de uma aula. Sair da demonstração também restaura os dados fictícios.
+
+Trocas de perfil usam `switchRole(sessão, destino)` (`src/app/session.tsx`). Usar `signIn` seguido de `navigate` falha: o guard da área antiga redireciona para a home do novo perfil antes da navegação assíncrona terminar.
 
 ## PWA
 
@@ -89,6 +95,12 @@ Ex.: `/aluno/buscar?demo=vazio`.
 ## Proteção contra regressões
 
 - `pnpm --filter @edusearch/web lint` (`scripts/check-effects.mjs`): falha se algum `useEffect`/`useLayoutEffect` tiver corpo de expressão ou for `async`. O build do app roda essa checagem antes do `tsc`.
+- `pnpm --filter @edusearch/web journey [url] [pasta]` (`scripts/journey.mjs`): executa a jornada do marketplace pela interface em 1440, 768 e 375px, nos temas claro e escuro (29 etapas, ver [demo-journey.md](demo-journey.md)).
+- `pnpm --filter @edusearch/web a11y [url]` (`scripts/a11y.mjs`), cerca de 1 minuto:
+  - axe-core em estados interativos: diálogos abertos, menu da conta, painel de filtros, recomendações expandidas e seletor de professor, nos temas claro e escuro.
+  - Teclado real: foco ao abrir, `Tab` contido, `Escape` fecha e devolve o foco, setas no menu e nas abas, `Enter` no `<summary>`.
+  - Nomes acessíveis e regiões `aria-live`.
+- **CI** (`.github/workflows/frontend-ci.yml`): em Pull Requests roda instalação com lockfile, typecheck, lint, build, smoke e a11y no servidor de dev. A jornada é complementar: roda manualmente (*Run workflow*) ou em PRs com o rótulo `journey`.
 - `pnpm --filter @edusearch/web smoke [url]` (`scripts/smoke.mjs`): abre 24 rotas no Chrome headless e falha em caso de erro de console, exceção, tela de erro de rota, estado de erro inesperado ou rolagem horizontal. A URL padrão é `http://localhost:5190`. Rode contra o **servidor de desenvolvimento** para cobrir o React StrictMode.
 
 ```bash
@@ -103,6 +115,7 @@ src/
 ├── app/            router, sessão de demonstração, tema
 ├── components/     AppShell, PageHeader, AsyncContent, TeacherCard, LessonCard, LessonTabs, SettingsPanel...
 ├── lib/
+│   ├── demo.ts     identidades fictícias (Ana, professor padrão) e chave da sessão
 │   ├── auth/       providers.ts (ponto de integração Supabase + Google; hoje indisponível)
 │   ├── api/        client.ts (HTTP), types.ts (modelos do frontend)
 │   ├── data/       source.ts (interface), mock/ (fixtures + adapter), http/ (adapter real)

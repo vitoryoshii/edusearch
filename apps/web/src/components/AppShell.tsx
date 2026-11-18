@@ -17,12 +17,14 @@ import {
   SettingsIcon,
   SparkleIcon,
   UserIcon,
+  UsersIcon,
   WalletIcon,
   cn,
   type IconComponent,
 } from "@edusearch/ui";
-import { homeFor, useSession } from "../app/session";
+import { homeFor, studentSession, teacherSession, useSession } from "../app/session";
 import type { Role } from "../lib/api/types";
+import { dataSource } from "../lib/data/source";
 import { DemoBanner } from "./DemoNotice";
 
 type NavItem = { to: string; label: string; icon: IconComponent; end?: boolean; mobile?: boolean };
@@ -50,7 +52,7 @@ const NAV: Record<Role, NavItem[]> = {
 
 /** Layout das áreas logadas: barra lateral no desktop e barra inferior no mobile. */
 export function AppShell({ role }: { role: Role }) {
-  const { session, signOut } = useSession();
+  const { session, switchRole, signOut } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
@@ -65,7 +67,16 @@ export function AppShell({ role }: { role: Role }) {
     mainRef.current?.focus({ preventScroll: true });
   }, [location.pathname]);
 
+  const other: Role = role === "student" ? "teacher" : "student";
   const userMenu = [
+    {
+      id: "switch",
+      label: other === "teacher" ? "Ver como professor (demo)" : "Ver como aluno (demo)",
+      icon: <UsersIcon />,
+      onSelect: () => {
+        switchRole(other === "student" ? studentSession() : teacherSession());
+      },
+    },
     {
       id: "settings",
       label: role === "student" ? "Perfil e configurações" : "Configurações",
@@ -79,6 +90,7 @@ export function AppShell({ role }: { role: Role }) {
       tone: "danger" as const,
       onSelect: () => {
         signOut();
+        void dataSource.resetDemoData?.();
         navigate("/", { replace: true });
       },
     },

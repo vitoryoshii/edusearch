@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { Avatar, Button, Card, EmptyState, ErrorState, LoadingState, cn } from "@edusearch/ui";
 import { PageHeader } from "../../components/PageHeader";
 import { describeError } from "../../lib/api/client";
@@ -26,8 +26,12 @@ export default function Schedule() {
   const navigate = useNavigate();
   const data = useAsync(() => Promise.all([dataSource.getTeacher(id), dataSource.listTeacherSlots(id)]), [id]);
   const days = useMemo(() => nextDays(7), []);
+  const [params] = useSearchParams();
+  // ?horario=<id> vem do perfil do professor: pré-seleciona o dia e o horário.
+  const preselected = params.get("horario");
   const [day, setDay] = useState(() => days[0].toDateString());
-  const [slotId, setSlotId] = useState<string | null>(null);
+  const [slotId, setSlotId] = useState<string | null>(preselected);
+  const [synced, setSynced] = useState(false);
 
   const byDay = useMemo(() => {
     const map = new Map<string, TimeSlot[]>();
@@ -37,6 +41,14 @@ export default function Schedule() {
     }
     return map;
   }, [data.data]);
+
+  // Ajusta o dia quando o horário pré-selecionado for carregado (uma vez).
+  if (!synced && data.status === "success") {
+    const pre = data.data[1].find((s) => s.id === preselected);
+    setSynced(true);
+    if (pre) setDay(dayKey(pre.start));
+    else if (preselected) setSlotId(null);
+  }
 
   if (data.status === "loading") return <LoadingState label="Carregando horários…" />;
   if (data.status === "error") return <ErrorState description={describeError(data.error)} onRetry={data.reload} />;
