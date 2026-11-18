@@ -1,20 +1,23 @@
 import { lazy } from "react";
-import { createBrowserRouter, type RouteObject } from "react-router";
+import { Navigate, createBrowserRouter, useSearchParams, type RouteObject } from "react-router";
 import { AppShell } from "../components/AppShell";
+import { OnboardingLayout } from "../components/Onboarding";
+import { sanitizeNext } from "../lib/auth/oauth";
 import { PublicLayout, SuspenseOutlet } from "../components/PublicLayout";
 import { ErrorScreen, RouteError } from "../components/RouteError";
 import { RequireAuth } from "./auth";
 import { RequireRole } from "./session";
 
 // Cada tela vira um chunk separado: o aluno não baixa o código do professor e vice-versa.
-const Welcome = lazy(() => import("../pages/public/Welcome"));
-const Login = lazy(() => import("../pages/public/Auth").then((m) => ({ default: m.Login })));
-const Signup = lazy(() => import("../pages/public/Auth").then((m) => ({ default: m.Signup })));
+const Entry = lazy(() => import("../pages/public/Entry"));
 const ChooseRole = lazy(() => import("../pages/public/ChooseRole"));
 // Conta real (Google Identity Services + Supabase Auth). Separada da demonstração.
 const AccountDashboard = lazy(() => import("../pages/account/Dashboard"));
 const AccountProfile = lazy(() => import("../pages/account/Profile"));
 const AccountSettings = lazy(() => import("../pages/account/Settings"));
+const AccountWelcome = lazy(() => import("../pages/account/Welcome"));
+const StudentOnboarding = lazy(() => import("../pages/account/StudentOnboarding"));
+const TeacherOnboarding = lazy(() => import("../pages/account/TeacherOnboarding"));
 
 const StudentHome = lazy(() => import("../pages/student/Home"));
 const Search = lazy(() => import("../pages/student/Search"));
@@ -42,13 +45,14 @@ const TeacherSettings = lazy(() => import("../pages/teacher/Settings"));
 
 /** Títulos das páginas (document.title), em português. */
 export const ROUTE_TITLES: Record<string, string> = {
-  "/": "Início",
-  "/entrar": "Entrar",
-  "/cadastro": "Criar conta",
+  "/": "Entrar",
   "/perfil-de-acesso": "Escolha seu perfil",
   "/conta": "Minha conta",
   "/conta/perfil": "Meu perfil",
   "/conta/configuracoes": "Configurações da conta",
+  "/conta/boas-vindas": "Boas-vindas",
+  "/conta/cadastro/aluno": "Cadastro de aluno",
+  "/conta/cadastro/professor": "Cadastro de professor",
   "/aluno": "Início do aluno",
   "/aluno/buscar": "Buscar professores",
   "/aluno/assistente": "Assistente EduSearch",
@@ -77,17 +81,41 @@ export function titleFor(pathname: string) {
   return "Página não encontrada";
 }
 
+/**
+ * /entrar e /cadastro (links antigos) levam à entrada única, preservando
+ * somente um `next` interno e seguro (ver sanitizeNext).
+ */
+function LegacyEntryRedirect() {
+  const [params] = useSearchParams();
+  const next = params.get("next");
+  return <Navigate to={next ? `/?next=${encodeURIComponent(sanitizeNext(next))}` : "/"} replace />;
+}
+
 const routes: RouteObject[] = [
   {
     errorElement: <RouteError />,
     children: [
       {
-        // Boas-vindas, login e cadastro usam o AuthShell (painel institucional no desktop).
+        // Entrada única (Google + demonstração). /entrar e /cadastro são rotas legadas.
         element: <SuspenseOutlet />,
         children: [
-          { index: true, element: <Welcome /> },
-          { path: "entrar", element: <Login /> },
-          { path: "cadastro", element: <Signup /> },
+          { index: true, element: <Entry /> },
+          { path: "entrar", element: <LegacyEntryRedirect /> },
+          { path: "cadastro", element: <LegacyEntryRedirect /> },
+        ],
+      },
+      {
+        // Primeiro acesso e cadastro em etapas (sem menu lateral).
+        path: "conta",
+        element: (
+          <RequireAuth>
+            <OnboardingLayout />
+          </RequireAuth>
+        ),
+        children: [
+          { path: "boas-vindas", element: <AccountWelcome /> },
+          { path: "cadastro/aluno", element: <StudentOnboarding /> },
+          { path: "cadastro/professor", element: <TeacherOnboarding /> },
         ],
       },
       {

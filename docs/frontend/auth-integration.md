@@ -1,4 +1,4 @@
-# Autenticação real — Google Identity Services + Supabase Auth (Fase 2.4)
+# Autenticação real — Google Identity Services + Supabase Auth (Fases 2.4 e 2.5)
 
 Login com Google no app PWA (`apps/web`) **sem sair do domínio do app**: o botão oficial do Google Identity Services (GIS) devolve um ID token à própria página e o Supabase o valida com `signInWithIdToken`. Não há redirecionamento do navegador para `*.supabase.co`.
 
@@ -9,7 +9,7 @@ Login com Google no app PWA (`apps/web`) **sem sair do domínio do app**: o bot�
 ## Fluxo
 
 ```text
-/entrar
+/  (entrada única — Fase 2.5; /entrar e /cadastro redirecionam para cá)
   1. Web Crypto gera um nonce de 256 bits (base64url) e seu SHA-256 (hex).
      O nonce original fica só na memória da aba (cofre de uso único, 10 min).
   2. google.accounts.id.initialize({ client_id, nonce: <hash>, ux_mode: "popup", auto_select: false })
@@ -22,7 +22,8 @@ Login com Google no app PWA (`apps/web`) **sem sair do domínio do app**: o bot�
      → POST https://pgltvnwdvatyihrozlvn.supabase.co/auth/v1/token?grant_type=id_token (fetch, sem navegação)
      O Supabase valida assinatura, emissor, público e SHA-256(nonce) == claim.
   7. Sessão do Supabase criada; a sessão demonstrativa da aba é encerrada (nada é migrado).
-  8. /conta → nome, e-mail e foto; "Concluir cadastro" quando aplicável.
+  8. next (padrão /conta): primeiro acesso → /conta/boas-vindas → onboarding de aluno ou professor
+     (ver onboarding.md); papel já escolhido → /conta com "Continuar cadastro".
 ```
 
 Escopos: o fluxo de ID token do GIS concede apenas **`openid`, `email` e `profile`**. Não há como pedir Google Agenda, Meet, Drive ou Gmail por ele — essas integrações terão consentimento próprio (no backend) em outra etapa.
@@ -131,7 +132,7 @@ Nunca coloque no frontend: Client Secret do Google, `service_role`/secret key do
 
 - A sessão do Supabase fica em `localStorage['edusearch-auth']`. Ao abrir o app, o SDK só é baixado se houver sessão gravada; a sessão é restaurada e **confirmada no servidor** (`getUser`).
 - O JWT de acesso é renovado automaticamente (`autoRefreshToken`).
-- Se o servidor recusar a sessão (revogada, usuário removido) ou a renovação falhar, o SDK emite `SIGNED_OUT`: o app limpa a sessão, leva a `/entrar?next=…` e mostra **"Sua sessão expirou"**.
+- Se o servidor recusar a sessão (revogada, usuário removido) ou a renovação falhar, o SDK emite `SIGNED_OUT`: o app limpa a sessão, leva a `/?next=…` (entrada única) e mostra **"Sua sessão expirou"**.
 - Rotas `/conta/*` são protegidas por `RequireAuth` (carregamento → login com `next` saneado).
 
 ## Avatar e dados do Google
@@ -151,7 +152,7 @@ Com a sessão ativa, o `AuthProvider` registra `setAccessTokenProvider` e o clie
 
 ## Experiência
 
-- `/entrar` e `/cadastro`: selo "Acesso real · ambiente de testes", esqueleto enquanto o GIS carrega, botão oficial (tema claro `outline`, escuro `filled_black`, texto "Continuar com o Google", pt-BR), estado "Entrando com sua conta Google…" e erros com `role="alert"`. O formulário de e-mail continua demonstrativo. Sem configuração, aparece o botão desabilitado do design system.
+- `/` (entrada única, Fase 2.5 — ver [onboarding.md](onboarding.md)): esqueleto enquanto o GIS carrega, botão oficial (tema claro `outline`, escuro `filled_black`, texto "Continuar com o Google", pt-BR), aviso discreto "Fase de testes: somente contas autorizadas", estado "Entrando com sua conta Google…" e erros com `role="alert"`. Não existe login por e-mail e senha. Sem configuração, aparece o botão desabilitado do design system. `/entrar` e `/cadastro` redirecionam para `/` preservando um `next` seguro.
 - Cancelar o seletor do Google não gera erro: a tela continua como estava.
 
 | Falha | Quando | Mensagem |
@@ -164,7 +165,9 @@ Com a sessão ativa, o `AuthProvider` registra `setAccessTokenProvider` e o clie
 | `provider_error` | Outros erros do serviço | "Não foi possível concluir o login" |
 | `session_expired` | Sessão revogada ou renovação falhou | "Sua sessão expirou" |
 
-- `/conta`: saudação, foto, nome e e-mail; **"Concluir cadastro"** enquanto não houver papel escolhido; aviso de que a conta **não está habilitada para uso comercial**.
+- `/conta/boas-vindas`: primeiro acesso, "Quero aprender" / "Quero ensinar" (preferência local, sem permissões).
+- `/conta/cadastro/aluno` e `/conta/cadastro/professor`: onboarding em etapas, **sem persistência** (ver [onboarding.md](onboarding.md)).
+- `/conta`: saudação, foto, nome e e-mail; **"Continuar cadastro"** com selo "Cadastro em análise"; aviso de que a conta **não está habilitada para uso comercial**. Sem papel escolhido, redireciona às boas-vindas.
 - `/conta/perfil`: foto grande, escolha **provisória** de papel (aluno/professor), etapas de conclusão (perfil no servidor e documentos jurídicos pendentes) e "Concluir perfil" bloqueado.
 - `/conta/configuracoes`: tema, conta e sessão, *Sair da conta*.
 
@@ -183,11 +186,12 @@ O CI **nunca** usa credenciais reais: os valores do servidor de testes são fict
 
 1. Concluir as configurações do Google Cloud e do Supabase acima e incluir sua conta em *Test users* (e na allowlist, se o hook estiver ativo).
 2. `apps/web/.env` com as três variáveis; `pnpm --filter @edusearch/web exec vite --port 5190`.
-3. `http://localhost:5190/entrar` → *Continuar com o Google* → escolher a conta → `/conta` com nome, e-mail e foto.
-4. Recarregar (sessão restaurada), abrir Meu perfil e Configurações, escolher um papel.
-5. *Sair da conta* → entrar novamente.
-6. Abrir a demonstração (`/perfil-de-acesso`) e confirmar que ela continua independente.
-7. Com uma conta fora da lista de testes, o acesso deve ser recusado.
+3. `http://localhost:5190/` → *Continuar com o Google* → escolher a conta → `/conta/boas-vindas` (primeiro acesso) com nome e foto.
+4. Escolher *Quero aprender* ou *Quero ensinar*, percorrer o onboarding, recarregar (sessão restaurada) e abrir Meu perfil e Configurações.
+5. Voltar a `/`: deve aparecer *Continuar como <nome>*.
+6. *Sair da conta* → entrar novamente.
+7. *Explorar demonstração* e confirmar que ela continua independente.
+8. Com uma conta fora da lista de testes, o acesso deve ser recusado ("Conta não liberada para testes").
 
 ## Limitações atuais
 

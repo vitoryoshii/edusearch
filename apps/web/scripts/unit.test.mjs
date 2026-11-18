@@ -267,3 +267,125 @@ describe("credenciais: nada de segredos ou tokens persistidos", () => {
     assert.equal(stripProviderTokens('"verificador"'), '"verificador"');
   });
 });
+
+/* ------------------------- Onboarding da conta real ------------------------- */
+import {
+  LIMITS,
+  ONBOARDING_PATH,
+  STUDENT_STEPS,
+  TEACHER_STEPS,
+  WELCOME_PATH,
+  emptyStudentDraft,
+  emptyTeacherDraft,
+  firstIncomplete,
+  nextAccountStep,
+  parsePriceToCents,
+  studentStepIssue,
+  teacherStepIssue,
+  toggle,
+} from "../src/lib/onboarding.ts";
+
+describe("onboarding: próxima etapa após o login", () => {
+  test("primeiro acesso (sem papel) vai para as boas-vindas", () => {
+    assert.equal(nextAccountStep(null), WELCOME_PATH);
+    assert.equal(WELCOME_PATH, "/conta/boas-vindas");
+  });
+  test("com papel escolhido vai ao início da conta (cadastro ainda pendente)", () => {
+    assert.equal(nextAccountStep("student"), "/conta");
+    assert.equal(nextAccountStep("teacher"), "/conta");
+    assert.deepEqual(ONBOARDING_PATH, { student: "/conta/cadastro/aluno", teacher: "/conta/cadastro/professor" });
+  });
+});
+
+describe("onboarding: valor da aula sem ponto flutuante", () => {
+  test("formatos aceitos", () => {
+    assert.equal(parsePriceToCents("80"), 8000);
+    assert.equal(parsePriceToCents("80,5"), 8050);
+    assert.equal(parsePriceToCents("80,50"), 8050);
+    assert.equal(parsePriceToCents("R$ 1.200,00"), 120000);
+    assert.equal(parsePriceToCents(" 95,99 "), 9599);
+  });
+  test("formatos recusados", () => {
+    for (const bad of ["", "abc", "80.5", "80,505", "-10", "1,2,3", "1.20,00", "R$"]) assert.equal(parsePriceToCents(bad), null, bad);
+  });
+});
+
+describe("onboarding do aluno: etapas curtas", () => {
+  test("cinco etapas, da identidade à revisão", () => {
+    assert.deepEqual(STUDENT_STEPS, ["voce", "objetivo", "materias", "rotina", "revisao"]);
+  });
+  test("rascunho vazio: identidade e revisão livres, demais etapas pedem dados", () => {
+    const d = emptyStudentDraft();
+    assert.equal(studentStepIssue("voce", d), null);
+    assert.ok(studentStepIssue("objetivo", d));
+    assert.ok(studentStepIssue("materias", d));
+    assert.ok(studentStepIssue("rotina", d));
+    assert.equal(firstIncomplete(STUDENT_STEPS, d, studentStepIssue), "objetivo");
+  });
+  test("rascunho completo passa em todas as etapas; dificuldades são opcionais", () => {
+    const d = { ...emptyStudentDraft(), goal: "Passar no ENEM", level: "medio", subjects: ["matematica"], days: ["seg"], periods: ["noite"], modality: "online", budget: "50-80" };
+    assert.equal(firstIncomplete(STUDENT_STEPS, d, studentStepIssue), null);
+  });
+  test("objetivo muito longo é recusado", () => {
+    const d = { ...emptyStudentDraft(), goal: "x".repeat(LIMITS.goal.max + 1), level: "medio" };
+    assert.ok(studentStepIssue("objetivo", d));
+  });
+});
+
+describe("onboarding do professor: etapas e regras", () => {
+  const full = {
+    ...emptyTeacherDraft(),
+    bio: "Professora de matemática há oito anos, com foco em ENEM e vestibulares.",
+    subjects: ["matematica"],
+    education: "Licenciatura em Matemática",
+    experience: "5-mais",
+    methodologies: ["exercicios"],
+    price: "80,00",
+    durations: [60],
+    modality: "online",
+    days: ["ter"],
+    periods: ["tarde"],
+  };
+  test("seis etapas, incluindo documentos (somente informativa)", () => {
+    assert.deepEqual(TEACHER_STEPS, ["voce", "ensino", "aulas", "agenda", "documentos", "revisao"]);
+    assert.equal(teacherStepIssue("documentos", emptyTeacherDraft()), null);
+  });
+  test("rascunho completo passa em todas as etapas", () => {
+    assert.equal(firstIncomplete(TEACHER_STEPS, full, teacherStepIssue), null);
+  });
+  test("biografia curta, valor fora da faixa e falta de duração são recusados", () => {
+    assert.ok(teacherStepIssue("voce", { ...full, bio: "Curta demais" }));
+    assert.ok(teacherStepIssue("aulas", { ...full, price: "10" }));
+    assert.ok(teacherStepIssue("aulas", { ...full, price: "1.000,01" }));
+    assert.ok(teacherStepIssue("aulas", { ...full, price: "oitenta" }));
+    assert.ok(teacherStepIssue("aulas", { ...full, durations: [] }));
+    assert.equal(teacherStepIssue("aulas", { ...full, price: "1.000,00" }), null);
+  });
+});
+
+describe("onboarding: seleção por chips", () => {
+  test("toggle adiciona e remove sem mutar a lista original", () => {
+    const base = ["a"];
+    assert.deepEqual(toggle(base, "b"), ["a", "b"]);
+    assert.deepEqual(toggle(base, "a"), []);
+    assert.deepEqual(base, ["a"]);
+  });
+});
+
+/* -------------- Exemplo financeiro do onboarding do professor -------------- */
+import { formatMoney } from "../src/lib/format.ts";
+
+describe("onboarding do professor: exemplo da comissão padrão", () => {
+  test("R$ 80,00 → R$ 12,00 EduSearch (1.500 bps) e R$ 68,00 ao professor, em centavos inteiros", () => {
+    const cents = parsePriceToCents("80");
+    assert.equal(cents, 8000);
+    assert.equal(STANDARD_COMMISSION_BPS, 1500);
+    assert.deepEqual(splitLessonAmount(cents), { commissionCents: 1200, teacherShareCents: 6800 });
+  });
+  test("formatação pt-BR usa espaço não separável (normalizado só na comparação)", () => {
+    const shown = formatMoney(1200);
+    assert.match(shown, /^R\$[   ]12,00$/);
+    assert.equal(shown.replace(/[  ]/g, " "), "R$ 12,00");
+    assert.equal(formatMoney(6800).replace(/[  ]/g, " "), "R$ 68,00");
+  });
+});

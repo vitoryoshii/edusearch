@@ -8,6 +8,7 @@ Documentação da frente de frontend (Fase 2): design system, website institucio
 | [app.md](app.md) | Telas, navegação, dados de demonstração e PWA do `apps/web` |
 | [calendar-meet-payments.md](calendar-meet-payments.md) | **Fase 2.3**: calendário, aula online, checkout Pix, comissão de 15% e incentivos — o que é demonstrativo e o que depende do backend |
 | [demo-journey.md](demo-journey.md) | **Jornada de demonstração ponta a ponta**: roteiro para avaliadores, regras de reserva, matching, estado e testes |
+| [onboarding.md](onboarding.md) | **Fase 2.5**: entrada única (Google + demonstração), primeiro acesso e onboarding de aluno e professor sem persistência, pendências de backend |
 | [auth-integration.md](auth-integration.md) | **Fase 2.4**: login real com Google Identity Services + Supabase Auth (sem redirecionar para o Supabase), conta do usuário, configurações pendentes, segurança e testes |
 | [api-integration.md](api-integration.md) | Camada de dados, cliente HTTP e **necessidades de integração** com a API |
 | [qa.md](qa.md) | Resultado de build, typecheck, acessibilidade, responsividade e CI |
@@ -40,6 +41,7 @@ Variáveis públicas do app: copie `apps/web/.env.example` para `apps/web/.env`.
 | `VITE_SUPABASE_URL` | — | `https://pgltvnwdvatyihrozlvn.supabase.co` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | — | Chave **publicável** do Supabase (nunca a service_role) |
 | `VITE_GOOGLE_CLIENT_ID` | — | Client ID Web do Google (nunca o Client Secret). Com as três variáveis, o login real é ativado |
+| `VITE_LEGAL_TERMS_URL` / `VITE_LEGAL_PRIVACY_URL` | — | Links (https) dos documentos jurídicos — definir **só quando publicados** |
 | `VITE_APP_URL` (website) | — | Se definida, o website mostra o link "Ver demonstração" |
 
 > O `.env.example` da raiz ainda cita `VITE_API_URL` (nome antigo). O app passou a usar `VITE_API_BASE_URL`. A raiz não foi alterada porque está fora do escopo desta frente.
@@ -48,7 +50,7 @@ Variáveis públicas do app: copie `apps/web/.env.example` para `apps/web/.env`.
 
 Tudo que depende de backend é **simulado no navegador** e identificado na interface (faixa "Modo demonstração", avisos contextuais e selos "Perfil fictício"):
 
-- Login e cadastro por e-mail (validam o formulário, não autenticam). Login com Google: **real apenas no ambiente restrito de testes** (GIS + Supabase, área `/conta`); sem as variáveis, fica desabilitado — ver [auth-integration.md](auth-integration.md).
+- Entrada única (`/`): login com Google **real apenas no ambiente restrito de testes** (GIS + Supabase, área `/conta`); sem as variáveis, o botão fica desabilitado. Não há login por e-mail e senha. A demonstração continua acessível sem login — ver [onboarding.md](onboarding.md).
 - Matching pedagógico: regras locais simples, **sem IA (Gemini não integrado)**.
 - Agendamento, cancelamento, perfil, especialidades e disponibilidade: simulados no navegador e mantidos no `sessionStorage` da aba até sair da demonstração (ver [demo-journey.md](demo-journey.md)).
 - Link da videochamada: **Google Meet não integrado** (botão "Entrar na aula" desabilitado).

@@ -86,7 +86,7 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite.log"; exit 1
 
-      - name: Smoke test (30 rotas, console, overflow)
+      - name: Smoke test (34 rotas, console, overflow)
         run: pnpm --filter @edusearch/web smoke
 
       - name: Acessibilidade (axe + teclado em diálogos, menus e abas)
@@ -104,14 +104,14 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://localhost:5191 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite-auth.log"; exit 1
 
-      - name: Login Google (GIS, nonce, sucesso, cancelamento, erros, sessão, avatar, logout, demo)
+      - name: Entrada única, login Google e onboarding (GIS, nonce, erros, sessão, avatar, logout, demo, axe, 320–1440 px)
         run: node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191 "$RUNNER_TEMP/auth-screens"
 
       - name: Artefato — capturas do login e da conta
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots-auth
+          name: screenshots-fase-2.5
           path: ${{ runner.temp }}/auth-screens
           if-no-files-found: warn
           retention-days: 14
@@ -146,13 +146,13 @@ jobs:
 
       - name: Capturas de tela (375, 390, 768 e 1440 px; claro e escuro)
         if: success() || failure()
-        run: node apps/web/scripts/screens.mjs http://localhost:5190 "$RUNNER_TEMP/screens" 375,390,768,1440 "" claro,escuro
+        run: node apps/web/scripts/screens.mjs http://localhost:5190 "$RUNNER_TEMP/screens" 320,375,390,768,1440 "" claro,escuro
 
-      - name: Artefato — capturas de tela da Fase 2.3
+      - name: Artefato — capturas de tela da demonstração
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots-fase-2.3
+          name: screenshots-demonstracao
           path: ${{ runner.temp }}/screens
           if-no-files-found: warn
           retention-days: 14

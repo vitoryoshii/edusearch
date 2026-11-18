@@ -5,10 +5,16 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
 ## Navegação
 
 ```text
-/                               Apresentação inicial
-/entrar                         Login (demonstração)
-/cadastro                       Cadastro (demonstração)
-/perfil-de-acesso               Escolha entre aluno e professor
+/                               Entrada única: Google (conta real) + "Explorar demonstração"
+/entrar, /cadastro              Rotas legadas → redirecionam para / (preservam um ?next= seguro)
+/perfil-de-acesso               Demonstração: escolha entre aluno e professor fictícios
+
+/conta                          Conta real: início (sem papel escolhido → /conta/boas-vindas)
+/conta/boas-vindas              Primeiro acesso: "Quero aprender" ou "Quero ensinar"
+/conta/cadastro/aluno           Cadastro do aluno em 5 etapas (prévia, sem persistência)
+/conta/cadastro/professor       Cadastro do professor em 6 etapas (prévia, sem persistência)
+/conta/perfil                   Meu perfil
+/conta/configuracoes            Tema, sessão e sair
 
 /aluno                          Início: busca rápida, assistente, próxima aula, destaques
 /aluno/buscar                   Busca + filtros (disciplina, nível, metodologia, período, valor); filtros na URL
@@ -40,29 +46,20 @@ React 19 + Vite + TypeScript + Tailwind v4, React Router 8. Cada tela é um chun
 - Ao navegar: título da aba atualizado, rolagem ao topo e foco no conteúdo principal. Link "Pular para o conteúdo" disponível.
 - Rotas inexistentes mostram a tela 404. Falhas de carregamento de chunk sugerem recarregar.
 
-## Telas de acesso (Fase 2.1)
+## Entrada única (Fase 2.5)
 
-- **Layout `AuthShell`:**
-  - Desktop (≥ 1024px): painel institucional sobre o azul profundo (logo, slogan e três pontos de valor) ao lado da coluna de acesso.
-  - Mobile: só a coluna, com o logo no topo e respeitando as safe areas do PWA.
-- **Boas-vindas (`/`):**
-  - Ações: *Começar agora* (cadastro), *Já tenho uma conta* (login) e *Explorar demonstração* (escolha de perfil).
-  - Desktop: o título "Encontre o professor certo para você." fica no painel, e a coluna mostra "Comece por aqui".
-  - Com sessão ativa, aparece "Continuar como …".
-- **Login (`/entrar`) e cadastro (`/cadastro`):**
-  - Selo "Modo demonstração". Botão oficial "Continuar com o Google": desabilitado na versão pública; no ambiente restrito de testes vira o botão oficial do Google Identity Services e faz login **real** (ver [auth-integration.md](auth-integration.md)).
-  - `autocomplete` adequado: `username` e `current-password` no login; `name`, `email` e `new-password` no cadastro.
-  - Senha com mostrar/ocultar. No cadastro, o indicador "Pelo menos 8 caracteres" muda em tempo real.
-  - Validação ao sair do campo e ao enviar: o foco vai ao primeiro campo inválido e um alerta informa quantos campos revisar.
-  - O botão "Continuar" leva à escolha de perfil. O texto deixa claro que nenhuma conta é criada e nenhum dado é enviado.
-- **Escolha de perfil (`/perfil-de-acesso`):** layout simples, com logo e link "Início".
+Substitui as telas de boas-vindas, login e cadastro da Fase 2.1 (`AuthShell`, formulário de e-mail e senha demonstrativo). Detalhes em [onboarding.md](onboarding.md).
 
-### Restrições da autenticação demonstrativa
+- **`/`:** logo oficial centralizado, "Conectando alunos e professores.", fundo branco-gelo com curvas discretas em azul-petróleo e verde, botão **oficial** do Google Identity Services e a ação secundária *Explorar demonstração*. Rodapé com os documentos jurídicos (em elaboração enquanto `VITE_LEGAL_*` não estiver definida).
+- Não há login nem cadastro por e-mail e senha, e não há botões separados de "Entrar" e "Criar conta".
+- Sem configuração do Google/Supabase (versão pública), o botão aparece desabilitado e o app funciona apenas como demonstração.
+- Com sessão real ativa, a entrada oferece *Continuar como …* (próxima etapa disponível) e *Sair da conta*; com sessão demonstrativa, *Continuar demonstração*.
+- **Escolha de perfil da demonstração (`/perfil-de-acesso`):** inalterada.
 
-- O formulário de e-mail e senha não autentica. O login real (Google via Supabase Auth) é separado, só existe com `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` e `VITE_GOOGLE_CLIENT_ID` configuradas e leva à área `/conta` (início, Meu perfil, Configurações) — ver [auth-integration.md](auth-integration.md).
-- A senha existe só no estado do formulário e nunca é persistida.
-- A sessão de demonstração guarda apenas `{ role, name }` no `sessionStorage`.
-- A sessão real nunca reutiliza a sessão nem os dados da demonstração; ao entrar com a conta real, a sessão de demonstração da aba é encerrada.
+### Separação entre conta real e demonstração
+
+- A demonstração não exige login e usa somente dados fictícios (`sessionStorage['edusearch-demo-session']`).
+- A conta real (`/conta`) usa a sessão do Supabase e nunca lê nem grava dados da demonstração; ao entrar com o Google, a sessão demonstrativa da aba é encerrada, sem migração.
 
 ## Estados de cada tela
 

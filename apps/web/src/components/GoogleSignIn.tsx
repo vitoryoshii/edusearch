@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { AlertIcon, Badge, Button, GoogleButton, Skeleton, Spinner } from "@edusearch/ui";
+import { AlertIcon, Button, GoogleButton, Skeleton, Spinner } from "@edusearch/ui";
 import { useAuth } from "../app/auth";
 import { useAppTheme } from "../app/theme";
 import { useSession } from "../app/session";
@@ -26,7 +26,7 @@ type Phase = "loading" | "ready" | "signing";
 export function GoogleSignIn({ next = ACCOUNT_HOME }: { next?: string }) {
   if (!AUTH_PROVIDERS.google.available) {
     return (
-      <div className="mt-8">
+      <div>
         <GoogleButton available={false} aria-describedby="google-status" data-testid="google-signin-disabled" />
         <p id="google-status" className="mt-2 text-center text-xs text-fg-muted">
           {AUTH_PROVIDERS.google.statusMessage}
@@ -117,7 +117,7 @@ function GisButton({ next }: { next: string }) {
 
   if (status === "signedIn") {
     return (
-      <div className="mt-8 rounded-card border border-line bg-surface-muted p-4 text-sm" role="status">
+      <div className="rounded-card border border-line bg-surface-muted p-4 text-sm" role="status">
         <p className="text-fg">Você já está conectado com o Google.</p>
         <Link to={next} className="mt-1 inline-flex min-h-11 items-center font-semibold text-link underline-offset-4 hover:underline">
           Ir para minha conta
@@ -129,11 +129,7 @@ function GisButton({ next }: { next: string }) {
   const msg = failure ? FAILURE_MESSAGES[failure] : null;
 
   return (
-    <div className="mt-8" data-auth-phase={phase} data-failure={failure ?? undefined}>
-      <p className="mb-3 flex justify-center">
-        <Badge tone="primary">Acesso real · ambiente de testes</Badge>
-      </p>
-
+    <div data-auth-phase={phase} data-failure={failure ?? undefined}>
       <div className="relative flex min-h-11 justify-center">
         {/* Contêiner do botão oficial (iframe do Google). */}
         <div ref={slot} data-testid="google-signin" className={phase === "ready" && failure !== "gis_unavailable" ? "w-full" : "hidden"} />

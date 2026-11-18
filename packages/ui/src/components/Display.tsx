@@ -140,7 +140,6 @@ export function Avatar({
         alt={decorative ? "" : name}
         referrerPolicy="no-referrer"
         decoding="async"
-        loading="lazy"
         draggable={false}
         onError={() => setFailedSrc(src)}
         className={cn(common, "overflow-hidden bg-surface-muted object-cover object-center")}
