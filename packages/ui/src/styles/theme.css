@@ -1,0 +1,215 @@
+/*
+  EduSearch — tokens do design system.
+
+  Uso (em cada app):
+    @import "tailwindcss";
+    @import "@edusearch/ui/theme.css";
+    @source "../../../packages/ui/src";
+
+  Camadas:
+  1. Paleta da marca (valores fixos, docs/branding.md).
+  2. Tokens semânticos (--es-*), redefinidos para o tema escuro.
+  3. Mapeamento para utilitários do Tailwind (bg-surface, text-fg, border-line...).
+
+  O tema é aplicado pelo atributo data-theme="light|dark" no <html>
+  (ver src/lib/theme.ts). Todas as combinações de texto foram verificadas
+  com a fórmula WCAG 2.x (AA, >= 4.5:1). Ver docs/frontend/design-system.md.
+*/
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  /* Superfícies */
+  --es-bg: #f8fafc;
+  --es-surface: #ffffff;
+  --es-surface-muted: #f1f5f9;
+  --es-soft: #e8f5f3;
+
+  /* Texto */
+  --es-fg-strong: #102e46;
+  --es-fg: #334155;
+  --es-fg-muted: #5b6b7f;
+
+  /* Bordas */
+  --es-line: #e2e8f0;
+  --es-line-strong: #cbd5e1;
+
+  /* Ação principal (azul-petróleo) */
+  --es-primary: #146a7a;
+  --es-primary-hover: #0f5663;
+  --es-primary-fg: #ffffff;
+  --es-primary-soft: #e7f1f3;
+  --es-link: #146a7a;
+
+  /* Estados (verde só para positivo) */
+  --es-success: #14836e;
+  --es-success-text: #0e6e5c;
+  --es-success-soft: #e8f5f3;
+  --es-warning-text: #b45309;
+  --es-warning-soft: #fffbeb;
+  --es-danger: #b42318;
+  --es-danger-text: #b42318;
+  --es-danger-soft: #fef3f2;
+
+  /* Elevação */
+  --es-shadow-card: 0 1px 2px rgb(16 46 70 / 0.05), 0 1px 3px rgb(16 46 70 / 0.04);
+  --es-shadow-raised: 0 4px 12px -2px rgb(16 46 70 / 0.08), 0 2px 4px -2px rgb(16 46 70 / 0.05);
+  --es-shadow-overlay: 0 20px 40px -12px rgb(16 46 70 / 0.25);
+  --es-scrim: rgb(16 46 70 / 0.45);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --es-bg: #0b1e2e;
+  --es-surface: #102e46;
+  --es-surface-muted: #15384f;
+  --es-soft: #123b4a;
+
+  --es-fg-strong: #f1f5f9;
+  --es-fg: #cbd5e1;
+  --es-fg-muted: #94a3b8;
+
+  --es-line: #1f4560;
+  --es-line-strong: #2c5874;
+
+  --es-primary: #146a7a;
+  --es-primary-hover: #1a7a8a;
+  --es-primary-fg: #ffffff;
+  --es-primary-soft: #123b4a;
+  --es-link: #5cc0cf;
+
+  --es-success: #4fd1b5;
+  --es-success-text: #4fd1b5;
+  --es-success-soft: #11403f;
+  --es-warning-text: #fcd34d;
+  --es-warning-soft: #3b3415;
+  --es-danger: #fca5a5;
+  --es-danger-text: #fca5a5;
+  --es-danger-soft: #3f1d24;
+
+  --es-shadow-card: 0 1px 2px rgb(0 0 0 / 0.25);
+  --es-shadow-raised: 0 4px 12px -2px rgb(0 0 0 / 0.35);
+  --es-shadow-overlay: 0 20px 40px -12px rgb(0 0 0 / 0.6);
+  --es-scrim: rgb(3 12 20 / 0.7);
+
+  color-scheme: dark;
+}
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Paleta oficial (fixa, independe do tema) */
+  --color-petroleo: #146a7a;
+  --color-petroleo-dark: #0f5663;
+  --color-profundo: #102e46;
+  --color-esmeralda: #14836e;
+  --color-verde-claro: #e8f5f3;
+  --color-gelo: #f8fafc;
+
+  /* Raios */
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+
+  /* Animações discretas */
+  --animate-fade-in: es-fade-in 160ms ease-out;
+  --animate-slide-up: es-slide-up 200ms ease-out;
+  --animate-pulse-soft: es-pulse 1.6s ease-in-out infinite;
+
+  @keyframes es-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes es-slide-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes es-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+}
+
+@theme inline {
+  --color-bg: var(--es-bg);
+  --color-surface: var(--es-surface);
+  --color-surface-muted: var(--es-surface-muted);
+  --color-soft: var(--es-soft);
+
+  --color-fg-strong: var(--es-fg-strong);
+  --color-fg: var(--es-fg);
+  --color-fg-muted: var(--es-fg-muted);
+
+  --color-line: var(--es-line);
+  --color-line-strong: var(--es-line-strong);
+
+  --color-primary: var(--es-primary);
+  --color-primary-hover: var(--es-primary-hover);
+  --color-primary-fg: var(--es-primary-fg);
+  --color-primary-soft: var(--es-primary-soft);
+  --color-link: var(--es-link);
+
+  --color-success: var(--es-success);
+  --color-success-text: var(--es-success-text);
+  --color-success-soft: var(--es-success-soft);
+  --color-warning-text: var(--es-warning-text);
+  --color-warning-soft: var(--es-warning-soft);
+  --color-danger: var(--es-danger);
+  --color-danger-text: var(--es-danger-text);
+  --color-danger-soft: var(--es-danger-soft);
+
+  --shadow-card: var(--es-shadow-card);
+  --shadow-raised: var(--es-shadow-raised);
+  --shadow-overlay: var(--es-shadow-overlay);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  body {
+    background-color: var(--es-bg);
+    color: var(--es-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--es-link);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--es-primary-soft);
+    color: var(--es-fg-strong);
+  }
+
+  /* Fieldsets têm min-width: min-content por padrão e quebram rolagens horizontais internas. */
+  fieldset {
+    min-width: 0;
+  }
+
+  dialog::backdrop {
+    background-color: var(--es-scrim);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

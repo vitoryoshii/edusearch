@@ -1,5 +1,5 @@
+import { CalendarIcon, ChatIcon, SearchIcon, TrendIcon } from "@edusearch/ui";
 import Section from "./Section";
-import { CalendarIcon, ChatIcon, SearchIcon, TrendIcon } from "./icons";
 
 const steps = [
   {
@@ -31,21 +31,21 @@ export default function HowItWorks() {
       eyebrow="Como funciona"
       title="Do objetivo à aula em quatro passos"
       description="Uma jornada simples, pensada para quem quer aprender com o professor certo."
-      className="bg-white"
+      className="bg-surface"
     >
-      <ol className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <ol className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {steps.map((s, i) => (
-          <li key={s.title} className="rounded-2xl border border-slate-200 bg-gelo p-6">
+          <li key={s.title} className="rounded-card border border-line bg-bg p-6">
             <div className="flex items-center justify-between">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-petroleo text-white">
+              <span className="flex h-11 w-11 items-center justify-center rounded-control bg-primary text-primary-fg">
                 <s.icon className="h-5 w-5" />
               </span>
-              <span className="text-sm font-semibold text-slate-400" aria-hidden="true">
+              <span className="text-sm font-semibold text-fg-muted tabular-nums" aria-hidden="true">
                 0{i + 1}
               </span>
             </div>
-            <h3 className="mt-6 text-lg font-semibold text-profundo">{s.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">{s.text}</p>
+            <h3 className="mt-6 text-lg font-semibold text-fg-strong">{s.title}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-fg">{s.text}</p>
           </li>
         ))}
       </ol>

@@ -1,5 +1,5 @@
+import { ArrowRightIcon, Badge, GithubIcon, buttonClasses } from "@edusearch/ui";
 import { GITHUB_URL } from "../constants";
-import { GithubIcon } from "./icons";
 
 const criteria = [
   { label: "Necessidade de aprendizagem", hint: "O que você quer aprender e por quê" },
@@ -10,67 +10,70 @@ const criteria = [
 
 export default function Hero() {
   return (
-    <section className="relative isolate overflow-hidden">
+    <section aria-labelledby="hero-titulo" className="relative isolate overflow-hidden">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px] bg-gradient-to-b from-verde-claro/70 to-transparent"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px] bg-gradient-to-b from-soft/80 to-transparent"
       />
-      <div className="mx-auto grid max-w-6xl items-center gap-14 px-5 pt-16 pb-20 sm:px-8 sm:pt-24 sm:pb-28 lg:grid-cols-[1.15fr_1fr]">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 pt-12 pb-20 sm:px-8 sm:pt-20 sm:pb-28 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
         <div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-petroleo/20 bg-white px-3 py-1 text-xs font-medium text-petroleo">
-            <span className="h-1.5 w-1.5 rounded-full bg-esmeralda" aria-hidden="true" />
+          <Badge tone="primary" dot className="border border-primary/15 bg-surface">
             Em desenvolvimento · HackBrasil 2026
-          </span>
-          <h1 className="mt-6 text-4xl leading-[1.1] font-bold tracking-tight text-profundo sm:text-5xl lg:text-6xl">
+          </Badge>
+          <h1
+            id="hero-titulo"
+            className="mt-6 text-4xl leading-[1.08] font-bold tracking-tight text-balance text-fg-strong sm:text-5xl lg:text-6xl"
+          >
             Encontre o professor certo para você.
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-600">
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-pretty text-fg">
             Uma nova forma de conectar estudantes e professores, utilizando inteligência artificial
             para tornar o aprendizado mais acessível e personalizado.
           </p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
-            <a
-              href="#sobre"
-              className="inline-flex items-center justify-center rounded-lg bg-petroleo px-6 py-3 text-base font-semibold text-white shadow-sm transition-colors hover:bg-petroleo-dark"
-            >
-              Conheça o EduSearch
+            <a href="#como-funciona" className={buttonClasses({ size: "lg" })}>
+              Veja como funciona
+              <ArrowRightIcon className="h-5 w-5" />
             </a>
             <a
               href={GITHUB_URL}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-6 py-3 text-base font-semibold text-profundo transition-colors hover:border-petroleo hover:text-petroleo"
+              className={buttonClasses({ variant: "secondary", size: "lg" })}
             >
               <GithubIcon className="h-5 w-5" />
               Ver projeto no GitHub
+              <span className="sr-only"> (abre em nova aba)</span>
             </a>
           </div>
         </div>
 
         <aside
-          aria-label="Critérios considerados no matching"
-          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
+          aria-labelledby="criterios-titulo"
+          className="rounded-panel border border-line bg-surface p-6 shadow-raised sm:p-8"
         >
-          <p className="text-sm font-semibold text-profundo">O que o matching vai considerar</p>
-          <p className="mt-1 text-sm text-slate-500">
+          <p id="criterios-titulo" className="text-sm font-semibold text-fg-strong">
+            O que o matching vai considerar
+          </p>
+          <p className="mt-1 text-sm text-fg-muted">
             Mais do que a disciplina: o contexto real de quem quer aprender.
           </p>
-          <ul className="mt-6 space-y-3">
+          <ol className="mt-6 space-y-3">
             {criteria.map((c, i) => (
-              <li
-                key={c.label}
-                className="flex items-start gap-4 rounded-xl border border-slate-100 bg-gelo p-4"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-petroleo/10 text-sm font-semibold text-petroleo">
+              <li key={c.label} className="flex items-start gap-4 rounded-card bg-bg p-4">
+                <span
+                  aria-hidden="true"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-primary-soft text-sm font-semibold text-link"
+                >
                   {i + 1}
                 </span>
                 <div>
-                  <p className="font-medium text-profundo">{c.label}</p>
-                  <p className="text-sm text-slate-500">{c.hint}</p>
+                  <p className="font-medium text-fg-strong">{c.label}</p>
+                  <p className="text-sm text-fg-muted">{c.hint}</p>
                 </div>
               </li>
             ))}
-          </ul>
+          </ol>
         </aside>
       </div>
     </section>
