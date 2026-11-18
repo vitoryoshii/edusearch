@@ -26,7 +26,13 @@ export async function launch() {
   if (!chromePath) throw new Error("Chrome não encontrado. Defina CHROME_PATH.");
   const profile = mkdtempSync(join(tmpdir(), "edusearch-cdp-"));
   const port = 9400 + Math.floor(Math.random() * 500);
-  const chrome = spawn(chromePath, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--hide-scrollbars", "about:blank"], { stdio: "ignore" });
+  // Em CI (runners Linux), o sandbox do Chrome é bloqueado pelo AppArmor e /dev/shm é pequeno.
+  const ciArgs = process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : [];
+  const chrome = spawn(
+    chromePath,
+    ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--hide-scrollbars", ...ciArgs, "about:blank"],
+    { stdio: "ignore" },
+  );
 
   let page;
   for (let i = 0; i < 75 && !page; i++) {
@@ -102,6 +108,28 @@ export async function launch() {
     writeFileSync(file, Buffer.from(data, "base64"));
   }
 
+  const KEYS = {
+    Tab: { code: "Tab", vk: 9 },
+    Enter: { code: "Enter", vk: 13, text: "\r" },
+    Escape: { code: "Escape", vk: 27 },
+    Space: { key: " ", code: "Space", vk: 32, text: " " },
+    ArrowDown: { code: "ArrowDown", vk: 40 },
+    ArrowUp: { code: "ArrowUp", vk: 38 },
+    ArrowRight: { code: "ArrowRight", vk: 39 },
+    ArrowLeft: { code: "ArrowLeft", vk: 37 },
+    Home: { code: "Home", vk: 36 },
+    End: { code: "End", vk: 35 },
+  };
+
+  /** Pressiona uma tecla de verdade (eventos de teclado do navegador, não JS sintético). */
+  async function press(name, { shift = false } = {}) {
+    const k = KEYS[name];
+    const base = { key: k.key ?? name, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, modifiers: shift ? 8 : 0 };
+    await send("Input.dispatchKeyEvent", { type: k.text ? "keyDown" : "rawKeyDown", ...base, ...(k.text ? { text: k.text } : {}) });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+    await sleep(120);
+  }
+
   async function close() {
     ws.close();
     chrome.kill();
@@ -114,6 +142,7 @@ export async function launch() {
   return {
     send,
     evaluate,
+    press,
     go,
     viewport,
     screenshot,

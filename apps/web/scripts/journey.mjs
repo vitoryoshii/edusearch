@@ -208,9 +208,9 @@ async function profile() {
   });
 }
 
-/** Reserva o primeiro horário livre da Marina pela interface e devolve o id do horário. */
-async function bookFirstSlot(tag) {
-  await b.go(base + "/aluno/professores/t-marina", 1200);
+/** Reserva o primeiro horário livre do professor pela interface e devolve o id do horário. */
+async function bookFirstSlot(tag, teacherId = "t-marina") {
+  await b.go(base + `/aluno/professores/${teacherId}`, 1200);
   await until(`document.querySelectorAll('a[href*="agendar?horario="]').length > 0`, "horários no perfil");
   const slotId = await run(`decodeURIComponent(document.querySelector('a[href*="agendar?horario="]').getAttribute("href").split("horario=")[1])`);
   await run(`document.querySelector('a[href*="agendar?horario="]').click()`);
@@ -226,6 +226,7 @@ async function bookFirstSlot(tag) {
 }
 
 let bookedSlot;
+const slotStart = (slotId) => slotId.slice(slotId.indexOf("-", 2) + 1);
 
 async function booking() {
   await step("Etapa 5 — agendamento com resumo e feedback de sucesso", async () => {
@@ -283,7 +284,7 @@ async function lessons() {
     await b.go(base + "/aluno/aulas", 1200);
     await until(`document.querySelectorAll("main article").length > 0`, "lista de aulas");
     // Abre os detalhes da aula reservada (a de horário = bookedSlot).
-    const start = bookedSlot.slice("t-marina-".length);
+    const start = slotStart(bookedSlot);
     const idx = await run(`[...document.querySelectorAll("main article")].findIndex((a) => a.querySelector("time")?.getAttribute("datetime") === ${JSON.stringify(start)})`);
     if (idx < 0) throw new Error("aula reservada não encontrada em Minhas aulas");
     await run(`[...document.querySelectorAll("main article")][${idx}].querySelector("button[aria-label^='Detalhes']").click()`);
@@ -304,7 +305,7 @@ async function teacherSync() {
   let start;
   await step("Consistência — reserva do aluno aparece na agenda da professora", async () => {
     const slot = await bookFirstSlot(null);
-    start = slot.slice("t-marina-".length);
+    start = slotStart(slot);
     await run(`__t.openAccountMenu()`);
     await until(`__t.has("[role=menuitem]", "Ver como professor (demo)")`, "menu da conta");
     await clickText("[role=menuitem]", "Ver como professor (demo)");
@@ -348,6 +349,48 @@ async function teacherSync() {
   });
 }
 
+async function otherTeachers() {
+  await step("Consistência — reserva com outro professor vai para a agenda dele (não da Marina)", async () => {
+    await b.go(base + "/", 300);
+    await b.evaluate(`sessionStorage.setItem('edusearch-demo-session', JSON.stringify({ role: 'student', name: 'Ana' }))`);
+    const slot = await bookFirstSlot(null, "t-rafael");
+    const start = slotStart(slot);
+    const idx = await run(`[...document.querySelectorAll("main article")].findIndex((a) => a.querySelector("time")?.getAttribute("datetime") === ${JSON.stringify(start)})`);
+    if (idx < 0) throw new Error("reserva com o Prof. Rafael não aparece em Minhas aulas");
+    if (!(await run(`[...document.querySelectorAll("main article")][${idx}].innerText.includes("Prof. Rafael Nogueira")`))) throw new Error("aula sem o nome do professor reservado");
+    await run(`[...document.querySelectorAll("main article")][${idx}].querySelector("button[aria-label^='Detalhes']").click()`);
+    await clickText("button", "Ver na agenda do professor");
+    await until(`location.pathname === "/professor/aulas" && [...document.querySelectorAll("main article")].some((a) => a.querySelector("time")?.getAttribute("datetime") === ${JSON.stringify(start)} && a.innerText.includes("Ana (demonstração)"))`, "reserva na agenda do Rafael");
+    await clickText("nav a", "Início");
+    await until(`${textHas("Olá, Rafael")} && ${textHas("Próximas aulas")}`, "visão do Prof. Rafael carregada");
+    await shot("8-professor-rafael");
+
+    // Troca para a Profa. Marina em Configurações: a reserva do Rafael não pode aparecer lá.
+    await clickText("nav a", "Configurações");
+    await fill("Professor exibido", "t-marina");
+    await until(`location.pathname === "/professor" && ${textHas("Olá, Marina")}`, "visão da Profa. Marina");
+    await clickText("nav a", "Aulas");
+    await until(`document.querySelectorAll("main article").length > 0`, "aulas da Marina");
+    if (await run(`[...document.querySelectorAll("main article")].some((a) => a.querySelector("time")?.getAttribute("datetime") === ${JSON.stringify(start)})`))
+      throw new Error("reserva do Rafael apareceu na agenda da Marina");
+
+    // Limpa: cancela a reserva com o Rafael para não afetar as próximas etapas.
+    await b.evaluate(`__edusearchDemo.dataSource.listStudentLessons().then((ls) => { const l = ls.find((x) => x.status === "scheduled" && x.teacherId === "t-rafael" && x.start === ${JSON.stringify(start)}); return l && __edusearchDemo.dataSource.cancelLesson(l.id); })`);
+  });
+
+  await step("Acesso — escolher outro professor fictício na tela de perfil", async () => {
+    await b.go(base + "/", 300);
+    await b.evaluate("sessionStorage.removeItem('edusearch-demo-session')");
+    await b.go(base + "/perfil-de-acesso", 900);
+    await clickText("label", "Quero ensinar");
+    await fill("Ver a demonstração como", "t-luiza");
+    await clickText("button", "Continuar como professor");
+    await until(`location.pathname === "/professor" && ${textHas("Olá, Luiza")}`, "visão da Profa. Luiza");
+    await clickText("nav a", "Aulas");
+    await until(`${textHas("Igor S. (fictício)")} && !${textHas("Ana (demonstração)")}`, "aulas da Luiza (sem as da Marina)");
+  });
+}
+
 /** Critério de aceite: entrar, receber recomendação, reservar e ver a aula. */
 async function essentialJourney() {
   await access();
@@ -355,7 +398,7 @@ async function essentialJourney() {
   await profile();
   await step("Etapas 5 e 6 — reservar e ver em Minhas aulas", async () => {
     const slot = await bookFirstSlot("reserva");
-    const start = slot.slice("t-marina-".length);
+    const start = slotStart(slot);
     if (!(await run(`[...document.querySelectorAll("main article time")].some((t) => t.getAttribute("datetime") === ${JSON.stringify(start)})`)))
       throw new Error("aula não aparece em Minhas aulas");
     await shot("6-minhas-aulas");
@@ -366,7 +409,7 @@ async function essentialJourney() {
 
 let failed = false;
 const plans = [
-  { width: 1440, dark: false, run: async () => { await access(); await searchDesktop(); await matching(); await profile(); await booking(); await lessons(); await teacherSync(); } },
+  { width: 1440, dark: false, run: async () => { await access(); await searchDesktop(); await matching(); await profile(); await booking(); await lessons(); await teacherSync(); await otherTeachers(); } },
   { width: 768, dark: false, run: essentialJourney },
   { width: 375, dark: false, run: async () => { await essentialJourney(); await searchMobile(); } },
   { width: 375, dark: true, run: essentialJourney },
