@@ -149,5 +149,10 @@ export async function launch() {
     close,
     errors,
     setStep: (s) => (step = s),
+    /** Assina eventos do DevTools Protocol (ex.: Fetch.requestPaused). Devolve o cancelamento. */
+    on: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
   };
 }

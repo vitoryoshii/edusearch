@@ -16,7 +16,7 @@ import { launch } from "./lib/cdp.mjs";
 const base = (process.argv[2] ?? "http://localhost:5190").replace(/\/$/, "");
 
 const ROUTES = {
-  public: ["/", "/entrar", "/cadastro", "/perfil-de-acesso"],
+  public: ["/", "/entrar", "/cadastro", "/perfil-de-acesso", "/auth/callback", "/conta"],
   student: [
     "/aluno", "/aluno/buscar", "/aluno/assistente", "/aluno/recomendados", "/aluno/professores/t-marina",
     "/aluno/professores/t-marina/agendar", "/aluno/agendamento/resumo", "/aluno/aulas", "/aluno/progresso",

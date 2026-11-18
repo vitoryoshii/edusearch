@@ -2,7 +2,8 @@
 #
 # - checks: roda em todo Pull Request que toca o frontend. Leve (~3–5 min):
 #   instalação com lockfile, typecheck, lint (efeitos React), testes unitários,
-#   build e testes rápidos no servidor de desenvolvimento (StrictMode): smoke e a11y.
+#   build e testes rápidos no servidor de desenvolvimento (StrictMode): smoke, a11y
+#   e login Google (contra um Supabase falso interceptado no navegador).
 # - journey: jornada completa (Chrome headless do runner) + capturas de tela em
 #   375/390/768/1440 px, claro e escuro (artefatos). Roda em PRs em rascunho
 #   (Draft), em PRs com o rótulo "journey" ou sob demanda (Run workflow), para
@@ -67,7 +68,7 @@ jobs:
       - name: Lint (efeitos React não podem retornar valor)
         run: pnpm --filter @edusearch/web lint
 
-      - name: Testes unitários (comissão 15%, calendário, Meet)
+      - name: Testes unitários (comissão 15%, calendário, Meet, OAuth)
         run: pnpm --filter @edusearch/web test:unit
 
       - name: Build (website, app e design system)
@@ -79,11 +80,26 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite.log"; exit 1
 
-      - name: Smoke test (29 rotas, console, overflow)
+      - name: Smoke test (31 rotas, console, overflow)
         run: pnpm --filter @edusearch/web smoke
 
       - name: Acessibilidade (axe + teclado em diálogos, menus e abas)
         run: pnpm --filter @edusearch/web a11y
+
+      # Login real em modo de testes contra um Supabase FALSO: o script intercepta
+      # todas as requisições a *.supabase.co no navegador. Valores fictícios, sem segredos.
+      - name: Servidor com login Google de testes (Supabase falso) na porta 5191
+        env:
+          VITE_AUTH_GOOGLE_ENABLED: "true"
+          VITE_SUPABASE_URL: https://edusearch-ci-fake.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_fake_key
+        run: |
+          pnpm --filter @edusearch/web exec vite --port 5191 --strictPort > "$RUNNER_TEMP/vite-auth.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5191 > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/vite-auth.log"; exit 1
+
+      - name: Login Google (botão, escopos, PKCE, callback e erros, logout, versão pública)
+        run: node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191
 
   journey:
     name: Jornada completa e capturas de tela
