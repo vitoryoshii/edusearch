@@ -10,6 +10,8 @@ import { RequireRole } from "./session";
 
 // Cada tela vira um chunk separado: o aluno não baixa o código do professor e vice-versa.
 const Entry = lazy(() => import("../pages/public/Entry"));
+const EmailConfirmed = lazy(() => import("../pages/public/AuthLink").then((m) => ({ default: m.EmailConfirmed })));
+const NewPassword = lazy(() => import("../pages/public/AuthLink").then((m) => ({ default: m.NewPassword })));
 const ChooseRole = lazy(() => import("../pages/public/ChooseRole"));
 // Conta real (Google Identity Services + Supabase Auth). Separada da demonstração.
 const AccountDashboard = lazy(() => import("../pages/account/Dashboard"));
@@ -46,6 +48,8 @@ const TeacherSettings = lazy(() => import("../pages/teacher/Settings"));
 /** Títulos das páginas (document.title), em português. */
 export const ROUTE_TITLES: Record<string, string> = {
   "/": "Entrar",
+  "/auth/confirmacao": "Confirmação de e-mail",
+  "/auth/nova-senha": "Nova senha",
   "/perfil-de-acesso": "Escolha seu perfil",
   "/conta": "Minha conta",
   "/conta/perfil": "Meu perfil",
@@ -102,6 +106,9 @@ const routes: RouteObject[] = [
           { index: true, element: <Entry /> },
           { path: "entrar", element: <LegacyEntryRedirect /> },
           { path: "cadastro", element: <LegacyEntryRedirect /> },
+          // Retorno dos links enviados por e-mail (Supabase, PKCE).
+          { path: "auth/confirmacao", element: <EmailConfirmed /> },
+          { path: "auth/nova-senha", element: <NewPassword /> },
         ],
       },
       {

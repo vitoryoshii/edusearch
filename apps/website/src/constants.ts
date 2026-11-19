@@ -10,3 +10,15 @@ export const NAV_LINKS = [
   { href: "#professores", label: "Para professores" },
   { href: "#sobre", label: "Sobre" },
 ] as const;
+
+/**
+ * Termos de Uso e Política de Privacidade (gerados de docs/legal no build).
+ * Só aparecem no rodapé quando os dois documentos estão com status "aprovado";
+ * rascunhos continuam acessíveis pela URL, marcados como não vigentes.
+ */
+export const LEGAL_LINKS: ReadonlyArray<{ href: string; label: string }> = __LEGAL_DOCS_APPROVED__
+  ? [
+      { href: "/termos-de-uso", label: "Termos de Uso" },
+      { href: "/politica-de-privacidade", label: "Política de Privacidade" },
+    ]
+  : [];

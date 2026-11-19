@@ -40,6 +40,8 @@ async function diagnose() {
     page = await b.evaluate(`(() => ({
       caminho: location.pathname + location.search,
       etapa: document.querySelector('section[data-step]')?.dataset.step ?? null,
+      email: document.querySelector('[data-testid=email-access]')?.dataset.view ?? null,
+      falhaEmail: document.querySelector('[data-email-failure]')?.getAttribute('data-email-failure') ?? null,
       autenticacao: document.documentElement.dataset.auth ?? null,
       falha: document.querySelector('[data-failure]')?.getAttribute('data-failure') ?? null,
       fase: document.querySelector('[data-auth-phase]')?.getAttribute('data-auth-phase') ?? null,
@@ -59,6 +61,7 @@ async function diagnose() {
     modoToken: tokenMode,
     trocasDeToken: tokenRequests.length,
     ultimaTroca: last ? { provider: last.body.provider, nonceConfere: last.nonceOk, status: last.status ?? null } : null,
+    ultimaRequisicaoEmail: emailRequests.at(-1)?.kind ?? null,
   };
   return JSON.stringify({ ...page, servidor });
 }
@@ -127,6 +130,22 @@ let tokenMode = "ok"; // ok | invalid | network | not_allowed
 let tokenDelayMs = 0; // atraso artificial da resposta do Supabase (teste de corrida)
 let userVariant = "full"; // full | broken-photo | minimal
 let userEndpoint = "ok"; // ok | revoked
+const emailRequests = []; // { kind, email?, pkce?, redirect?, hasPassword? } — nunca a senha
+const EMAIL_USER_ID = "00000000-0000-4000-8000-000000000002";
+function makeEmailUser() {
+  return {
+    id: EMAIL_USER_ID, aud: "authenticated", role: "authenticated", email: "ana.email@example.com",
+    email_confirmed_at: "2026-11-18T10:00:00Z", app_metadata: { provider: "email", providers: ["email"] },
+    user_metadata: {}, identities: [], created_at: "2026-11-18T10:00:00Z", updated_at: "2026-11-18T10:00:00Z",
+  };
+}
+function makeEmailSession() {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  return {
+    access_token: `${b64url({ alg: "HS256", typ: "JWT" })}.${b64url({ sub: EMAIL_USER_ID, role: "authenticated", aud: "authenticated", exp })}.assinatura-ficticia`,
+    token_type: "bearer", expires_in: 3600, expires_at: exp, refresh_token: "refresh-ficticio-email", user: makeEmailUser(),
+  };
+}
 const b64url = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const decode = (jwt) => JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString());
 
@@ -183,7 +202,7 @@ b.on(async (m) => {
         { name: "Content-Type", value: type },
         { name: "Access-Control-Allow-Origin", value: testOrigin },
         { name: "Access-Control-Allow-Headers", value: "authorization, apikey, content-type, x-client-info, x-supabase-api-version" },
-        { name: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS" },
+        { name: "Access-Control-Allow-Methods", value: "GET, POST, PUT, PATCH, DELETE, OPTIONS" }, // como o Supabase real (updateUser usa PUT)
         { name: "Access-Control-Expose-Headers", value: "x-supabase-api-version" },
         ...extra,
       ],
@@ -219,6 +238,55 @@ b.on(async (m) => {
     entry.status = 200;
     return reply(200, JSON.stringify(makeSession()), "application/json", API_VERSION);
   }
+  const bodyOf = () => {
+    try {
+      return JSON.parse(request.postData ?? "{}");
+    } catch {
+      return {};
+    }
+  };
+  const q = url.searchParams;
+  if (url.pathname === "/auth/v1/token" && q.get("grant_type") === "password") {
+    const body = bodyOf();
+    emailRequests.push({ kind: "password", email: body.email });
+    if (body.email === "ana.email@example.com" && body.password === "senha-correta-123") return reply(200, JSON.stringify(makeEmailSession()), "application/json", API_VERSION);
+    if (body.email === "pendente@example.com") return reply(400, JSON.stringify({ code: "email_not_confirmed", message: "Email not confirmed" }), "application/json", API_VERSION);
+    return reply(400, JSON.stringify({ code: "invalid_credentials", message: "Invalid login credentials" }), "application/json", API_VERSION);
+  }
+  if (url.pathname === "/auth/v1/token" && q.get("grant_type") === "pkce") {
+    const body = bodyOf();
+    emailRequests.push({ kind: "exchange", hasVerifier: Boolean(body.code_verifier) });
+    if (["codigo-recuperacao-ok", "codigo-confirmacao-ok"].includes(body.auth_code)) return reply(200, JSON.stringify(makeEmailSession()), "application/json", API_VERSION);
+    return reply(404, JSON.stringify({ code: "flow_state_not_found", message: "invalid flow state, no valid flow state found" }), "application/json", API_VERSION);
+  }
+  if (url.pathname === "/auth/v1/signup") {
+    const body = bodyOf();
+    emailRequests.push({ kind: "signup", email: body.email, pkce: Boolean(body.code_challenge), redirect: q.get("redirect_to") });
+    // Resposta idêntica para e-mail novo ou existente (o Supabase ofusca contas existentes).
+    return reply(200, JSON.stringify({ id: "00000000-0000-4000-8000-0000000000ff", aud: "authenticated", role: "", email: body.email, identities: [], user_metadata: {}, app_metadata: { provider: "email" }, created_at: "2026-11-18T10:00:00Z", updated_at: "2026-11-18T10:00:00Z", confirmation_sent_at: "2026-11-18T10:00:00Z" }), "application/json", API_VERSION);
+  }
+  if (url.pathname === "/auth/v1/recover") {
+    const body = bodyOf();
+    emailRequests.push({ kind: "recover", email: body.email, pkce: Boolean(body.code_challenge), redirect: q.get("redirect_to") });
+    return reply(200, "{}", "application/json", API_VERSION);
+  }
+  if (url.pathname === "/auth/v1/resend") {
+    emailRequests.push({ kind: "resend" });
+    return reply(200, "{}", "application/json", API_VERSION);
+  }
+  if (url.pathname === "/auth/v1/user" && request.method === "PUT") {
+    const body = bodyOf();
+    emailRequests.push({ kind: "update", hasPassword: typeof body.password === "string" && body.password.length > 0 });
+    return reply(200, JSON.stringify(makeEmailUser()), "application/json", API_VERSION);
+  }
+  const bearerSub = (() => {
+    try {
+      return decode(String(request.headers.Authorization ?? request.headers.authorization ?? "").replace(/^Bearer /, "")).sub;
+    } catch {
+      return null;
+    }
+  })();
+  if (url.pathname === "/auth/v1/user" && bearerSub === EMAIL_USER_ID && userEndpoint === "ok") return reply(200, JSON.stringify(makeEmailUser()));
   if (url.pathname === "/auth/v1/user") {
     return userEndpoint === "revoked"
       ? reply(403, JSON.stringify({ code: "session_not_found", message: "Session from session_id claim in JWT does not exist" }), "application/json", API_VERSION)
@@ -313,7 +381,18 @@ async function shot(name, widths = WIDTHS) {
 console.log(`Versão pública (${publicBase}) — login real desligado`);
 b.setStep("público /");
 await b.go(publicBase + "/", 1500);
-await check(await waitFor(`document.querySelector('h1')?.textContent.trim() === 'Conectando alunos e professores.'`), "entrada única com a mensagem \"Conectando alunos e professores.\"");
+await check(
+  await waitFor(`!!document.querySelector('h1 img[alt="EduSearch"]') && document.querySelectorAll('h1').length === 1 && ${text("Conectando alunos e professores.")}`),
+  "título EduSearch (logo oficial) e subtítulo \"Conectando alunos e professores.\"",
+);
+await check(
+  await b.evaluate(`(() => { const x = document.querySelector('[data-testid=email-open]'); return !!x && x.textContent.trim() === 'Continuar com e-mail' && x.getAttribute('aria-disabled') === 'true' && parseFloat(getComputedStyle(x).borderRadius) >= 999; })()`),
+  "\"Continuar com e-mail\" em pílula e desabilitado sem configuração",
+);
+await act("clicar no e-mail desabilitado", `(() => { document.querySelector('[data-testid=email-open]').click(); return true; })()`);
+await check(await b.evaluate(`!document.querySelector('[data-testid=email-access]') && ${text("O acesso por e-mail estará disponível em breve.")}`), "e-mail desabilitado não abre formulário e explica o motivo");
+await check(await b.evaluate(`parseFloat(getComputedStyle(document.querySelector('[data-testid=google-signin-disabled]')).borderRadius) >= 999`), "botão do Google em pílula");
+await check(await b.evaluate(`!/HackBrasil/.test(document.body.innerText)`), "sem mensagens de marketing na tela de acesso");
 await check(await b.evaluate(`!!document.querySelector('main img[alt="EduSearch"]')`), "logo oficial centralizado");
 await check(await b.evaluate(`document.querySelector('[data-testid=google-signin-disabled]')?.getAttribute('aria-disabled') === 'true'`), "botão do Google desabilitado sem configuração");
 await check(await b.evaluate(`!document.querySelector('script[src*="accounts.google.com"]')`), "GIS não é carregado sem configuração");
@@ -325,7 +404,10 @@ await check(
   await b.evaluate(`!document.querySelector('input[type=password], input[type=email]') && !/Criar conta|Já tenho uma conta|Começar agora|continue com e-mail/i.test(document.body.innerText)`),
   "sem login/cadastro por e-mail e senha nem botões separados",
 );
-await check(await b.evaluate(`!!document.querySelector('[data-testid=legal-pending]') && !/aceito|concordo/i.test(document.body.innerText)`), "documentos jurídicos indicados como em elaboração, sem aceite fictício");
+await check(
+  await b.evaluate(`!!document.querySelector('[data-testid=legal-pending]') && ${text("Ao continuar, você poderá consultar nossos Termos de Uso e nossa Política de Privacidade.")} && !document.querySelector('footer a') && !/aceito|concordo|li e aceito/i.test(document.body.innerText) && !document.querySelector('input[type=checkbox]')`),
+  "texto jurídico sem links (documentos não publicados) e sem aceite fictício",
+);
 await axe("entrada (versão pública)");
 await shot("entrada-publica");
 
@@ -343,6 +425,10 @@ for (const [from, path, search] of legacy) {
   await b.go(publicBase + from, 900);
   await check(await waitFor(`location.pathname === '${path}' && location.search === '${search}'`), `${from} → ${path}${search} (rota legada/protegida, next seguro)`);
 }
+
+b.setStep("público: links de e-mail");
+await b.go(publicBase + "/auth/nova-senha?code=codigo-qualquer-1", 1200);
+await check(await waitFor(`document.querySelector('[data-email-failure]')?.getAttribute('data-email-failure') === 'not_available' && location.search === ''`), "links de e-mail indisponíveis quando o recurso está desligado");
 
 b.setStep("público → demonstração");
 await b.go(publicBase + "/", 1000);
@@ -363,6 +449,7 @@ await check((await b.evaluate(`window.__gis.inits`)) === 1, "GIS inicializado um
 await check((await b.evaluate(`document.querySelectorAll('script[src*="accounts.google.com/gsi/client"]').length`)) === 1, "script do GIS injetado uma única vez");
 const opts = await b.evaluate(`window.__gis.opts`);
 await check(opts?.text === "continue_with" && opts?.locale === "pt-BR" && opts?.type === "standard", "botão \"Continuar com o Google\" em pt-BR");
+await check(opts?.shape === "pill", "botão oficial do GIS com shape \"pill\" (sem CSS no iframe)");
 await check(await b.evaluate(text("Fase de testes: somente contas autorizadas")), "acesso real identificado como fase de testes");
 await axe("entrada com login Google ativo");
 await shot("entrada-google");
@@ -427,6 +514,140 @@ await check(await b.evaluate(`document.querySelector('[role=alert]')?.innerText.
 await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null && location.pathname === '/'`), "nenhuma sessão criada para usuário não autorizado");
 await shot("entrada-nao-autorizado", [390]);
 ignoreExpectedNetworkErrors();
+
+/* ------------------------- Acesso por e-mail (estágio testing) ------------------------- */
+b.setStep("e-mail: formulário");
+const EMAIL_OK = "ana.email@example.com";
+const PASSWORD_OK = "senha-correta-123";
+const openEmail = async () => {
+  await b.go(testBase + "/", 1200);
+  await act("abrir e-mail", `(() => { const x = document.querySelector('[data-testid=email-open]'); if (!x || x.getAttribute('aria-disabled') === 'true') return false; x.click(); return true; })()`);
+  return waitFor(`document.querySelector('[data-testid=email-access]')?.dataset.view === 'signin'`);
+};
+const emailView = (v) => `document.querySelector('[data-testid=email-access]')?.dataset.view === '${v}'`;
+const emailFailure = (code) => `document.querySelector('[data-email-failure]')?.getAttribute('data-email-failure') === '${code}'`;
+/** Envia o formulário pelo botão type=submit (as abas "Entrar"/"Criar conta" têm o mesmo texto). */
+const submitEmail = (label) =>
+  act(`enviar: ${label}`, `(() => { const x = [...document.querySelectorAll('form button[type=submit]')].find((y) => y.textContent.trim() === ${JSON.stringify(label)}); if (!x) return false; x.click(); return true; })()`);
+
+await check(await openEmail(), "\"Continuar com e-mail\" abre o formulário na mesma tela");
+await check(
+  await b.evaluate(`document.querySelector('input[name=email]')?.autocomplete === 'username' && document.querySelector('input[name=password]')?.autocomplete === 'current-password'`),
+  "campos com autocomplete adequado (gerenciadores de senha)",
+);
+await check(await b.evaluate(text("Fase de testes: somente contas autorizadas")), "e-mail também identificado como fase de testes");
+await axe("acesso por e-mail — entrar");
+await shot("email-entrar", [320, 390, 1440]);
+
+await act("mostrar senha", `(() => { const t = document.querySelector('button[aria-label="Mostrar senha"]'); t.click(); return true; })()`);
+await check(await waitFor(`document.querySelector('input[name=password]')?.type === 'text' && document.querySelector('button[aria-label="Ocultar senha"]')?.getAttribute('aria-pressed') === 'true'`), "mostrar senha");
+await act("ocultar senha", `(() => { document.querySelector('button[aria-label="Ocultar senha"]').click(); return true; })()`);
+await check(await waitFor(`document.querySelector('input[name=password]')?.type === 'password'`), "ocultar senha");
+
+await submitEmail("Entrar");
+await check(
+  await waitFor(`document.querySelector('input[name=email]')?.getAttribute('aria-invalid') === 'true' && document.activeElement?.name === 'email'`),
+  "envio vazio: erro no campo e foco no primeiro campo inválido",
+);
+
+b.setStep("e-mail: credenciais incorretas");
+await setField("E-mail", EMAIL_OK);
+await setField("Senha", "senha-errada-1");
+await submitEmail("Entrar");
+await check(await waitFor(emailFailure("invalid_credentials")), "credenciais incorretas: erro acessível");
+await check(await b.evaluate(`document.querySelector('[role=alert]')?.innerText.includes('E-mail ou senha incorretos.')`), "mensagem não revela se o erro é do e-mail ou da senha");
+await check(emailRequests.some((r) => r.kind === "password" && r.email === EMAIL_OK), "login enviado ao Supabase (signInWithPassword)");
+await check(!(await b.evaluate(storageHas(JSON.stringify("senha-errada-1")))) && !seen.some((r) => r.url.includes("senha-errada")), "senha nunca vai para storage ou URL");
+ignoreExpectedNetworkErrors();
+
+b.setStep("e-mail: não confirmado");
+await setField("E-mail", "pendente@example.com");
+await setField("Senha", "qualquer-senha-1");
+await submitEmail("Entrar");
+await check(await waitFor(emailFailure("email_not_confirmed")), "e-mail não confirmado: orientação para confirmar");
+await act("reenviar confirmação", `(() => { const x = [...document.querySelectorAll('button')].find((y) => y.textContent.trim() === 'Reenviar confirmação'); x.click(); return true; })()`);
+await check(await waitFor(`${emailView("sent")} && ${text("Se houver um cadastro pendente")}`), "reenvio de confirmação com resposta genérica");
+await check(emailRequests.some((r) => r.kind === "resend"), "reenvio enviado ao Supabase (resend)");
+await check(await b.evaluate(`[...document.querySelectorAll('button')].some((x) => /^Reenviar em \\d+ s$/.test(x.textContent.trim()) && x.disabled)`), "reenvio com intervalo de espera (anti-abuso)");
+ignoreExpectedNetworkErrors();
+
+b.setStep("e-mail: criar conta");
+await check(await openEmail(), "reabrir o formulário");
+await act("aba Criar conta", `(() => { const r = [...document.querySelectorAll('[role=radio]')].find((x) => x.textContent.trim() === 'Criar conta'); r.click(); return true; })()`);
+await check(await waitFor(`${emailView("signup")} && document.querySelector('input[name=password]')?.autocomplete === 'new-password'`), "criar conta usa senha nova (autocomplete new-password)");
+await setField("E-mail", "existente@example.com");
+await setField("Senha", "curta");
+await submitEmail("Criar conta");
+await check(await waitFor(`document.querySelector('input[name=password]')?.getAttribute('aria-invalid') === 'true'`), "senha fraca recusada antes do envio");
+await setField("Senha", "senha-nova-segura-1");
+await submitEmail("Criar conta");
+await check(await waitFor(`${emailView("sent")} && ${text("Se este e-mail puder ser usado")}`), "cadastro com e-mail existente: resposta genérica");
+const sentExisting = await b.evaluate(`document.querySelector('[data-testid=email-sent]')?.innerText`);
+await check(await openEmail(), "reabrir para novo cadastro");
+await act("aba Criar conta", `(() => { const r = [...document.querySelectorAll('[role=radio]')].find((x) => x.textContent.trim() === 'Criar conta'); r.click(); return true; })()`);
+await waitFor(emailView("signup"));
+await setField("E-mail", "nova.pessoa@example.com");
+await setField("Senha", "senha-nova-segura-2");
+await submitEmail("Criar conta");
+await waitFor(emailView("sent"));
+await check((await b.evaluate(`document.querySelector('[data-testid=email-sent]')?.innerText`)) === sentExisting, "mesma resposta para e-mail novo e existente (sem enumeração)");
+const signup = emailRequests.filter((r) => r.kind === "signup").at(-1);
+await check(Boolean(signup?.pkce) && signup?.redirect?.endsWith("/auth/confirmacao"), "cadastro com PKCE e retorno para /auth/confirmacao");
+await axe("acesso por e-mail — verifique seu e-mail");
+await shot("email-verifique", [390]);
+
+b.setStep("e-mail: recuperar senha");
+await check(await openEmail(), "reabrir para recuperar senha");
+await act("esqueci minha senha", `(() => { const x = [...document.querySelectorAll('button')].find((y) => y.textContent.trim() === 'Esqueci minha senha'); x.click(); return true; })()`);
+await check(await waitFor(`${emailView("reset")} && !document.querySelector('input[name=password]')`), "recuperar senha pede só o e-mail");
+await setField("E-mail", "ninguem@example.com");
+await submitEmail("Enviar link");
+await check(await waitFor(`${emailView("sent")} && ${text("Se houver uma conta com este e-mail")}`), "recuperação com resposta genérica");
+const recover = emailRequests.filter((r) => r.kind === "recover").at(-1);
+await check(recover?.redirect?.endsWith("/auth/nova-senha") && Boolean(recover?.pkce), "recuperação com PKCE e retorno para /auth/nova-senha");
+
+b.setStep("e-mail: nova senha");
+await b.go(testBase + "/auth/nova-senha?code=codigo-recuperacao-ok", 1500);
+await check(await waitFor(`!!document.querySelector('[data-testid=new-password]') && location.search === ''`), "link de recuperação válido abre o formulário e o código sai da URL");
+await setField("Nova senha", "curta");
+await submitEmail("Salvar nova senha");
+await check(await waitFor(`document.querySelector('input[name=password]')?.getAttribute('aria-invalid') === 'true'`), "nova senha fraca recusada");
+await setField("Nova senha", "senha-nova-segura-3");
+await submitEmail("Salvar nova senha");
+await check(await waitFor(`!!document.querySelector('[data-testid=password-updated]')`), "senha atualizada (updateUser)");
+await check(emailRequests.some((r) => r.kind === "update" && r.hasPassword), "nova senha enviada ao Supabase");
+await check(!(await b.evaluate(storageHas(JSON.stringify("senha-nova-segura-3")))), "nova senha não fica no navegador");
+await shot("email-nova-senha", [390]);
+await signOutFromSettings();
+
+b.setStep("e-mail: links inválidos");
+await b.go(testBase + "/auth/confirmacao?code=codigo-invalido-1", 1500);
+await check(await waitFor(`document.querySelector('[data-email-failure]')?.getAttribute('data-email-failure') === 'link_invalid'`), "link de confirmação inválido ou de outro navegador");
+await b.go(testBase + "/auth/confirmacao?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired", 1200);
+await check(await waitFor(`document.querySelector('[data-email-failure]')?.getAttribute('data-email-failure') === 'link_invalid' && location.search === ''`), "link expirado: mensagem e URL limpa");
+ignoreExpectedNetworkErrors();
+
+b.setStep("e-mail: confirmação e login");
+// PKCE: o link só é trocado no navegador que pediu o e-mail — como um usuário real, cadastra antes.
+await check(await openEmail(), "reabrir para cadastrar antes de confirmar");
+await act("aba Criar conta", `(() => { const r = [...document.querySelectorAll('[role=radio]')].find((x) => x.textContent.trim() === 'Criar conta'); r.click(); return true; })()`);
+await waitFor(emailView("signup"));
+await setField("E-mail", EMAIL_OK);
+await setField("Senha", PASSWORD_OK);
+await submitEmail("Criar conta");
+await waitFor(emailView("sent"));
+await b.go(testBase + "/auth/confirmacao?code=codigo-confirmacao-ok", 1500);
+await check(await waitFor(`!!document.querySelector('[data-testid=email-confirmed]')`), "e-mail confirmado pelo link");
+await signOutFromSettings();
+await check(await openEmail(), "reabrir para entrar");
+await setField("E-mail", EMAIL_OK);
+await setField("Senha", PASSWORD_OK);
+await submitEmail("Entrar");
+await check(await waitFor(`location.pathname === '/conta/boas-vindas' && ${text("Olá, ana.email!")}`), "login por e-mail: primeiro acesso leva às boas-vindas");
+await check(await b.evaluate(`!/senha-correta/.test(localStorage.getItem('edusearch-auth') ?? '')`), "senha não é gravada na sessão");
+await check(!seen.some((r) => /\/user\/identities|link_identity|linkIdentity/.test(r.url)), "nenhuma vinculação automática de identidades");
+await signOutFromSettings();
+await check(await b.evaluate(`localStorage.getItem('edusearch-auth') === null`), "logout da conta de e-mail");
 
 b.setStep("primeiro acesso");
 tokenMode = "ok";

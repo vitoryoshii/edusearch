@@ -4,13 +4,16 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { LoadingState } from "@edusearch/ui";
 import { setAccessTokenProvider } from "../lib/api/client";
 import { AUTH_CONFIG } from "../lib/auth/config";
+import { EMAIL_LINK_PATHS, classifyEmailError, normalizeEmail, type EmailFailure, type EmailOp } from "../lib/auth/email";
 import { disableGisAutoSelect } from "../lib/auth/gis";
 import { NONCE_MAX_AGE_MS, NonceVault, checkCredential, classifySupabaseError, createNonce, sanitizeNext, type AuthFailure } from "../lib/auth/oauth";
 import { toAuthenticatedProfile, toSessionInfo, type AuthenticatedProfile, type SessionInfo } from "../lib/auth/profile";
 import { getSupabase } from "../lib/auth/supabase";
+import { FEATURES } from "../lib/features";
 
 /**
- * Sessão AUTENTICADA: Google Identity Services (ID token) + Supabase Auth.
+ * Sessão AUTENTICADA: Google Identity Services (ID token) + Supabase Auth,
+ * e — quando o estágio permitir — e-mail e senha (Supabase Auth).
  *
  * Totalmente separada da demonstração (src/app/session.tsx):
  * - chaves de armazenamento diferentes; nada da demonstração é migrado;
@@ -22,6 +25,19 @@ import { getSupabase } from "../lib/auth/supabase";
  */
 export type AuthStatus = "disabled" | "loading" | "signedOut" | "signedIn";
 export type SignInResult = { ok: true } | { ok: false; failure: AuthFailure };
+export type EmailResult = { ok: true } | { ok: false; failure: EmailFailure };
+
+/** Acesso por e-mail (Supabase). Senhas só passam por aqui rumo ao SDK; nunca são guardadas. */
+export type EmailAuthApi = {
+  signIn: (email: string, password: string) => Promise<EmailResult>;
+  /** Sempre "ok" genérico quando o e-mail já existe (sem enumeração). */
+  signUp: (email: string, password: string) => Promise<EmailResult>;
+  requestReset: (email: string) => Promise<EmailResult>;
+  resendConfirmation: (email: string) => Promise<EmailResult>;
+  /** Troca o código do link de e-mail (PKCE) pela sessão. */
+  exchangeLink: (code: string) => Promise<EmailResult>;
+  updatePassword: (password: string) => Promise<EmailResult>;
+};
 
 type Ctx = {
   status: AuthStatus;
@@ -37,6 +53,7 @@ type Ctx = {
   /** Troca a credencial do GIS por uma sessão do Supabase. */
   signInWithGoogleCredential: (credential: unknown) => Promise<SignInResult>;
   signOut: () => Promise<void>;
+  email: EmailAuthApi;
 };
 
 const AuthContext = createContext<Ctx | null>(null);
@@ -55,7 +72,7 @@ function hasStoredSession() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(() =>
-    !AUTH_CONFIG.enabled ? "disabled" : hasStoredSession() ? "loading" : "signedOut",
+    !FEATURES.realAuth ? "disabled" : hasStoredSession() ? "loading" : "signedOut",
   );
   const [profile, setProfile] = useState<AuthenticatedProfile | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -96,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Restauração da sessão gravada (com confirmação no servidor).
   useEffect(() => {
-    if (!AUTH_CONFIG.enabled || !hasStoredSession()) return;
+    if (!FEATURES.realAuth || !hasStoredSession()) return;
     let active = true;
     (async () => {
       try {
@@ -148,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Ignora credenciais duplicadas enquanto uma troca está em andamento.
       if (inflight.current) return inflight.current;
       const run = (async (): Promise<SignInResult> => {
-        if (!AUTH_CONFIG.enabled) return { ok: false, failure: "provider_error" };
+        if (FEATURES.googleAuth === "off") return { ok: false, failure: "provider_error" };
         const now = Date.now();
         const checked = checkCredential(credential, { clientId: AUTH_CONFIG.googleClientId, now });
         if (!checked.ok) return { ok: false, failure: checked.failure };
@@ -204,9 +221,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearNotice = useCallback(() => setNotice(null), []);
 
+  /* ------------------------------ E-mail e senha ------------------------------ */
+  const runEmail = useCallback(
+    async (
+      op: EmailOp,
+      call: (sb: SupabaseClient) => Promise<{ error: unknown; data?: unknown }>,
+    ): Promise<EmailResult> => {
+      if (FEATURES.emailAuth === "off" || (op === "signup" && FEATURES.emailSignup === "off")) return { ok: false, failure: "not_available" };
+      try {
+        const sb = await client();
+        const { data, error } = await call(sb);
+        const failure = classifyEmailError(error as never, op);
+        if (failure) return { ok: false, failure };
+        const session = (data as { session?: Session | null } | null | undefined)?.session;
+        if (session) {
+          setNotice(null);
+          setSignedOutByUser(false);
+          apply(session);
+        }
+        return { ok: true };
+      } catch {
+        return { ok: false, failure: "network" };
+      }
+    },
+    [apply, client],
+  );
+
+  const email = useMemo<EmailAuthApi>(() => {
+    const link = (path: string) => new URL(path, window.location.origin).toString();
+    return {
+      signIn: (address, password) => runEmail("signin", (sb) => sb.auth.signInWithPassword({ email: normalizeEmail(address), password })),
+      signUp: (address, password) =>
+        runEmail("signup", (sb) =>
+          sb.auth.signUp({ email: normalizeEmail(address), password, options: { emailRedirectTo: link(EMAIL_LINK_PATHS.confirm) } }),
+        ),
+      requestReset: (address) =>
+        runEmail("reset", (sb) => sb.auth.resetPasswordForEmail(normalizeEmail(address), { redirectTo: link(EMAIL_LINK_PATHS.recovery) })),
+      resendConfirmation: (address) =>
+        runEmail("resend", (sb) =>
+          sb.auth.resend({ type: "signup", email: normalizeEmail(address), options: { emailRedirectTo: link(EMAIL_LINK_PATHS.confirm) } }),
+        ),
+      exchangeLink: (code) => runEmail("link", (sb) => sb.auth.exchangeCodeForSession(code)),
+      updatePassword: (password) => runEmail("update", (sb) => sb.auth.updateUser({ password })),
+    };
+  }, [runEmail]);
+
   const value = useMemo(
-    () => ({ status, profile, session, notice, signedOutByUser, clearNotice, prepareNonce, signInWithGoogleCredential, signOut }),
-    [status, profile, session, notice, signedOutByUser, clearNotice, prepareNonce, signInWithGoogleCredential, signOut],
+    () => ({ status, profile, session, notice, signedOutByUser, clearNotice, prepareNonce, signInWithGoogleCredential, signOut, email }),
+    [status, profile, session, notice, signedOutByUser, clearNotice, prepareNonce, signInWithGoogleCredential, signOut, email],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -6,9 +6,11 @@
  * - VITE_SUPABASE_PUBLISHABLE_KEY chave publicável (sb_publishable_… ou anon)
  * - VITE_GOOGLE_CLIENT_ID         Client ID OAuth (Web) — público por natureza
  *
- * O login real só é ativado quando as três estão presentes e válidas. Sem elas
- * (padrão), o app continua 100% demonstração. Segredos são recusados:
- * service_role/sb_secret_ (Supabase) e GOCSPX-… (Client Secret do Google).
+ * - supabaseReady: URL + chave publicável válidas (base para Google e e-mail).
+ * - googleReady: supabaseReady + Client ID do Google.
+ * O que fica ativo em cada ambiente é decidido por estágio, por recurso
+ * (src/lib/features.ts). Sem as variáveis (padrão), o app é só demonstração.
+ * Segredos são recusados: service_role/sb_secret_ (Supabase) e GOCSPX-… (Google).
  */
 const url = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
 const publishableKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
@@ -43,12 +45,16 @@ const missing = [
   !isGoogleClientId(googleClientId) && "VITE_GOOGLE_CLIENT_ID",
 ].filter(Boolean) as string[];
 
+const supabaseReady = Boolean(validUrl) && publishableKey !== "" && !secret;
+
 export const AUTH_CONFIG = {
   supabaseUrl: url,
   publishableKey,
   googleClientId,
-  /** Login real ativo neste build. */
-  enabled: missing.length === 0 && !secret,
+  /** Supabase Auth configurado (URL + chave publicável), sem segredos. */
+  supabaseReady,
+  /** Supabase + Client ID do Google válidos (pré-requisito do login Google). */
+  googleReady: supabaseReady && isGoogleClientId(googleClientId),
   /** Variáveis ausentes/inválidas (diagnóstico em desenvolvimento). */
   missing,
   /** Chave da sessão real (separada da sessão de demonstração). */

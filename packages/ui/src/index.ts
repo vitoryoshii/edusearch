@@ -9,7 +9,7 @@ export {
   type ThemePreference,
 } from "./lib/theme";
 
-export { Button, IconButton, buttonClasses, type ButtonProps, type ButtonSize, type ButtonVariant } from "./components/Button";
+export { Button, IconButton, buttonClasses, type ButtonProps, type ButtonShape, type ButtonSize, type ButtonVariant } from "./components/Button";
 export { Spinner } from "./components/Spinner";
 export {
   Checkbox,

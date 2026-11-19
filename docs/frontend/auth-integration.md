@@ -1,4 +1,4 @@
-# Autenticação real — Google Identity Services + Supabase Auth (Fases 2.4 e 2.5)
+# Autenticação real — Google Identity Services + Supabase Auth (Fases 2.4, 2.5 e 2.5.1)
 
 Login com Google no app PWA (`apps/web`) **sem sair do domínio do app**: o botão oficial do Google Identity Services (GIS) devolve um ID token à própria página e o Supabase o valida com `signInWithIdToken`. Não há redirecionamento do navegador para `*.supabase.co`.
 
@@ -69,6 +69,46 @@ Nunca coloque no frontend: Client Secret do Google, `service_role`/secret key do
 
 - **Preview** (ambiente de testes): as três variáveis. Use uma URL de preview **fixa** (ex.: alias da branch) e registre essa origem no Google Cloud.
 - **Production** (`app.edusearch.com.br`): **não** defina `VITE_GOOGLE_CLIENT_ID` até a aprovação. Sem ele, a produção continua só com a demonstração.
+
+## Estágios por recurso (Fase 2.5.1)
+
+Cada recurso tem o próprio estágio — `off`, `testing` ou `production` — definido em `src/lib/stages.ts` (regra pura, testada) e aplicado em `src/lib/features.ts`. Não existe um indicador único que libere tudo.
+
+| Variável | Padrão | Observação |
+| -------- | ------ | ---------- |
+| `VITE_STAGE_GOOGLE_AUTH` | `testing` (se Supabase + Client ID estiverem configurados) | Em `testing`, a tela mostra "Fase de testes: somente contas autorizadas." |
+| `VITE_STAGE_EMAIL_AUTH` | `off` | Entrar com e-mail e senha. Desligado: o botão "Continuar com e-mail" aparece desabilitado, com explicação |
+| `VITE_STAGE_EMAIL_SIGNUP` | `off` | Criar conta com e-mail. Nunca fica acima de `VITE_STAGE_EMAIL_AUTH` |
+
+Travas automáticas: sem configuração técnica, o recurso fica `off`; `production` exige documentos jurídicos publicados (`VITE_LEGAL_*`), senão cai para `testing`. Pagamentos são sempre simulados nesta fase (não há variável para ativá-los).
+
+## Acesso por e-mail e senha (Fase 2.5.1)
+
+Secundário ao Google, na mesma tela (`/` → *Continuar com e-mail*). Usa somente Supabase Auth:
+
+| Ação | Método do SDK | Resposta ao usuário |
+| ---- | ------------- | ------------------- |
+| Entrar | `signInWithPassword` | "E-mail ou senha incorretos." (não revela qual dos dois) |
+| Criar conta | `signUp` (com `emailRedirectTo` → `/auth/confirmacao`) | Mensagem **genérica**, igual para e-mail novo ou existente |
+| Esqueci minha senha | `resetPasswordForEmail` (→ `/auth/nova-senha`) | Mensagem **genérica** |
+| Reenviar confirmação | `resend` | Genérica, com intervalo de 60 s entre reenvios |
+| Abrir link do e-mail | `exchangeCodeForSession` (PKCE) | Código removido da URL; link expirado ou de outro navegador → mensagem clara |
+| Definir nova senha | `updateUser({ password })` | "Senha atualizada." |
+
+Segurança:
+
+- **PKCE** (`flowType: "pkce"`): o link do e-mail só vira sessão no navegador que pediu o e-mail.
+- A senha existe só no estado do formulário (limpa ao trocar de tela) e no corpo HTTPS enviado ao Supabase. Nunca em storage, URL ou log. O Supabase guarda apenas o hash.
+- Regras locais: e-mail válido; nova senha com 8+ caracteres, não só espaços e até 72 bytes (limite do bcrypt).
+- O app **não** vincula contas Google e e-mail. A vinculação automática de identidades com o mesmo e-mail é uma configuração do Supabase e precisa de revisão (checklist, seção 6).
+- Antes de sair de `off`: SMTP próprio, confirmação de e-mail obrigatória, recuperação funcionando, rate limiting/CAPTCHA revisados, controle de admissão e documentos publicados — ver [docs/legal/checklist-publicacao.md](../legal/checklist-publicacao.md).
+
+Supabase (quando o e-mail for ativado):
+
+- *Authentication → Sign In / Providers → Email*: habilitado, **Confirm email** ligado, senha mínima de 8 caracteres.
+- *Authentication → URL Configuration → Redirect URLs*: `https://app.edusearch.com.br/auth/confirmacao`, `https://app.edusearch.com.br/auth/nova-senha` e os equivalentes de `http://localhost:5190` e do preview.
+- *Authentication → SMTP Settings*: provedor próprio (o SMTP padrão do Supabase é só para testes e tem limites baixos).
+- Modelos de e-mail em português usando `{{ .ConfirmationURL }}`.
 
 ## Configuração pendente — Google Cloud (projeto EduSearch)
 

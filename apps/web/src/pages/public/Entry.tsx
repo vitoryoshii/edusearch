@@ -1,81 +1,90 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { AlertIcon, ArrowRightIcon, Avatar, Logo, buttonClasses } from "@edusearch/ui";
+import { AlertIcon, ArrowRightIcon, Avatar, Button, MailIcon, buttonClasses } from "@edusearch/ui";
 import { readRoleIntent, useAuth } from "../../app/auth";
 import { homeFor, useSession } from "../../app/session";
-import { EntryBackdrop } from "../../components/EntryBackdrop";
+import { EmailAccess } from "../../components/EmailAccess";
+import { EntryFrame } from "../../components/EntryFrame";
 import { GoogleSignIn } from "../../components/GoogleSignIn";
-import { FAILURE_MESSAGES } from "../../lib/auth/oauth";
+import { FAILURE_MESSAGES, sanitizeNext } from "../../lib/auth/oauth";
 import { firstNameOf } from "../../lib/auth/profile";
-import { LEGAL_LINKS, legalPublished } from "../../lib/legal";
+import { AUTH_PROVIDERS } from "../../lib/auth/providers";
 import { nextAccountStep } from "../../lib/onboarding";
 
 /**
- * Entrada única do EduSearch (substitui boas-vindas, login e cadastro).
- *
- * - Método principal: botão OFICIAL do Google Identity Services (GIS + Supabase).
- *   Não existe login por e-mail e senha.
- * - Ação secundária: demonstração com dados fictícios, sem login.
+ * Entrada única do EduSearch.
+ * - Principal: botão OFICIAL do Google Identity Services (pílula).
+ * - Secundário: "Continuar com e-mail" (Supabase), conforme o estágio do recurso.
+ * - Link: "Explorar demonstração" — identificada como dados fictícios.
  * - /entrar e /cadastro redirecionam para cá, preservando um `next` seguro.
  */
 export default function Entry() {
   const { status, profile, notice } = useAuth();
   const { session } = useSession();
   const [params] = useSearchParams();
-  const next = params.get("next") ?? undefined;
+  const next = sanitizeNext(params.get("next") ?? undefined);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const signedIn = status === "signedIn" && profile;
 
   return (
-    <div className="relative isolate flex min-h-dvh flex-col overflow-hidden bg-bg pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-      <EntryBackdrop />
-
-      <main id="conteudo-principal" className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-20 sm:py-24">
-        <div className="w-full max-w-[22rem] animate-slide-up">
-          <div className="text-center">
-            <Logo className="mx-auto h-12 sm:h-14" />
-            <h1 className="mt-6 text-xl font-semibold tracking-tight text-balance text-fg-strong sm:text-2xl">
-              Conectando alunos e professores.
-            </h1>
-          </div>
-
-          <div className="mt-10 space-y-4">
-            {notice === "session_expired" && <ExpiredNotice />}
-            {status === "signedIn" && profile ? <ContinueAccount /> : <GoogleSignIn next={next} />}
-          </div>
-
-          <div className="mt-4">
-            <Link
-              to={session ? homeFor(session.role) : "/perfil-de-acesso"}
-              className={buttonClasses({ variant: "secondary", size: "lg", fullWidth: true })}
-              aria-describedby="demo-hint"
-            >
-              {session ? "Continuar demonstração" : "Explorar demonstração"}
-            </Link>
-            <p id="demo-hint" className="mt-2 text-center text-xs text-fg-muted">
-              Dados fictícios, sem login. Separada da sua conta.
-            </p>
-          </div>
-        </div>
-      </main>
-
-      <footer className="relative z-10 px-4 pb-5 text-center text-xs leading-relaxed text-fg-muted">
-        {/* Fundo sólido: o texto continua legível sobre as curvas decorativas. */}
-        <div className="mx-auto w-fit max-w-full rounded-2xl bg-bg px-4 py-2">
-        {legalPublished ? (
-          <p>
-            <a href={LEGAL_LINKS.terms!} className="underline-offset-4 hover:text-link hover:underline" target="_blank" rel="noreferrer">
-              Termos de Uso
-            </a>
-            <span aria-hidden="true"> · </span>
-            <a href={LEGAL_LINKS.privacy!} className="underline-offset-4 hover:text-link hover:underline" target="_blank" rel="noreferrer">
-              Política de Privacidade
-            </a>
-          </p>
+    <EntryFrame subtitle={emailOpen && !signedIn ? undefined : "Conectando alunos e professores."}>
+      <div className="space-y-3">
+        {notice === "session_expired" && <ExpiredNotice />}
+        {signedIn ? (
+          <ContinueAccount />
+        ) : emailOpen ? (
+          <EmailAccess next={next} onBack={() => setEmailOpen(false)} />
         ) : (
-          <p data-testid="legal-pending">Termos de Uso e Política de Privacidade em elaboração.</p>
+          <>
+            <GoogleSignIn next={next} />
+            <EmailButton onOpen={() => setEmailOpen(true)} />
+          </>
         )}
-        <p className="mt-1">EduSearch · HackBrasil 2026 · Acesso real em fase de testes</p>
-        </div>
-      </footer>
+      </div>
+
+      {!emailOpen && (
+        <p className="mt-8 text-center">
+          <Link
+            to={session ? homeFor(session.role) : "/perfil-de-acesso"}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-link underline-offset-4 hover:underline"
+            aria-describedby="demo-hint"
+          >
+            {session ? "Continuar demonstração" : "Explorar demonstração"}
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+          <span id="demo-hint" className="block text-xs text-fg-muted">
+            Dados fictícios, sem login.
+          </span>
+        </p>
+      )}
+    </EntryFrame>
+  );
+}
+
+/** Botão secundário. Desligado (com explicação) enquanto o estágio do e-mail for "off". */
+function EmailButton({ onOpen }: { onOpen: () => void }) {
+  const available = AUTH_PROVIDERS.email.available;
+  return (
+    <div>
+      <Button
+        variant="secondary"
+        shape="pill"
+        size="lg"
+        fullWidth
+        leftIcon={<MailIcon className="h-5 w-5" />}
+        onClick={available ? onOpen : undefined}
+        aria-disabled={available ? undefined : true}
+        aria-describedby={available ? undefined : "email-status"}
+        data-testid="email-open"
+        className={available ? undefined : "cursor-not-allowed"}
+      >
+        Continuar com e-mail
+      </Button>
+      {!available && (
+        <p id="email-status" className="mt-2 text-center text-xs text-fg-muted">
+          {AUTH_PROVIDERS.email.statusMessage}
+        </p>
+      )}
     </div>
   );
 }
@@ -89,7 +98,7 @@ function ContinueAccount() {
 
   return (
     <div className="space-y-3" data-testid="continue-account">
-      <Link to={to} className={buttonClasses({ size: "lg", fullWidth: true, className: "justify-between gap-3 pl-2" })}>
+      <Link to={to} className={buttonClasses({ size: "lg", fullWidth: true, shape: "pill", className: "justify-between gap-3 pl-2" })}>
         <span className="flex min-w-0 items-center gap-3">
           <Avatar name={profile.displayName} src={profile.avatarUrl ?? undefined} size="sm" />
           <span className="truncate">Continuar como {firstNameOf(profile)}</span>

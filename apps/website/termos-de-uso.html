@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Tema do sistema antes da renderização (evita "flash" de tema).
+      document.documentElement.dataset.theme =
+        window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    </script>
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#F8FAFC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0B1E2E" media="(prefers-color-scheme: dark)" />
+    <!--legal-head-->
+    <meta property="og:site_name" content="EduSearch" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:image" content="/og-image.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body class="bg-bg text-fg antialiased">
+    <!--legal:termos-de-uso-->
+    <script type="module" src="/src/legal/main.ts"></script>
+  </body>
+</html>
