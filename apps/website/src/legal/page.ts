@@ -30,7 +30,7 @@ export function renderLegalHead(doc: RenderedDoc): string {
   ].join("\n    ");
 }
 
-const NAV_LINK = "inline-flex min-h-11 items-center rounded-full px-3 text-sm font-medium transition-colors";
+const NAV_LINK = "inline-flex min-h-11 items-center rounded-full px-2.5 text-sm font-medium whitespace-nowrap transition-colors sm:px-3";
 
 export function renderLegalBody(doc: RenderedDoc): string {
   const approved = isApproved(doc.meta);
@@ -52,13 +52,20 @@ export function renderLegalBody(doc: RenderedDoc): string {
   return `
 <a href="#conteudo" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-control focus:bg-surface focus:px-4 focus:py-2 focus:text-fg-strong focus:shadow-raised">Pular para o conteúdo</a>
 <header class="sticky top-0 z-40 border-b border-line bg-bg/90 backdrop-blur-sm">
-  <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-8">
+  <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-3 sm:px-8">
     <a href="/" aria-label="EduSearch — página inicial" class="shrink-0 rounded-md">
-      <img src="/brand/logo.webp" alt="" width="160" height="40" class="h-7 w-auto sm:h-8 dark:hidden" />
-      <img src="/brand/logo-dark.webp" alt="" width="160" height="40" class="hidden h-7 w-auto sm:h-8 dark:block" />
+      <!--
+        Logo horizontal (498×96, ≈145 px a 28 px de altura) só a partir de 440 px:
+        abaixo disso, logo + "Termos" + "Privacidade" não cabem e o celular reduz
+        o zoom da página. Até 439 px, o símbolo compacto (152×120).
+      -->
+      <img src="/brand/logo.webp" alt="" width="498" height="96" class="hidden h-7 w-auto min-[440px]:block min-[440px]:dark:hidden sm:h-8" />
+      <img src="/brand/logo-dark.webp" alt="" width="498" height="96" class="hidden h-7 w-auto min-[440px]:dark:block sm:h-8" />
+      <img src="/brand/symbol.webp" alt="" width="152" height="120" class="h-8 w-auto min-[440px]:hidden dark:hidden" />
+      <img src="/brand/symbol-dark.webp" alt="" width="152" height="120" class="hidden h-8 w-auto dark:block min-[440px]:dark:hidden" />
     </a>
-    <nav aria-label="Documentos" class="flex items-center gap-1">
-      <a href="/" class="${NAV_LINK} text-fg hover:text-link">Início</a>${nav}
+    <nav aria-label="Documentos" class="flex min-w-0 items-center gap-0.5 sm:gap-1">
+      <a href="/" class="${NAV_LINK} hidden text-fg hover:text-link sm:inline-flex">Início</a>${nav}
     </nav>
   </div>
 </header>

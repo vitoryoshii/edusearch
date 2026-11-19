@@ -32,6 +32,36 @@ async function axe(label) {
   check(v.length === 0, `axe: ${label}${v.length ? " — " + v.join("; ") : ""}`);
 }
 
+/** Larguras verificadas (440 = primeiro ponto com o logo horizontal no cabeçalho). */
+const WIDTHS = [320, 375, 390, 440, 768, 1440];
+
+/**
+ * Geometria do viewport e do cabeçalho, registrada quando a verificação de
+ * largura falha: innerWidth, clientWidth, scrollWidth, dimensões do cabeçalho
+ * e da navegação, logo visível e os elementos que ultrapassam a tela.
+ */
+const GEOMETRY = `(() => {
+  const vis = (el) => el.getClientRects().length > 0 && getComputedStyle(el).display !== 'none';
+  const header = document.querySelector('body > header');
+  const inner = header?.firstElementChild;
+  const nav = header?.querySelector('nav');
+  const img = [...(header?.querySelectorAll('a[href="/"] img') ?? [])].find(vis);
+  const cw = document.documentElement.clientWidth;
+  const offenders = [...document.querySelectorAll('body *')]
+    .filter((el) => vis(el) && el.getBoundingClientRect().right > cw + 1)
+    .slice(0, 4)
+    .map((el) => el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\\s+/).slice(0, 3).join('.') : '') + ' →' + Math.round(el.getBoundingClientRect().right));
+  return {
+    innerWidth, clientWidth: cw, scrollWidth: document.documentElement.scrollWidth,
+    visualScale: window.visualViewport ? Number(visualViewport.scale.toFixed(3)) : null,
+    headerWidth: Math.round(inner?.clientWidth ?? 0), headerScroll: Math.round(inner?.scrollWidth ?? 0),
+    navWidth: Math.round(nav?.getBoundingClientRect().width ?? 0),
+    logo: img ? (img.src.includes('symbol') ? 'symbol' : 'logo') : 'nenhum',
+    logoWidth: Math.round(img?.getBoundingClientRect().width ?? 0),
+    offenders,
+  };
+})()`;
+
 const PAGES = [
   ["termos-de-uso", "Termos de Uso"],
   ["politica-de-privacidade", "Política de Privacidade"],
@@ -59,15 +89,24 @@ for (const [slug, title] of PAGES) {
     await axe(`${slug} (${dark ? "escuro" : "claro"})`);
   }
   const overflow = [];
-  for (const w of [320, 375, 390, 768, 1440]) {
+  const logoMismatch = [];
+  for (const w of WIDTHS) {
     for (const dark of [false, true]) {
       await b.viewport(w, { dark });
       await sleep(250);
-      if (await b.evaluate(`document.documentElement.scrollWidth > innerWidth + 1`)) overflow.push(`${w}px ${dark ? "escuro" : "claro"}`);
+      const g = await b.evaluate(GEOMETRY);
+      const label = `${w}px ${dark ? "escuro" : "claro"}`;
+      // innerWidth > largura emulada = o celular "diminuiu o zoom" para caber um elemento largo demais.
+      if (g.scrollWidth > g.innerWidth + 1 || g.innerWidth > w + 1 || g.headerScroll > g.headerWidth + 1) {
+        overflow.push(`${label} ${JSON.stringify(g)}`);
+      }
+      const expected = w >= 440 ? "logo" : "symbol";
+      if (g.logo !== expected) logoMismatch.push(`${label}: esperado ${expected}, visível ${g.logo}`);
       if (shots) await b.screenshot(join(shots, `${slug}-${w}-${dark ? "escuro" : "claro"}.png`), { full: false });
     }
   }
-  check(overflow.length === 0, `sem rolagem horizontal de 320 a 1440 px, claro e escuro${overflow.length ? " — " + overflow.join(", ") : ""}`);
+  check(overflow.length === 0, `sem rolagem horizontal nem zoom reduzido em ${WIDTHS.join("/")} px, claro e escuro${overflow.length ? "\n      geometria: " + overflow.join("\n      geometria: ") : ""}`);
+  check(logoMismatch.length === 0, `cabeçalho: símbolo até 439 px e logo horizontal a partir de 440 px${logoMismatch.length ? " — " + logoMismatch.join("; ") : ""}`);
   await b.viewport(1280);
 }
 

@@ -1,13 +1,19 @@
 # CI do frontend (website, app e design system).
 #
-# - checks: roda em todo Pull Request que toca o frontend. Leve (~3–5 min):
-#   instalação com lockfile, typecheck, lint (efeitos React), testes unitários,
-#   build e testes rápidos no servidor de desenvolvimento (StrictMode): smoke, a11y
-#   e login Google (GIS e Supabase FALSOS, interceptados no navegador; sem credenciais reais).
-# - journey: jornada completa (Chrome headless do runner) + capturas de tela em
-#   375/390/768/1440 px, claro e escuro (artefatos). Roda em PRs em rascunho
-#   (Draft), em PRs com o rótulo "journey" ou sob demanda (Run workflow), para
-#   não consumir recursos em todo commit de PR pronto para revisão.
+# - checks: roda em todo Pull Request que toca o frontend (~4–6 min):
+#   instalação com lockfile, typecheck, lint (efeitos React), testes unitários
+#   (app e documentos jurídicos), build, varredura de segredos e testes de
+#   navegador: smoke, a11y, entrada/login/onboarding (GIS e Supabase FALSOS,
+#   interceptados no navegador; sem credenciais reais) e páginas jurídicas
+#   servidas como estático (como no Cloudflare Pages).
+# - journey: jornada completa da demonstração + capturas em 320/375/390/768/1440 px,
+#   claro e escuro. Roda em PRs em rascunho (Draft), com o rótulo "journey" ou sob
+#   demanda (Run workflow), para não consumir recursos em todo commit.
+#
+# Diagnóstico: cada teste de navegador grava a saída em $RUNNER_TEMP/logs; ao final,
+# um resumo (✓/✗ e trechos dos logs dos servidores) vai para o Summary da execução e
+# os logs ficam no artefato "logs-*". Cada passo de navegador tem tempo limite próprio,
+# para que um travamento falhe com mensagem clara em vez de esgotar o job.
 #
 # Não usa segredos, não faz deploy e não toca a API (apps/api).
 name: Frontend CI
@@ -38,11 +44,16 @@ concurrency:
   group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    # pipefail: "teste | tee log" falha quando o teste falha.
+    shell: bash -eo pipefail {0}
+
 jobs:
   checks:
     name: Typecheck, lint, build e testes leves
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     # Evita rodar de novo quando o único evento é a adição de outro rótulo.
     if: github.event.action != 'labeled' || github.event.label.name == 'journey'
     steps:
@@ -57,8 +68,12 @@ jobs:
           node-version: ">=22.22.0 <23"
           cache: pnpm
 
-      - name: Versão do Node (mínimo 22.22)
-        run: node -v
+      - name: Ambiente (Node, pnpm e Chrome do runner)
+        run: |
+          node -v
+          pnpm -v
+          google-chrome --version || chromium --version || echo "Chrome não encontrado (defina CHROME_PATH)"
+          mkdir -p "$RUNNER_TEMP/logs"
 
       - name: Instalar dependências (lockfile congelado)
         run: pnpm install --frozen-lockfile
@@ -72,7 +87,7 @@ jobs:
       - name: Testes unitários (comissão 15%, calendário, Meet, OAuth, estágios, e-mail)
         run: pnpm --filter @edusearch/web test:unit
 
-      - name: Testes dos documentos jurídicos (renderização, publicação, conteúdo)
+      - name: Testes dos documentos jurídicos (renderização, publicação, conteúdo, cabeçalho)
         run: pnpm --filter @edusearch/website test:legal
 
       - name: Build (website, app e design system)
@@ -84,24 +99,31 @@ jobs:
             echo "Segredo encontrado no bundle"; exit 1
           fi
 
-      - name: Páginas jurídicas no build do website (Cloudflare Pages, SEO, âncoras, links)
+      - name: Páginas jurídicas no build do website (Cloudflare Pages, 404, SEO, âncoras, links)
         run: pnpm --filter @edusearch/website check:legal
 
       - name: Servidor de desenvolvimento (StrictMode) na porta 5190
         run: |
-          pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
-          for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
-          cat "$RUNNER_TEMP/vite.log"; exit 1
+          pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/logs/vite.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:5190 > /dev/null || { cat "$RUNNER_TEMP/logs/vite.log"; exit 1; }
+          # Aquecimento: a otimização de dependências do Vite termina antes do navegador abrir
+          # (evita recarregamentos no meio dos testes).
+          curl -sf http://localhost:5190/src/main.tsx > /dev/null
+          sleep 2
 
       - name: Smoke test (36 rotas, console, overflow)
-        run: pnpm --filter @edusearch/web smoke
+        timeout-minutes: 5
+        run: pnpm --filter @edusearch/web smoke 2>&1 | tee "$RUNNER_TEMP/logs/smoke.log"
 
       - name: Acessibilidade (axe + teclado em diálogos, menus e abas)
-        run: pnpm --filter @edusearch/web a11y
+        timeout-minutes: 5
+        run: pnpm --filter @edusearch/web a11y 2>&1 | tee "$RUNNER_TEMP/logs/a11y.log"
 
       # Login real em modo de testes com valores FICTÍCIOS (não são segredos). O script
       # intercepta no navegador o GIS (accounts.google.com) e o Supabase (*.supabase.co).
-      - name: Servidor com login Google de testes (GIS e Supabase falsos) na porta 5191
+      - name: Servidor com login de testes (GIS e Supabase falsos) na porta 5191
+        if: success() || failure()
         env:
           VITE_SUPABASE_URL: https://edusearch-ci-fake.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_fake_key
@@ -109,23 +131,59 @@ jobs:
           VITE_STAGE_EMAIL_AUTH: testing
           VITE_STAGE_EMAIL_SIGNUP: testing
         run: |
-          pnpm --filter @edusearch/web exec vite --port 5191 --strictPort > "$RUNNER_TEMP/vite-auth.log" 2>&1 &
-          for i in $(seq 1 60); do curl -sf http://localhost:5191 > /dev/null && exit 0; sleep 1; done
-          cat "$RUNNER_TEMP/vite-auth.log"; exit 1
+          pnpm --filter @edusearch/web exec vite --port 5191 --strictPort > "$RUNNER_TEMP/logs/vite-auth.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5191 > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:5191 > /dev/null || { cat "$RUNNER_TEMP/logs/vite-auth.log"; exit 1; }
+          curl -sf http://localhost:5191/src/main.tsx > /dev/null
+          sleep 2
 
       - name: Entrada única, Google, e-mail e onboarding (GIS pílula, nonce, e-mail sem enumeração, sessão, avatar, logout, demo, axe, 320–1440 px)
-        run: node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191 "$RUNNER_TEMP/auth-screens"
+        if: success() || failure()
+        timeout-minutes: 8
+        run: node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191 "$RUNNER_TEMP/auth-screens" 2>&1 | tee "$RUNNER_TEMP/logs/auth.log"
 
       - name: Website servido como estático (vite preview, sem fallback de SPA) na porta 4174
         if: success() || failure()
         run: |
-          pnpm --filter @edusearch/website exec vite preview --port 4174 --strictPort > "$RUNNER_TEMP/website.log" 2>&1 &
-          for i in $(seq 1 60); do curl -sf http://localhost:4174 > /dev/null && exit 0; sleep 1; done
-          cat "$RUNNER_TEMP/website.log"; exit 1
+          pnpm --filter @edusearch/website exec vite preview --port 4174 --strictPort > "$RUNNER_TEMP/logs/website.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:4174 > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:4174 > /dev/null || { cat "$RUNNER_TEMP/logs/website.log"; exit 1; }
 
-      - name: Páginas jurídicas no navegador (URLs diretas, 404, axe, temas, 320–1440 px)
+      - name: Páginas jurídicas no navegador (URLs diretas, 404, axe, temas, 320–1440 px, geometria do cabeçalho)
         if: success() || failure()
-        run: node apps/website/scripts/legal-browser.mjs http://localhost:4174 "$RUNNER_TEMP/auth-screens/juridico"
+        timeout-minutes: 5
+        run: node apps/website/scripts/legal-browser.mjs http://localhost:4174 "$RUNNER_TEMP/auth-screens/juridico" 2>&1 | tee "$RUNNER_TEMP/logs/legal-browser.log"
+
+      - name: Resumo dos testes de navegador
+        if: always()
+        run: |
+          {
+            echo "## Testes de navegador"
+            for t in smoke a11y auth legal-browser; do
+              f="$RUNNER_TEMP/logs/$t.log"
+              [ -f "$f" ] || { echo "- **$t**: não executado"; continue; }
+              ok=$(grep -c "  ✓ " "$f" || true)
+              echo "- **$t**: $ok verificação(ões) ok; $(tail -n 1 "$f" | sed 's/[`|]//g')"
+              if grep -q "✗" "$f"; then
+                echo '```text'; { grep -A2 "✗" "$f" || true; } | head -n 40 || true; echo '```'
+              fi
+            done
+            for s in vite vite-auth website; do
+              f="$RUNNER_TEMP/logs/$s.log"
+              if [ -f "$f" ] && grep -qiE "error|failed" "$f"; then
+                echo "### Log do servidor: $s"; echo '```text'; { grep -iE -B1 -A3 "error|failed" "$f" || true; } | head -n 30 || true; echo '```'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefato — logs dos testes e dos servidores
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-checks
+          path: ${{ runner.temp }}/logs
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Artefato — capturas do acesso, da conta e das páginas jurídicas
         if: success() || failure()
@@ -157,16 +215,44 @@ jobs:
 
       - name: Servidor de desenvolvimento na porta 5190
         run: |
-          pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
-          for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
-          cat "$RUNNER_TEMP/vite.log"; exit 1
+          mkdir -p "$RUNNER_TEMP/logs"
+          pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/logs/vite.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:5190 > /dev/null || { cat "$RUNNER_TEMP/logs/vite.log"; exit 1; }
+          curl -sf http://localhost:5190/src/main.tsx > /dev/null
+          sleep 2
 
       - name: Teste de jornada (1440, 768 e 375px, claro e escuro)
-        run: node apps/web/scripts/journey.mjs http://localhost:5190 "$RUNNER_TEMP/journey-shots"
+        timeout-minutes: 12
+        run: node apps/web/scripts/journey.mjs http://localhost:5190 "$RUNNER_TEMP/journey-shots" 2>&1 | tee "$RUNNER_TEMP/logs/journey.log"
 
-      - name: Capturas de tela (375, 390, 768 e 1440 px; claro e escuro)
+      - name: Capturas de tela (320, 375, 390, 768 e 1440 px; claro e escuro)
         if: success() || failure()
+        timeout-minutes: 6
         run: node apps/web/scripts/screens.mjs http://localhost:5190 "$RUNNER_TEMP/screens" 320,375,390,768,1440 "" claro,escuro
+
+      - name: Resumo da jornada
+        if: always()
+        run: |
+          f="$RUNNER_TEMP/logs/journey.log"
+          {
+            echo "## Jornada completa"
+            if [ -f "$f" ]; then
+              echo "$(grep -c "✓" "$f" || true) etapa(s) ok; $(tail -n 1 "$f" | sed 's/[`|]//g')"
+              if grep -q "✗" "$f"; then echo '```text'; { grep -A3 "✗" "$f" || true; } | head -n 40 || true; echo '```'; fi
+            else
+              echo "Não executada."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefato — logs da jornada
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-journey
+          path: ${{ runner.temp }}/logs
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Artefato — capturas de tela da demonstração
         if: success() || failure()
