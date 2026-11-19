@@ -11,6 +11,12 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
   /** Client ID OAuth (Web) do Google — público. NUNCA o Client Secret. */
   readonly VITE_GOOGLE_CLIENT_ID?: string;
+  /** Estágio do login Google: off | testing | production (padrão testing, se configurado). */
+  readonly VITE_STAGE_GOOGLE_AUTH?: string;
+  /** Estágio do login por e-mail e senha: off | testing | production (padrão off). */
+  readonly VITE_STAGE_EMAIL_AUTH?: string;
+  /** Estágio do cadastro por e-mail: off | testing | production (padrão off). */
+  readonly VITE_STAGE_EMAIL_SIGNUP?: string;
   /** URL pública (https) dos Termos de Uso — definir só quando publicados. */
   readonly VITE_LEGAL_TERMS_URL?: string;
   /** URL pública (https) da Política de Privacidade — definir só quando publicada. */

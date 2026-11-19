@@ -1,20 +1,21 @@
-import { AUTH_CONFIG } from "./config";
+import { FEATURES } from "../features";
 
 /**
- * Provedores de autenticação exibidos nas telas de entrada.
- *
- * Google: Google Identity Services + Supabase Auth (src/app/auth.tsx e
- * src/components/GoogleSignIn.tsx). Ativo somente quando as três variáveis
- * públicas estão configuradas (ambiente restrito de testes). Sem elas, o botão
- * fica desabilitado e o app funciona apenas como demonstração.
- *
- * Configuração: docs/frontend/auth-integration.md
+ * Métodos de acesso exibidos na entrada (`/`), conforme o estágio de cada um
+ * (src/lib/features.ts). Configuração: docs/frontend/auth-integration.md
  */
+const testing = "Fase de testes: somente contas autorizadas.";
+
 export const AUTH_PROVIDERS = {
   google: {
-    available: AUTH_CONFIG.enabled,
-    statusMessage: AUTH_CONFIG.enabled
-      ? "Fase de testes: somente contas autorizadas pela equipe EduSearch."
-      : "O acesso com Google estará disponível após a integração.",
+    available: FEATURES.googleAuth !== "off",
+    statusMessage:
+      FEATURES.googleAuth === "testing" ? testing : FEATURES.googleAuth === "off" ? "O acesso com Google estará disponível em breve." : "",
+  },
+  email: {
+    available: FEATURES.emailAuth !== "off",
+    signup: FEATURES.emailSignup !== "off",
+    statusMessage:
+      FEATURES.emailAuth === "testing" ? testing : FEATURES.emailAuth === "off" ? "O acesso por e-mail estará disponível em breve." : "",
   },
 } as const;
