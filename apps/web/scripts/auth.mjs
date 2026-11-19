@@ -202,7 +202,7 @@ b.on(async (m) => {
         { name: "Content-Type", value: type },
         { name: "Access-Control-Allow-Origin", value: testOrigin },
         { name: "Access-Control-Allow-Headers", value: "authorization, apikey, content-type, x-client-info, x-supabase-api-version" },
-        { name: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS" },
+        { name: "Access-Control-Allow-Methods", value: "GET, POST, PUT, PATCH, DELETE, OPTIONS" }, // como o Supabase real (updateUser usa PUT)
         { name: "Access-Control-Expose-Headers", value: "x-supabase-api-version" },
         ...extra,
       ],
