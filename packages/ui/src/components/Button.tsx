@@ -4,6 +4,8 @@ import { Spinner } from "./Spinner";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "soft";
 export type ButtonSize = "sm" | "md" | "lg";
+/** "rounded" = cantos do design system; "pill" = totalmente arredondado (tela de acesso). */
+export type ButtonShape = "rounded" | "pill";
 
 const variants: Record<ButtonVariant, string> = {
   // Gradiente moderado do mockup aprovado: petróleo → esmeralda (texto branco ≥ 4,67:1 em todo o gradiente).
@@ -29,16 +31,19 @@ export function buttonClasses({
   variant = "primary",
   size = "md",
   fullWidth = false,
+  shape = "rounded",
   className,
 }: {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  shape?: ButtonShape;
   className?: string;
 } = {}) {
   return cn(
-    "inline-flex shrink-0 items-center justify-center rounded-control text-center font-semibold transition-[background-color,border-color,color,transform] duration-150 select-none active:translate-y-px",
+    "inline-flex shrink-0 items-center justify-center text-center font-semibold transition-[background-color,border-color,color,transform] duration-150 select-none active:translate-y-px",
     "disabled:pointer-events-none disabled:opacity-55 aria-disabled:pointer-events-none aria-disabled:opacity-55",
+    shape === "pill" ? "rounded-full" : "rounded-control",
     variants[variant],
     sizes[size],
     fullWidth && "w-full",
@@ -50,6 +55,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  shape?: ButtonShape;
   loading?: boolean;
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
@@ -60,6 +66,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     variant = "primary",
     size = "md",
     fullWidth,
+    shape,
     loading = false,
     leftIcon,
     rightIcon,
@@ -77,7 +84,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={buttonClasses({ variant, size, fullWidth, className })}
+      className={buttonClasses({ variant, size, fullWidth, shape, className })}
       {...rest}
     >
       {loading ? <Spinner className="h-4 w-4" /> : leftIcon}

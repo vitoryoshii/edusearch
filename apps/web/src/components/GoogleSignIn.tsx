@@ -27,10 +27,12 @@ export function GoogleSignIn({ next = ACCOUNT_HOME }: { next?: string }) {
   if (!AUTH_PROVIDERS.google.available) {
     return (
       <div>
-        <GoogleButton available={false} aria-describedby="google-status" data-testid="google-signin-disabled" />
-        <p id="google-status" className="mt-2 text-center text-xs text-fg-muted">
-          {AUTH_PROVIDERS.google.statusMessage}
-        </p>
+        <GoogleButton available={false} shape="pill" aria-describedby="google-status" data-testid="google-signin-disabled" />
+        {AUTH_PROVIDERS.google.statusMessage && (
+          <p id="google-status" className="mt-2 text-center text-xs text-fg-muted">
+            {AUTH_PROVIDERS.google.statusMessage}
+          </p>
+        )}
       </div>
     );
   }
@@ -96,7 +98,7 @@ function GisButton({ next }: { next: string }) {
           theme: resolved === "dark" ? "filled_black" : "outline",
           size: "large",
           text: "continue_with",
-          shape: "rectangular",
+          shape: "pill", // formato oficial do GIS; nenhum CSS é aplicado ao iframe do Google
           logo_alignment: "left",
           width,
           locale: "pt-BR",
@@ -133,23 +135,25 @@ function GisButton({ next }: { next: string }) {
       <div className="relative flex min-h-11 justify-center">
         {/* Contêiner do botão oficial (iframe do Google). */}
         <div ref={slot} data-testid="google-signin" className={phase === "ready" && failure !== "gis_unavailable" ? "w-full" : "hidden"} />
-        {phase === "loading" && <Skeleton className="h-11 w-full" />}
+        {phase === "loading" && <Skeleton className="h-11 w-full rounded-full" />}
         {phase === "signing" && (
-          <div role="status" className="flex h-11 w-full items-center justify-center gap-2.5 rounded-control border border-line text-sm font-medium text-fg">
+          <div role="status" className="flex h-11 w-full items-center justify-center gap-2.5 rounded-full border border-line text-sm font-medium text-fg">
             <Spinner className="h-4 w-4 text-link" />
             Entrando com sua conta Google…
           </div>
         )}
         {failure === "gis_unavailable" && (
-          <Button variant="secondary" fullWidth onClick={() => { setFailure(null); setPhase("loading"); setAttempt((n) => n + 1); }}>
+          <Button variant="secondary" shape="pill" fullWidth onClick={() => { setFailure(null); setPhase("loading"); setAttempt((n) => n + 1); }}>
             Tentar carregar novamente
           </Button>
         )}
       </div>
 
-      <p id="google-status" className="mt-2 text-center text-xs text-fg-muted">
-        {AUTH_PROVIDERS.google.statusMessage}
-      </p>
+      {AUTH_PROVIDERS.google.statusMessage && (
+        <p id="google-status" className="mt-2 text-center text-xs text-fg-muted">
+          {AUTH_PROVIDERS.google.statusMessage}
+        </p>
+      )}
 
       {msg && (
         <div role="alert" className="mt-4 flex items-start gap-2.5 rounded-card bg-danger-soft px-4 py-3 text-sm">

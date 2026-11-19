@@ -28,6 +28,8 @@ export interface GoogleButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonE
    * explicação ligada por `aria-describedby`.
    */
   available?: boolean;
+  /** Formatos permitidos pelas diretrizes: retangular ou pílula. */
+  shape?: "rectangular" | "pill";
 }
 
 /**
@@ -41,7 +43,7 @@ export interface GoogleButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonE
  * Altura escalada para 44px (alvo de toque), mantendo a proporção do G.
  */
 export const GoogleButton = forwardRef<HTMLButtonElement, GoogleButtonProps>(function GoogleButton(
-  { label = "Continuar com o Google", available = true, className, onClick, type = "button", ...rest },
+  { label = "Continuar com o Google", available = true, shape = "rectangular", className, onClick, type = "button", ...rest },
   ref,
 ) {
   return (
@@ -51,7 +53,9 @@ export const GoogleButton = forwardRef<HTMLButtonElement, GoogleButtonProps>(fun
       aria-disabled={available ? undefined : true}
       onClick={available ? onClick : (e) => e.preventDefault()}
       className={cn(
-        "group relative inline-flex h-11 w-full items-center justify-center rounded-control border pr-3 pl-3 transition-[background-color,border-color,box-shadow] duration-150",
+        "group relative inline-flex h-11 w-full items-center justify-center border pr-3 pl-3",
+        shape === "pill" ? "rounded-full" : "rounded-control",
+        " transition-[background-color,border-color,box-shadow] duration-150",
         "[font-family:'Google_Sans','Google_Sans_Text',Roboto,var(--font-sans)] text-sm leading-5 font-medium",
         "border-[#747775] bg-white text-[#1F1F1F] dark:border-[#8E918F] dark:bg-[#131314] dark:text-[#E3E3E3]",
         available
