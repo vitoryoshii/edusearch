@@ -1,4 +1,4 @@
-# Entrada única e onboarding (Fase 2.5)
+# Entrada única e onboarding (Fases 2.5 e 2.5.1)
 
 Uma única experiência de entrada (Google como método principal) e o onboarding da conta real, preparados **sem alterar o backend**. A autenticação continua sendo a da Fase 2.4 (Google Identity Services + Supabase Auth, `signInWithIdToken`, nonce de uso único) — ver [auth-integration.md](auth-integration.md).
 
@@ -29,6 +29,8 @@ Sessão expirada/revogada ─▶ "/" com "Sua sessão expirou"
 ```
 
 ## Entrada única (`/`)
+
+> **Fase 2.5.1:** título = logo oficial (h1 "EduSearch"), subtítulo "Conectando alunos e professores.", botões em pílula (GIS com `shape: "pill"`), "Continuar com e-mail" como acesso secundário (estágio próprio, desligado por padrão), link "Explorar demonstração" e o texto "Ao continuar, você poderá consultar nossos Termos de Uso e nossa Política de Privacidade." — os nomes viram links só com os documentos publicados. Mensagens de marketing (HackBrasil) saíram da tela; os avisos de fase de testes e de dados fictícios continuam.
 
 | Elemento | Detalhe |
 | -------- | ------- |

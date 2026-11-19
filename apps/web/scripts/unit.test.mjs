@@ -389,3 +389,93 @@ describe("onboarding do professor: exemplo da comissão padrão", () => {
     assert.equal(formatMoney(6800).replace(/[  ]/g, " "), "R$ 68,00");
   });
 });
+
+/* ------------------- Estágios por recurso e acesso por e-mail ------------------- */
+import { parseStage, resolveFeatures } from "../src/lib/stages.ts";
+import {
+  EMAIL_MESSAGES,
+  GENERIC_SENT,
+  classifyEmailError,
+  emailIssue,
+  newPasswordIssue,
+  normalizeEmail,
+  parseEmailLink,
+} from "../src/lib/auth/email.ts";
+
+describe("estágios por recurso", () => {
+  const ready = { supabaseReady: true, googleReady: true, legalPublished: false };
+  test("padrões: Google em testes, e-mail e cadastro por e-mail desligados, pagamentos demonstrativos", () => {
+    assert.deepEqual(resolveFeatures({}, ready), { googleAuth: "testing", emailAuth: "off", emailSignup: "off", payments: "demo", realAuth: true });
+  });
+  test("sem configuração técnica tudo fica desligado (versão pública)", () => {
+    const f = resolveFeatures({ VITE_STAGE_GOOGLE_AUTH: "production", VITE_STAGE_EMAIL_AUTH: "production" }, { supabaseReady: false, googleReady: false, legalPublished: true });
+    assert.equal(f.googleAuth, "off");
+    assert.equal(f.emailAuth, "off");
+    assert.equal(f.realAuth, false);
+  });
+  test("produção exige documentos jurídicos publicados", () => {
+    const env = { VITE_STAGE_GOOGLE_AUTH: "production", VITE_STAGE_EMAIL_AUTH: "production", VITE_STAGE_EMAIL_SIGNUP: "production" };
+    assert.deepEqual(
+      [resolveFeatures(env, ready).googleAuth, resolveFeatures(env, ready).emailAuth, resolveFeatures(env, ready).emailSignup],
+      ["testing", "testing", "testing"],
+    );
+    const pub = resolveFeatures(env, { ...ready, legalPublished: true });
+    assert.deepEqual([pub.googleAuth, pub.emailAuth, pub.emailSignup], ["production", "production", "production"]);
+  });
+  test("cadastro por e-mail nunca acima do login por e-mail; indicadores independentes", () => {
+    assert.equal(resolveFeatures({ VITE_STAGE_EMAIL_SIGNUP: "testing" }, ready).emailSignup, "off");
+    assert.equal(resolveFeatures({ VITE_STAGE_EMAIL_AUTH: "testing", VITE_STAGE_EMAIL_SIGNUP: "production" }, { ...ready, legalPublished: true }).emailSignup, "testing");
+    const onlyEmail = resolveFeatures({ VITE_STAGE_GOOGLE_AUTH: "off", VITE_STAGE_EMAIL_AUTH: "testing" }, ready);
+    assert.deepEqual([onlyEmail.googleAuth, onlyEmail.emailAuth, onlyEmail.realAuth], ["off", "testing", true]);
+  });
+  test("valores inválidos caem no padrão", () => {
+    assert.equal(parseStage("ligado", "off"), "off");
+    assert.equal(parseStage(undefined, "testing"), "testing");
+  });
+});
+
+describe("acesso por e-mail: validação", () => {
+  test("e-mail", () => {
+    assert.equal(emailIssue("nome@email.com"), null);
+    assert.ok(emailIssue(""));
+    assert.ok(emailIssue("nome@"));
+    assert.ok(emailIssue("a b@c.com"));
+    assert.equal(normalizeEmail("  Ana@Example.COM "), "ana@example.com");
+  });
+  test("nova senha: mínimo de 8, sem só espaços, até 72 bytes", () => {
+    assert.equal(newPasswordIssue("segura123"), null);
+    assert.ok(newPasswordIssue("curta"));
+    assert.ok(newPasswordIssue("         "));
+    assert.ok(newPasswordIssue("ç".repeat(37))); // 74 bytes
+    assert.equal(newPasswordIssue("ç".repeat(36)), null); // 72 bytes
+  });
+});
+
+describe("acesso por e-mail: respostas sem enumeração de contas", () => {
+  test("login errado não diz se o problema é o e-mail ou a senha", () => {
+    assert.equal(classifyEmailError({ code: "invalid_credentials", message: "Invalid login credentials" }, "signin"), "invalid_credentials");
+    assert.equal(EMAIL_MESSAGES.invalid_credentials, "E-mail ou senha incorretos.");
+  });
+  test("cadastro de e-mail existente e recuperação de e-mail inexistente viram sucesso genérico", () => {
+    assert.equal(classifyEmailError({ code: "user_already_exists", message: "User already registered" }, "signup"), null);
+    assert.equal(classifyEmailError({ code: "email_exists" }, "signup"), null);
+    assert.equal(classifyEmailError({ code: "user_not_found" }, "reset"), null);
+    assert.ok(!/existe|cadastrad[oa] anteriormente/i.test(GENERIC_SENT.signup + GENERIC_SENT.reset));
+  });
+  test("outros erros classificados", () => {
+    assert.equal(classifyEmailError({ code: "email_not_confirmed" }, "signin"), "email_not_confirmed");
+    assert.equal(classifyEmailError({ status: 429, code: "over_email_send_rate_limit" }, "reset"), "rate_limited");
+    assert.equal(classifyEmailError({ code: "weak_password" }, "signup"), "weak_password");
+    assert.equal(classifyEmailError({ code: "same_password" }, "update"), "same_password");
+    assert.equal(classifyEmailError({ code: "signup_disabled" }, "signup"), "not_available");
+    assert.equal(classifyEmailError({ name: "AuthRetryableFetchError", message: "Failed to fetch", status: 0 }, "signin"), "network");
+    assert.equal(classifyEmailError(null, "signin"), null);
+  });
+  test("links de e-mail: código PKCE, erros e ausência", () => {
+    assert.deepEqual(parseEmailLink("?code=abc12345-def", ""), { kind: "code", code: "abc12345-def" });
+    assert.deepEqual(parseEmailLink("?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired", ""), { kind: "error", failure: "link_invalid" });
+    assert.deepEqual(parseEmailLink("", "#error=access_denied&error_code=otp_expired"), { kind: "error", failure: "link_invalid" });
+    assert.deepEqual(parseEmailLink("?code=<script>", ""), { kind: "none" });
+    assert.deepEqual(parseEmailLink("", ""), { kind: "none" });
+  });
+});

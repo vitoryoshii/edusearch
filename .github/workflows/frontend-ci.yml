@@ -19,6 +19,7 @@ on:
       - "apps/web/**"
       - "apps/website/**"
       - "packages/ui/**"
+      - "docs/legal/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -68,8 +69,11 @@ jobs:
       - name: Lint (efeitos React não podem retornar valor)
         run: pnpm --filter @edusearch/web lint
 
-      - name: Testes unitários (comissão 15%, calendário, Meet, OAuth)
+      - name: Testes unitários (comissão 15%, calendário, Meet, OAuth, estágios, e-mail)
         run: pnpm --filter @edusearch/web test:unit
+
+      - name: Testes dos documentos jurídicos (renderização, publicação, conteúdo)
+        run: pnpm --filter @edusearch/website test:legal
 
       - name: Build (website, app e design system)
         run: pnpm -r build
@@ -80,13 +84,16 @@ jobs:
             echo "Segredo encontrado no bundle"; exit 1
           fi
 
+      - name: Páginas jurídicas no build do website (Cloudflare Pages, SEO, âncoras, links)
+        run: pnpm --filter @edusearch/website check:legal
+
       - name: Servidor de desenvolvimento (StrictMode) na porta 5190
         run: |
           pnpm --filter @edusearch/web exec vite --port 5190 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://localhost:5190 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite.log"; exit 1
 
-      - name: Smoke test (34 rotas, console, overflow)
+      - name: Smoke test (36 rotas, console, overflow)
         run: pnpm --filter @edusearch/web smoke
 
       - name: Acessibilidade (axe + teclado em diálogos, menus e abas)
@@ -99,19 +106,32 @@ jobs:
           VITE_SUPABASE_URL: https://edusearch-ci-fake.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_fake_key
           VITE_GOOGLE_CLIENT_ID: 1234567890-edusearchci.apps.googleusercontent.com
+          VITE_STAGE_EMAIL_AUTH: testing
+          VITE_STAGE_EMAIL_SIGNUP: testing
         run: |
           pnpm --filter @edusearch/web exec vite --port 5191 --strictPort > "$RUNNER_TEMP/vite-auth.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://localhost:5191 > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/vite-auth.log"; exit 1
 
-      - name: Entrada única, login Google e onboarding (GIS, nonce, erros, sessão, avatar, logout, demo, axe, 320–1440 px)
+      - name: Entrada única, Google, e-mail e onboarding (GIS pílula, nonce, e-mail sem enumeração, sessão, avatar, logout, demo, axe, 320–1440 px)
         run: node apps/web/scripts/auth.mjs http://localhost:5190 http://localhost:5191 "$RUNNER_TEMP/auth-screens"
 
-      - name: Artefato — capturas do login e da conta
+      - name: Website servido como estático (vite preview, sem fallback de SPA) na porta 4174
+        if: success() || failure()
+        run: |
+          pnpm --filter @edusearch/website exec vite preview --port 4174 --strictPort > "$RUNNER_TEMP/website.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:4174 > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/website.log"; exit 1
+
+      - name: Páginas jurídicas no navegador (URLs diretas, 404, axe, temas, 320–1440 px)
+        if: success() || failure()
+        run: node apps/website/scripts/legal-browser.mjs http://localhost:4174 "$RUNNER_TEMP/auth-screens/juridico"
+
+      - name: Artefato — capturas do acesso, da conta e das páginas jurídicas
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots-fase-2.5
+          name: screenshots-fase-2.5.1
           path: ${{ runner.temp }}/auth-screens
           if-no-files-found: warn
           retention-days: 14
