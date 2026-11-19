@@ -63,7 +63,8 @@ for (const [slug, title] of PAGES) {
     for (const dark of [false, true]) {
       await b.viewport(w, { dark });
       await sleep(250);
-      if (await b.evaluate(`document.documentElement.scrollWidth > innerWidth + 1`)) overflow.push(`${w}px ${dark ? "escuro" : "claro"}`);
+      // innerWidth > largura emulada = o celular "diminuiu o zoom" para caber um elemento largo demais.
+      if (await b.evaluate(`document.documentElement.scrollWidth > innerWidth + 1 || innerWidth > ${w} + 1`)) overflow.push(`${w}px ${dark ? "escuro" : "claro"}`);
       if (shots) await b.screenshot(join(shots, `${slug}-${w}-${dark ? "escuro" : "claro"}.png`), { full: false });
     }
   }
