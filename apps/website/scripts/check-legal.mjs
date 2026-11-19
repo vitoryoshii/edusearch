@@ -22,7 +22,11 @@ const pages = ["termos-de-uso", "politica-de-privacidade"];
 const routes = new Set(["/", ...pages.map((p) => `/${p}`)]);
 
 ok(existsSync(join(dist, "index.html")), "landing page preservada (index.html)");
-ok(!existsSync(join(dist, "_redirects")) || !/\/\*\s+\/index\.html\s+200/.test(readFileSync(join(dist, "_redirects"), "utf8")), "sem fallback de SPA que esconda 404");
+ok(!existsSync(join(dist, "_redirects")) || !/\/\*\s+\/index\.html\s+200/.test(readFileSync(join(dist, "_redirects"), "utf8")), "sem regra de fallback de SPA em _redirects");
+ok(
+  existsSync(join(dist, "404.html")) && /<h1[^>]*>Página não encontrada<\/h1>/.test(readFileSync(join(dist, "404.html"), "utf8")),
+  "404.html no topo do dist (o Cloudflare Pages só desliga o fallback de SPA com ele)",
+);
 
 const approved = {};
 for (const slug of pages) {

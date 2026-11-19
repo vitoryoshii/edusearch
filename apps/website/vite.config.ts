@@ -15,6 +15,8 @@ export default defineConfig({
         main: "index.html",
         "termos-de-uso": "termos-de-uso.html",
         "politica-de-privacidade": "politica-de-privacidade.html",
+        // 404 real: sem ele, o Cloudflare Pages trata o site como SPA e responde 200 com a landing.
+        "404": "404.html",
       },
     },
   },

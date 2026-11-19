@@ -75,6 +75,12 @@ console.log("rotas");
 const status = async (path) => (await fetch(base + path)).status;
 check((await status("/termos-de-uso")) === 200 && (await status("/politica-de-privacidade")) === 200, "rotas jurídicas respondem 200");
 check((await status("/pagina-que-nao-existe")) === 404, "rota inexistente responde 404 (sem fallback de SPA)");
+await b.go(`${base}/404.html`, 900);
+check(
+  await b.evaluate(`document.querySelector('h1')?.textContent.trim() === 'Página não encontrada' && !!document.querySelector('a[href="/"]')`),
+  "página 404 com atalhos",
+);
+await axe("página 404");
 await b.go(`${base}/`, 1200);
 check(await b.evaluate(`!!document.querySelector('#root') && document.body.innerText.length > 200`), "landing page continua funcionando");
 
