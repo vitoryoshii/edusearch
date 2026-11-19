@@ -74,6 +74,12 @@ describe("páginas jurídicas: publicação", () => {
     assert.ok(!renderLegalBody(r).includes("não vigente"));
     assert.doesNotThrow(() => assertPublishable(r));
   });
+  test("cabeçalho: símbolo até 439 px, logo horizontal a partir de 440 px, dimensões reais das imagens", () => {
+    const body = renderLegalBody(doc("## Seção\n\nTexto."));
+    assert.match(body, /src="\/brand\/logo\.webp" alt="" width="498" height="96" class="hidden [^"]*min-\[440px\]:block/);
+    assert.match(body, /src="\/brand\/symbol\.webp" alt="" width="152" height="120" class="[^"]*min-\[440px\]:hidden/);
+    assert.ok(!body.includes("min-[360px]"), "breakpoint antigo (360 px) não pode voltar");
+  });
   test("navegação entre Termos e Privacidade e um único h1", () => {
     const body = renderLegalBody(doc("## Seção\n\nTexto."));
     assert.equal((body.match(/<h1/g) ?? []).length, 1);
