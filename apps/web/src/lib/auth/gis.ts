@@ -12,7 +12,8 @@ export type CredentialResponse = { credential?: string; select_by?: string };
 
 export type GisButtonOptions = {
   type: "standard";
-  theme: "outline" | "filled_blue" | "filled_black";
+  /** "outline_dark": fundo escuro com contorno discreto — o par do "outline" no tema escuro. */
+  theme: "outline" | "outline_dark" | "filled_blue" | "filled_black";
   size: "large" | "medium" | "small";
   text: "signin_with" | "signup_with" | "continue_with" | "signin";
   shape: "rectangular" | "pill";
