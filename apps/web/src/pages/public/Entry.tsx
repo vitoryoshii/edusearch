@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { AlertIcon, ArrowRightIcon, Avatar, Button, MailIcon, buttonClasses } from "@edusearch/ui";
+import { persistenceEnabled } from "../../app/account";
 import { readRoleIntent, useAuth } from "../../app/auth";
 import { homeFor, useSession } from "../../app/session";
 import { EmailAccess } from "../../components/EmailAccess";
@@ -94,7 +95,8 @@ function ContinueAccount() {
   const { profile, signOut } = useAuth();
   const [leaving, setLeaving] = useState(false);
   if (!profile) return null;
-  const to = nextAccountStep(readRoleIntent(profile.id));
+  // Com persistência real, o papel vem do servidor: /conta decide (boas-vindas ou início).
+  const to = persistenceEnabled() ? "/conta" : nextAccountStep(readRoleIntent(profile.id));
 
   return (
     <div className="space-y-3" data-testid="continue-account">

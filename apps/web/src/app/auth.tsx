@@ -140,15 +140,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.auth = status;
   }, [status]);
 
-  // JWT do SUPABASE (nunca o ID token do Google) para a futura API FastAPI.
+  // JWT do SUPABASE (nunca o ID token do Google) para a API FastAPI.
+  // Registrado UMA vez, na montagem: os efeitos dos filhos (ex.: AccountProvider buscando
+  // /v1/me logo após o login) rodam antes dos efeitos deste provider, então o provedor precisa
+  // já existir. Só devolve token com sessão ativa (signedInRef).
   useEffect(() => {
-    if (status !== "signedIn") return;
+    if (!FEATURES.realAuth) return;
     setAccessTokenProvider(async () => {
+      if (!signedInRef.current) return null;
       const sb = await getSupabase();
       return (await sb.auth.getSession()).data.session?.access_token ?? null;
     });
     return () => setAccessTokenProvider(null);
-  }, [status]);
+  }, []);
 
   const prepareNonce = useCallback(async () => {
     const now = Date.now();

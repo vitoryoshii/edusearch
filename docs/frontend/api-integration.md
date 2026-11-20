@@ -22,6 +22,7 @@ Telas ──▶ dataSource (interface DataSource, src/lib/data/source.ts)
 | Necessidade | Endpoint existente |
 | ----------- | ------------------ |
 | Verificar se a API está no ar | `GET /health` → `{ status, service, version }` |
+| Conta real (Fase 2.6B, flag `VITE_STAGE_PROFILE_PERSISTENCE`) | `GET /v1/me`, `POST /v1/me/roles`, `PUT /v1/me/profile`, `GET`/`PUT /v1/me/student-profile`, `GET`/`PUT /v1/me/teacher-profile`, `GET /v1/subjects`. Chamadas em `src/lib/api/account.ts`; ver [profile-persistence.md](profile-persistence.md) |
 
 ## Necessidades por tela (a definir no contrato)
 

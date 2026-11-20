@@ -213,3 +213,123 @@ export function teacherStepIssue(step: TeacherStep, d: TeacherDraft): string | n
 export function firstIncomplete<S extends string, D>(steps: readonly S[], draft: D, issue: (s: S, d: D) => string | null): S | null {
   return steps.find((s) => issue(s, draft) !== null) ?? null;
 }
+
+/* --------------------- Rascunho ↔ API (Fase 2.6B, persistência real) --------------------- */
+/*
+ * Conversões PURAS entre os rascunhos da tela e o contrato da API (docs/api-contract.md).
+ * Nenhuma resposta é descartada: cada campo do formulário tem um campo na API.
+ */
+
+/** Faixas de valor do aluno ↔ centavos (mapeamento exato e reversível). */
+export const BUDGET_RANGE_CENTS: Record<BudgetRange, { min: number | null; max: number | null }> = {
+  "ate-50": { min: null, max: 5000 },
+  "50-80": { min: 5000, max: 8000 },
+  "80-120": { min: 8000, max: 12000 },
+  "120-mais": { min: 12000, max: null },
+};
+
+export function budgetRangeFromCents(min: number | null, max: number | null): BudgetRange | null {
+  const hit = (Object.keys(BUDGET_RANGE_CENTS) as BudgetRange[]).find((k) => BUDGET_RANGE_CENTS[k].min === min && BUDGET_RANGE_CENTS[k].max === max);
+  return hit ?? null;
+}
+
+/** Centavos → texto do campo de valor ("80,00"), sem ponto flutuante. */
+export function centsToPriceInput(cents: number): string {
+  return `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, "0")}`;
+}
+
+const optionalText = (s: string) => (s.trim() ? s.trim() : null);
+
+export type StudentApiShape = {
+  learning_goal: string;
+  education_level: Level;
+  subjects: string[];
+  difficulty_areas: Difficulty[];
+  preferred_weekdays: Weekday[];
+  preferred_periods: DayPeriod[];
+  preferred_modality: Modality;
+  budget_min_cents: number | null;
+  budget_max_cents: number | null;
+};
+
+/** Só chame com o rascunho completo (todas as etapas sem pendências). */
+export function studentDraftToPayload(d: StudentDraft): StudentApiShape {
+  if (!d.level || !d.modality || !d.budget) throw new Error("rascunho do aluno incompleto");
+  const budget = BUDGET_RANGE_CENTS[d.budget];
+  return {
+    learning_goal: d.goal.trim(),
+    education_level: d.level,
+    subjects: [...d.subjects],
+    difficulty_areas: [...d.difficulties],
+    preferred_weekdays: [...d.days],
+    preferred_periods: [...d.periods],
+    preferred_modality: d.modality,
+    budget_min_cents: budget.min,
+    budget_max_cents: budget.max,
+  };
+}
+
+export function studentPayloadToDraft(p: StudentApiShape): StudentDraft {
+  return {
+    goal: p.learning_goal,
+    level: p.education_level,
+    subjects: [...p.subjects],
+    difficulties: [...p.difficulty_areas],
+    days: [...p.preferred_weekdays],
+    periods: [...p.preferred_periods],
+    modality: p.preferred_modality,
+    budget: budgetRangeFromCents(p.budget_min_cents, p.budget_max_cents),
+  };
+}
+
+export type TeacherApiShape = {
+  bio: string;
+  subjects: string[];
+  specialties: string | null;
+  academic_background: string;
+  experience: ExperienceRange;
+  teaching_methods: Methodology[];
+  methodology: string | null;
+  price_cents: number;
+  lesson_durations_minutes: number[];
+  modality: Modality;
+  available_weekdays: Weekday[];
+  available_periods: DayPeriod[];
+};
+
+/** Só chame com o rascunho completo (todas as etapas sem pendências). */
+export function teacherDraftToPayload(d: TeacherDraft): TeacherApiShape {
+  const cents = parsePriceToCents(d.price);
+  if (cents === null || !d.experience || !d.modality) throw new Error("rascunho do professor incompleto");
+  return {
+    bio: d.bio.trim(),
+    subjects: [...d.subjects],
+    specialties: optionalText(d.specialties),
+    academic_background: d.education.trim(),
+    experience: d.experience,
+    teaching_methods: [...d.methodologies],
+    methodology: optionalText(d.methodologyNotes),
+    price_cents: cents,
+    lesson_durations_minutes: [...d.durations].sort((a, b) => a - b),
+    modality: d.modality,
+    available_weekdays: [...d.days],
+    available_periods: [...d.periods],
+  };
+}
+
+export function teacherPayloadToDraft(p: TeacherApiShape): TeacherDraft {
+  return {
+    bio: p.bio,
+    subjects: [...p.subjects],
+    specialties: p.specialties ?? "",
+    education: p.academic_background,
+    experience: p.experience,
+    methodologies: [...p.teaching_methods],
+    methodologyNotes: p.methodology ?? "",
+    price: centsToPriceInput(p.price_cents),
+    durations: [...p.lesson_durations_minutes],
+    modality: p.modality,
+    days: [...p.available_weekdays],
+    periods: [...p.available_periods],
+  };
+}

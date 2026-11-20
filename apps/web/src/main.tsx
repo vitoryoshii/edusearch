@@ -5,6 +5,7 @@ import { ToastProvider } from "@edusearch/ui";
 import "@fontsource-variable/inter";
 import "./index.css";
 import { router, titleFor } from "./app/router";
+import { AccountProvider } from "./app/account";
 import { AuthProvider } from "./app/auth";
 import { SessionProvider } from "./app/session";
 import { ThemeProvider } from "./app/theme";
@@ -37,11 +38,13 @@ function App() {
     <ThemeProvider>
       {/* Sessão real (Supabase) e sessão de demonstração são independentes. */}
       <AuthProvider>
-        <SessionProvider>
-          <ToastProvider>
-            <RouterProvider router={router} />
-          </ToastProvider>
-        </SessionProvider>
+        <AccountProvider>
+          <SessionProvider>
+            <ToastProvider>
+              <RouterProvider router={router} />
+            </ToastProvider>
+          </SessionProvider>
+        </AccountProvider>
       </AuthProvider>
     </ThemeProvider>
   );

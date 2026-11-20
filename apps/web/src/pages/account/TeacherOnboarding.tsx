@@ -1,10 +1,13 @@
 import { useState } from "react";
-import { Input, ShieldIcon, Textarea } from "@edusearch/ui";
-import { useAuth } from "../../app/auth";
+import { Navigate, useNavigate } from "react-router";
+import { ErrorState, Input, LoadingState, ShieldIcon, Textarea, useToast } from "@edusearch/ui";
+import { hasRole, useAccount, useDisplayProfile, useServerMe } from "../../app/account";
+import { useOnboardingLoad, type Option } from "../../app/onboarding-data";
 import { ProfileSummary } from "../../components/AccountProfile";
-import { ChipGroup, OnboardingFlow, PreviewNotice, ReviewList, SaveBlocked, type FlowStep } from "../../components/Onboarding";
+import { ChipGroup, OnboardingFlow, PreviewNotice, ReviewList, SaveBlocked, SaveNotice, SaveProfile, type FlowStep } from "../../components/Onboarding";
+import { accountApi } from "../../lib/api/account";
+import { describeError } from "../../lib/api/client";
 import type { DayPeriod, Methodology } from "../../lib/api/types";
-import { SUBJECTS, subjectName } from "../../lib/catalog";
 import { STANDARD_COMMISSION_BPS, formatBps, splitLessonAmount } from "../../lib/commission";
 import { METHODOLOGY_LABELS, PERIOD_LABELS, formatMoney } from "../../lib/format";
 import {
@@ -16,7 +19,10 @@ import {
   WEEKDAYS,
   WELCOME_PATH,
   emptyTeacherDraft,
+  firstIncomplete,
   parsePriceToCents,
+  teacherDraftToPayload,
+  teacherPayloadToDraft,
   teacherStepIssue,
   toggle,
   type ExperienceRange,
@@ -26,19 +32,84 @@ import {
 } from "../../lib/onboarding";
 
 const opts = <T extends string>(labels: Record<T, string>) => (Object.keys(labels) as T[]).map((value) => ({ value, label: labels[value] }));
-const SUBJECT_OPTS = SUBJECTS.map((s) => ({ value: s.id, label: s.name }));
 const DURATION_OPTS = LESSON_DURATIONS.map((m) => ({ value: m, label: `${m} min` }));
 const list = (values: Array<string | number>, label: (v: string | number) => string) => values.map(label).join(", ");
 
 /**
- * Cadastro do professor em etapas curtas. Prévia: nada é enviado nem salvo.
+ * Cadastro do professor em etapas curtas.
+ * - Modo servidor: carrega (GET) e salva ao final (PUT /v1/me/teacher-profile). Salvar NÃO
+ *   aprova nem publica: a verificação continua pendente e é feita pelo servidor/equipe.
+ * - Modo prévia: nada é enviado nem salvo.
  * Sem upload de documentos e sem selo de "verificado" nesta fase.
  */
 export default function TeacherOnboarding() {
-  const { profile } = useAuth();
+  const account = useAccount();
+  const me = useServerMe();
+  if (account.mode === "server" && !hasRole(me, "teacher")) return <Navigate to={WELCOME_PATH} replace />;
+  return <TeacherLoader server={account.mode === "server"} />;
+}
+
+function TeacherLoader({ server }: { server: boolean }) {
+  const load = useOnboardingLoad(server, accountApi.getTeacherProfile);
+  if (load.status === "loading") return <LoadingState label="Carregando seu cadastro…" className="py-16" />;
+  if (load.status === "role_missing") return <Navigate to={WELCOME_PATH} replace />;
+  if (load.status === "error")
+    return (
+      <div className="py-10" data-testid="onboarding-load-error">
+        <ErrorState title="Não foi possível carregar seu cadastro" description={describeError(load.error)} onRetry={load.retry} />
+      </div>
+    );
+  return (
+    <TeacherForm
+      server={server}
+      subjects={load.subjects}
+      initial={load.initial ? teacherPayloadToDraft(load.initial) : null}
+      verification={load.initial?.verification_status ?? null}
+    />
+  );
+}
+
+const VERIFICATION_LABEL = { pending: "Pendente (análise pela equipe)", approved: "Aprovada", rejected: "Não aprovada" } as const;
+
+function TeacherForm({
+  server,
+  subjects,
+  initial,
+  verification,
+}: {
+  server: boolean;
+  subjects: Option[];
+  initial: TeacherDraft | null;
+  verification: keyof typeof VERIFICATION_LABEL | null;
+}) {
+  const profile = useDisplayProfile();
+  const account = useAccount();
+  const navigate = useNavigate();
+  const toast = useToast();
   // Somente em memória (estado do componente). Sem localStorage/sessionStorage.
-  const [d, setD] = useState<TeacherDraft>(emptyTeacherDraft);
+  const [d, setD] = useState<TeacherDraft>(() => initial ?? emptyTeacherDraft());
   if (!profile) return null;
+  const subjectName = (slug: string) => subjects.find((s) => s.value === slug)?.label ?? slug;
+  const notice = server ? <SaveNotice saved={initial !== null} /> : <PreviewNotice />;
+
+  const save = async () => {
+    const pending = firstIncomplete(TEACHER_STEPS, d, teacherStepIssue);
+    if (pending) throw new Error(teacherStepIssue(pending, d) ?? "Complete todas as etapas.");
+    await accountApi.saveTeacherProfile(teacherDraftToPayload(d));
+    if (account.mode === "server") {
+      try {
+        account.setMe(await accountApi.me());
+      } catch {
+        account.reload();
+      }
+    }
+    toast({
+      tone: "success",
+      title: "Cadastro de professor salvo",
+      description: "Seu perfil foi salvo e aguarda análise. Ele não fica público antes da aprovação.",
+    });
+    navigate("/conta", { replace: true });
+  };
   const set = <K extends keyof TeacherDraft>(k: K, v: TeacherDraft[K]) => setD((s) => ({ ...s, [k]: v }));
   const weekday = (v: string | number) => WEEKDAYS.find((w) => w.value === v)?.label ?? String(v);
   const cents = parsePriceToCents(d.price);
@@ -47,7 +118,7 @@ export default function TeacherOnboarding() {
   const content: Record<TeacherStep, Omit<FlowStep, "id" | "issue">> = {
     voce: {
       title: "Apresente-se aos alunos",
-      description: "Nome e foto vêm da sua conta Google. A foto não comprova formação ou credenciais.",
+      description: "Nome e foto vêm da sua conta. A foto não comprova formação ou credenciais.",
       content: (
         <>
           <ProfileSummary profile={profile} size="xl" />
@@ -59,7 +130,7 @@ export default function TeacherOnboarding() {
             value={d.bio}
             onChange={(e) => set("bio", e.target.value)}
           />
-          <PreviewNotice />
+          {notice}
         </>
       ),
     },
@@ -67,7 +138,7 @@ export default function TeacherOnboarding() {
       title: "O que você ensina",
       content: (
         <>
-          <ChipGroup label="Disciplinas" options={SUBJECT_OPTS} selected={d.subjects} onToggle={(v) => set("subjects", toggle(d.subjects, v))} />
+          <ChipGroup label="Disciplinas" options={subjects} selected={d.subjects} onToggle={(v) => set("subjects", toggle(d.subjects, v))} />
           <Input
             label="Especialidades"
             hint="Opcional. Ex.: ENEM, cálculo I, inglês para negócios."
@@ -164,7 +235,9 @@ export default function TeacherOnboarding() {
     },
     revisao: {
       title: "Revise seu perfil",
-      description: "Confira suas respostas. O envio será liberado quando a API de perfis estiver disponível.",
+      description: server
+        ? "Confira suas respostas e salve. Salvar não publica o perfil: ele passa por análise."
+        : "Confira suas respostas. O envio será liberado quando a API de perfis estiver disponível.",
       content: (
         <>
           <ReviewList
@@ -180,10 +253,10 @@ export default function TeacherOnboarding() {
               { label: "Duração", value: list(d.durations, (v) => `${v} min`) },
               { label: "Modalidade", value: d.modality ? MODALITY_LABELS[d.modality] : "" },
               { label: "Disponibilidade", value: [list(d.days, weekday), list(d.periods, (v) => PERIOD_LABELS[v as DayPeriod])].filter(Boolean).join(" · ") },
-              { label: "Verificação", value: "Pendente (etapa futura)" },
+              { label: "Verificação", value: verification ? VERIFICATION_LABEL[verification] : "Pendente (etapa futura)" },
             ]}
           />
-          <PreviewNotice />
+          {notice}
         </>
       ),
     },
@@ -195,8 +268,8 @@ export default function TeacherOnboarding() {
     <OnboardingFlow
       label="Cadastro de professor"
       steps={steps}
-      backTo={{ to: WELCOME_PATH, label: "Trocar perfil" }}
-      finish={<SaveBlocked />}
+      backTo={{ to: server ? "/conta" : WELCOME_PATH, label: server ? "Minha conta" : "Trocar perfil" }}
+      finish={server ? <SaveProfile onSave={save} /> : <SaveBlocked />}
     />
   );
 }

@@ -1,5 +1,7 @@
 # Entrada única e onboarding (Fases 2.5 e 2.5.1)
 
+> **Fase 2.6B:** com `VITE_STAGE_PROFILE_PERSISTENCE=testing`, o papel e os cadastros passam a ser salvos e lidos da API. Veja [profile-persistence.md](profile-persistence.md). Com a flag em `off` (padrão), tudo abaixo continua valendo: prévia sem persistência.
+
 Uma única experiência de entrada (Google como método principal) e o onboarding da conta real, preparados **sem alterar o backend**. A autenticação continua sendo a da Fase 2.4 (Google Identity Services + Supabase Auth, `signInWithIdToken`, nonce de uso único) — ver [auth-integration.md](auth-integration.md).
 
 > **Prévia sem persistência.** As respostas do onboarding vivem só no estado da tela: **não são enviadas nem gravadas** (nem em `localStorage`/`sessionStorage`) e são descartadas ao sair. Isso vale até existir a API de perfis com persistência segura, Política de Privacidade publicada e fluxo de tratamento de dados aprovado.
