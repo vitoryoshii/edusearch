@@ -1,6 +1,6 @@
 # Integração com a API — necessidades do frontend
 
-> **Status:** `docs/api-contract.md` **ainda não existe**. Este documento **não define contratos**. Ele lista o que as telas precisam para que a equipe de backend desenhe o contrato oficial. Quando o contrato existir, ele prevalece e o adapter `src/lib/data/http/adapter.ts` deve segui-lo.
+> **Status:** o contrato oficial está em [`docs/api-contract.md`](../api-contract.md) (Fase 2.6A: `GET /v1/me` e `PUT /v1/me/profile` implementados; onboarding planejado). Este documento **não define contratos**: lista as necessidades das telas. Onde houver contrato, ele prevalece e o adapter `src/lib/data/http/adapter.ts` deve segui-lo. O frontend ainda **não** consome os novos endpoints.
 
 ## Arquitetura no frontend
 

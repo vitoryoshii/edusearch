@@ -48,9 +48,18 @@ Segredos de integrações ficam **somente na API** (variáveis de ambiente); o f
 - Base do aplicativo React com tela "em desenvolvimento".
 - API FastAPI com `GET /health`, CORS para desenvolvimento local e testes automatizados.
 
+### Fase 2.6A — fundação do backend (em revisão)
+
+- Migrations versionadas (`supabase/migrations/`): perfis, papéis, alunos, professores e disciplinas, com RLS e privilégios mínimos — ver [database-design.md](database-design.md). **Ainda não aplicadas no projeto remoto.**
+- FastAPI modular (routers, schemas, services, repositories, auth, config) com validação criptográfica do JWT do Supabase (JWKS, ES256) e consultas sob RLS (`SET LOCAL ROLE authenticated`).
+- `GET /v1/me` e `PUT /v1/me/profile` — ver [api-contract.md](api-contract.md).
+- Hook *Before User Created* (allowlist) preparado, **não** ativado.
+- CI do backend (`.github/workflows/backend-ci.yml`): lint, testes, banco limpo, RLS e Security Advisor.
+
 ### Planejado (próximas fases)
 
-- Supabase PostgreSQL e Supabase Auth com Google OAuth.
+- Aplicação controlada das migrations no Supabase e ativação do hook de admissão (com aprovação).
+- Hospedagem da API e contratos de onboarding (`/v1/me/roles`, perfis de aluno e professor).
 - Integração Gemini para o matching pedagógico.
 - Google Calendar/Meet para agendamento e aulas.
 - AbacatePay para Pix, split e repasse.
