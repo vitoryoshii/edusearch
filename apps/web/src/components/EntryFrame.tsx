@@ -11,7 +11,11 @@ export function EntryFrame({ children, subtitle }: { children: ReactNode; subtit
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-hidden bg-bg pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <EntryBackdrop />
-      <main id="conteudo-principal" className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-20 sm:py-24">
+      {/* Respiro lateral de 24px, ou a safe area (entalhe em paisagem no PWA), o que for maior. */}
+      <main
+        id="conteudo-principal"
+        className="relative z-10 flex flex-1 flex-col items-center justify-center pr-[max(1.5rem,env(safe-area-inset-right))] pl-[max(1.5rem,env(safe-area-inset-left))] py-20 sm:py-24"
+      >
         <div className="w-full max-w-[22rem] animate-slide-up">
           <div className="text-center">
             <h1>

@@ -1,15 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { AlertIcon, Button, GoogleButton, Skeleton, Spinner } from "@edusearch/ui";
 import { useAuth } from "../app/auth";
 import { useAppTheme } from "../app/theme";
 import { useSession } from "../app/session";
 import { AUTH_CONFIG } from "../lib/auth/config";
-import { initializeGis, loadGis, setCredentialListener } from "../lib/auth/gis";
+import { initializeGis, loadGis, setCredentialListener, type GisId } from "../lib/auth/gis";
 import { ACCOUNT_HOME, FAILURE_MESSAGES, sanitizeNext, type AuthFailure } from "../lib/auth/oauth";
 import { AUTH_PROVIDERS } from "../lib/auth/providers";
 
 type Phase = "loading" | "ready" | "signing";
+
+/**
+ * Medidas comuns dos CTAs da tela de acesso (Google e e-mail).
+ *
+ * O botão oficial do GIS (size "large") tem 40px de altura e largura fixa em px, definida
+ * ao desenhar. Os demais CTAs seguem essa medida: 40px visíveis, largura total do mesmo
+ * contêiner. O pseudo-elemento estende a área de toque para 44px sem mudar o visual.
+ * Use com <Button size="sm"> (min-h-9 não conflita com h-10).
+ */
+export const AUTH_CTA_CLASS =
+  "relative h-10 w-full text-sm before:absolute before:inset-x-0 before:-inset-y-0.5 before:content-['']";
+
+/** Largura do botão do GIS: a do contêiner de ações, nos limites aceitos pelo Google (px inteiros). */
+const gisWidth = (box: HTMLElement | null | undefined) => Math.floor(Math.min(400, Math.max(220, box?.clientWidth ?? 320)));
 
 /**
  * "Continuar com o Google" com o botão OFICIAL do Google Identity Services.
@@ -26,8 +40,15 @@ type Phase = "loading" | "ready" | "signing";
 export function GoogleSignIn({ next = ACCOUNT_HOME }: { next?: string }) {
   if (!AUTH_PROVIDERS.google.available) {
     return (
-      <div>
-        <GoogleButton available={false} shape="pill" aria-describedby="google-status" data-testid="google-signin-disabled" />
+      <div className="flex min-h-11 w-full flex-col justify-center">
+        {/* h-10!: o GoogleButton tem h-11 fixo; aqui ele segue a medida dos CTAs da entrada. */}
+        <GoogleButton
+          available={false}
+          shape="pill"
+          aria-describedby="google-status"
+          data-testid="google-signin-disabled"
+          className="h-10! before:absolute before:inset-x-0 before:-inset-y-0.5 before:content-['']"
+        />
         {AUTH_PROVIDERS.google.statusMessage && (
           <p id="google-status" className="mt-2 text-center text-xs text-fg-muted">
             {AUTH_PROVIDERS.google.statusMessage}
@@ -82,7 +103,33 @@ function GisButton({ next }: { next: string }) {
     });
   }, [signInWithGoogleCredential, endDemo, navigate, next]);
 
-  // Desenha (ou redesenha) o botão oficial: nova tentativa ou troca de tema.
+  // GIS já inicializado (para redesenhar só o botão ao mudar a largura) e a última largura usada.
+  const gisRef = useRef<GisId | null>(null);
+  const drawnWidth = useRef(0);
+
+  /** Desenha o botão oficial com a largura atual do contêiner de ações. */
+  const draw = useCallback(
+    (gis: GisId) => {
+      const el = slot.current;
+      if (!el) return;
+      const width = gisWidth(el.parentElement);
+      el.replaceChildren();
+      gis.renderButton(el, {
+        type: "standard",
+        theme: resolved === "dark" ? "filled_black" : "outline",
+        size: "large",
+        text: "continue_with",
+        shape: "pill", // formato oficial do GIS; nenhum CSS é aplicado ao iframe do Google
+        logo_alignment: "left",
+        width,
+        locale: "pt-BR",
+      });
+      drawnWidth.current = width;
+    },
+    [resolved],
+  );
+
+  // Inicializa e desenha o botão oficial: primeira carga, nova tentativa ou troca de tema.
   useEffect(() => {
     let active = true;
     (async () => {
@@ -91,18 +138,8 @@ function GisButton({ next }: { next: string }) {
         const hashedNonce = await prepareNonce();
         if (!active || !slot.current) return;
         initializeGis(gis, { clientId: AUTH_CONFIG.googleClientId, hashedNonce });
-        const width = Math.round(Math.min(400, Math.max(220, slot.current.parentElement?.clientWidth ?? 320)));
-        slot.current.replaceChildren();
-        gis.renderButton(slot.current, {
-          type: "standard",
-          theme: resolved === "dark" ? "filled_black" : "outline",
-          size: "large",
-          text: "continue_with",
-          shape: "pill", // formato oficial do GIS; nenhum CSS é aplicado ao iframe do Google
-          logo_alignment: "left",
-          width,
-          locale: "pt-BR",
-        });
+        gisRef.current = gis;
+        draw(gis);
         // Se um login estiver em andamento, continua mostrando "Entrando…".
         setPhase((p) => (p === "signing" ? p : "ready"));
       } catch {
@@ -115,7 +152,31 @@ function GisButton({ next }: { next: string }) {
     return () => {
       active = false;
     };
-  }, [attempt, resolved, prepareNonce]);
+  }, [attempt, prepareNonce, draw]);
+
+  /*
+   * O iframe do Google tem largura FIXA em px. Quando o contêiner muda (rotação, teclado,
+   * barra de endereço, janela standalone/PWA que assenta o viewport depois da 1ª pintura),
+   * redesenha só o botão — sem novo initialize nem novo nonce — para continuar com a
+   * mesma largura do botão de e-mail.
+   */
+  useEffect(() => {
+    const box = slot.current?.parentElement;
+    if (!box || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const gis = gisRef.current;
+        if (gis && gisWidth(box) !== drawnWidth.current) draw(gis);
+      });
+    });
+    observer.observe(box);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [draw]);
 
   if (status === "signedIn") {
     return (
@@ -132,18 +193,25 @@ function GisButton({ next }: { next: string }) {
 
   return (
     <div data-auth-phase={phase} data-failure={failure ?? undefined}>
-      <div className="relative flex min-h-11 justify-center">
+      {/* Linha de 44px (iframe do GIS: botão de 40px + 2px de margem) com o CTA centralizado. */}
+      <div className="relative flex min-h-11 w-full items-center justify-center">
         {/* Contêiner do botão oficial (iframe do Google). */}
-        <div ref={slot} data-testid="google-signin" className={phase === "ready" && failure !== "gis_unavailable" ? "w-full" : "hidden"} />
-        {phase === "loading" && <Skeleton className="h-11 w-full rounded-full" />}
+        <div ref={slot} data-testid="google-signin" className={phase === "ready" && failure !== "gis_unavailable" ? "flex w-full justify-center" : "hidden"} />
+        {phase === "loading" && <Skeleton className="h-10 w-full rounded-full" />}
         {phase === "signing" && (
-          <div role="status" className="flex h-11 w-full items-center justify-center gap-2.5 rounded-full border border-line text-sm font-medium text-fg">
+          <div role="status" className="flex h-10 w-full items-center justify-center gap-2.5 rounded-full border border-line text-sm font-medium text-fg">
             <Spinner className="h-4 w-4 text-link" />
             Entrando com sua conta Google…
           </div>
         )}
         {failure === "gis_unavailable" && (
-          <Button variant="secondary" shape="pill" fullWidth onClick={() => { setFailure(null); setPhase("loading"); setAttempt((n) => n + 1); }}>
+          <Button
+            variant="secondary"
+            shape="pill"
+            size="sm"
+            className={AUTH_CTA_CLASS}
+            onClick={() => { setFailure(null); setPhase("loading"); setAttempt((n) => n + 1); }}
+          >
             Tentar carregar novamente
           </Button>
         )}

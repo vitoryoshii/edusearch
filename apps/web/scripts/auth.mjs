@@ -378,6 +378,36 @@ async function shot(name, widths = WIDTHS) {
   await check(overflow.length === 0, `${name}: sem rolagem horizontal em ${widths.join("/")} px, claro e escuro${overflow.length ? " — " + overflow.join(", ") : ""}`);
 }
 
+/**
+ * CTAs da entrada (Google e e-mail) com a MESMA caixa — largura, altura e borda esquerda
+ * (±1px) — e sem encostar nas laterais, nas larguras de celular e no desktop, claro e escuro.
+ * Mudar o viewport também exercita o redesenho do botão do GIS na nova largura.
+ */
+async function ctaParity(googleSelector, label) {
+  const bad = [];
+  for (const w of [360, 390, 430, 1440]) {
+    for (const dark of [false, true]) {
+      await b.viewport(w, { dark });
+      await sleep(350);
+      const r = await b.evaluate(`(() => {
+        const g = document.querySelector(${JSON.stringify(googleSelector)});
+        const e = document.querySelector('[data-testid=email-open]');
+        if (!g || !e) return "CTA ausente";
+        const a = g.getBoundingClientRect(), c = e.getBoundingClientRect();
+        const near = (x, y) => Math.abs(x - y) <= 1;
+        if (!near(a.width, c.width) || !near(a.height, c.height) || !near(a.left, c.left))
+          return "google " + Math.round(a.width) + "x" + Math.round(a.height) + " / e-mail " + Math.round(c.width) + "x" + Math.round(c.height);
+        if (a.left < 16 || innerWidth - a.right < 16) return "encosta na borda";
+        return "";
+      })()`);
+      if (r) bad.push(`${w}px ${dark ? "escuro" : "claro"}: ${r}`);
+    }
+  }
+  await b.viewport(1280);
+  await sleep(200);
+  await check(bad.length === 0, `${label}: CTAs do Google e do e-mail com a mesma largura e altura${bad.length ? " — " + bad.join("; ") : ""}`);
+}
+
 /* ------------------------------ 1. Versão pública ------------------------------ */
 console.log(`Versão pública (${publicBase}) — login real desligado`);
 b.setStep("público /");
@@ -396,6 +426,7 @@ await check(await b.evaluate(`parseFloat(getComputedStyle(document.querySelector
 await check(await b.evaluate(`!/HackBrasil/.test(document.body.innerText)`), "sem mensagens de marketing na tela de acesso");
 await check(await b.evaluate(`!!document.querySelector('main img[alt="EduSearch"]')`), "logo oficial centralizado");
 await check(await b.evaluate(`document.querySelector('[data-testid=google-signin-disabled]')?.getAttribute('aria-disabled') === 'true'`), "botão do Google desabilitado sem configuração");
+await ctaParity("[data-testid=google-signin-disabled]", "versão pública");
 await check(await b.evaluate(`!document.querySelector('script[src*="accounts.google.com"]')`), "GIS não é carregado sem configuração");
 await check(
   await b.evaluate(`[...document.querySelectorAll('a')].some((a) => a.textContent.trim() === 'Explorar demonstração' && a.getAttribute('href') === '/perfil-de-acesso')`),
@@ -451,7 +482,8 @@ await check((await b.evaluate(`document.querySelectorAll('script[src*="accounts.
 const opts = await b.evaluate(`window.__gis.opts`);
 await check(opts?.text === "continue_with" && opts?.locale === "pt-BR" && opts?.type === "standard", "botão \"Continuar com o Google\" em pt-BR");
 await check(opts?.shape === "pill", "botão oficial do GIS com shape \"pill\" (sem CSS no iframe)");
-await check(await b.evaluate(text("Fase de testes: somente contas autorizadas")), "acesso real identificado como fase de testes");
+await check(!(await b.evaluate(text("Fase de testes"))), "sem aviso fixo de \"Fase de testes\" na tela de acesso");
+await ctaParity("[data-testid=google-signin] [data-fake-gis]", "login Google ativo");
 await axe("entrada com login Google ativo");
 await shot("entrada-google");
 
@@ -536,7 +568,7 @@ await check(
   await b.evaluate(`document.querySelector('input[name=email]')?.autocomplete === 'username' && document.querySelector('input[name=password]')?.autocomplete === 'current-password'`),
   "campos com autocomplete adequado (gerenciadores de senha)",
 );
-await check(await b.evaluate(text("Fase de testes: somente contas autorizadas")), "e-mail também identificado como fase de testes");
+await check(!(await b.evaluate(text("Fase de testes"))), "formulário de e-mail sem aviso fixo de \"Fase de testes\"");
 await axe("acesso por e-mail — entrar");
 await shot("email-entrar", [320, 390, 1440]);
 

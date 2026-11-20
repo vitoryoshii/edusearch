@@ -6,7 +6,7 @@ import { readRoleIntent, useAuth } from "../../app/auth";
 import { homeFor, useSession } from "../../app/session";
 import { EmailAccess } from "../../components/EmailAccess";
 import { EntryFrame } from "../../components/EntryFrame";
-import { GoogleSignIn } from "../../components/GoogleSignIn";
+import { AUTH_CTA_CLASS, GoogleSignIn } from "../../components/GoogleSignIn";
 import { FAILURE_MESSAGES, sanitizeNext } from "../../lib/auth/oauth";
 import { firstNameOf } from "../../lib/auth/profile";
 import { AUTH_PROVIDERS } from "../../lib/auth/providers";
@@ -36,10 +36,11 @@ export default function Entry() {
         ) : emailOpen ? (
           <EmailAccess next={next} onBack={() => setEmailOpen(false)} />
         ) : (
-          <>
+          // Um só contêiner de ações: os dois CTAs têm a mesma largura (100% dele) e altura.
+          <div className="flex w-full flex-col gap-3" data-testid="entry-actions">
             <GoogleSignIn next={next} />
             <EmailButton onOpen={() => setEmailOpen(true)} />
-          </>
+          </div>
         )}
       </div>
 
@@ -66,18 +67,18 @@ export default function Entry() {
 function EmailButton({ onOpen }: { onOpen: () => void }) {
   const available = AUTH_PROVIDERS.email.available;
   return (
-    <div>
+    <div className="flex min-h-11 w-full flex-col justify-center">
+      {/* Mesma medida do botão oficial do Google (AUTH_CTA_CLASS: 40px visíveis, 100% de largura). */}
       <Button
         variant="secondary"
         shape="pill"
-        size="lg"
-        fullWidth
+        size="sm"
         leftIcon={<MailIcon className="h-5 w-5" />}
         onClick={available ? onOpen : undefined}
         aria-disabled={available ? undefined : true}
         aria-describedby={available ? undefined : "email-status"}
         data-testid="email-open"
-        className={available ? undefined : "cursor-not-allowed"}
+        className={available ? AUTH_CTA_CLASS : `${AUTH_CTA_CLASS} cursor-not-allowed`}
       >
         Continuar com e-mail
       </Button>
