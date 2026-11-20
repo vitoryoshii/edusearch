@@ -197,3 +197,64 @@ def test_foreign_keys_are_indexed(admin) -> None:
         """
     ).fetchall()
     assert rows == []
+
+
+# ------------------------------------------------------------------------------- GraphQL
+
+
+def test_pg_graphql_is_not_installed(admin) -> None:
+    row = admin.execute(
+        "select count(*) as n from pg_extension where extname = 'pg_graphql'"
+    ).fetchone()
+    assert row["n"] == 0
+
+
+# ------------------------------------------------------------------------------- matriz de acesso
+# Fotografia exata dos privilégios e políticas. Qualquer afrouxamento (ou mudança) quebra o teste.
+
+EXPECTED_TABLE_GRANTS = {
+    ("anon", "subjects", "SELECT"),
+    ("authenticated", "profiles", "SELECT"),
+    ("authenticated", "account_roles", "SELECT"),
+    ("authenticated", "subjects", "SELECT"),
+    ("authenticated", "student_profiles", "SELECT"),
+    ("authenticated", "teacher_profiles", "SELECT"),
+    ("authenticated", "teacher_subjects", "SELECT"),
+    ("authenticated", "teacher_subjects", "DELETE"),
+}
+
+EXPECTED_POLICIES = {
+    ("account_roles", "account_roles_select_own", "SELECT"),
+    ("profiles", "profiles_select_own", "SELECT"),
+    ("profiles", "profiles_update_own", "UPDATE"),
+    ("student_profiles", "student_profiles_insert_own", "INSERT"),
+    ("student_profiles", "student_profiles_select_own", "SELECT"),
+    ("student_profiles", "student_profiles_update_own", "UPDATE"),
+    ("subjects", "subjects_select_active", "SELECT"),
+    ("teacher_profiles", "teacher_profiles_insert_own", "INSERT"),
+    ("teacher_profiles", "teacher_profiles_select_own_or_published", "SELECT"),
+    ("teacher_profiles", "teacher_profiles_update_own", "UPDATE"),
+    ("teacher_subjects", "teacher_subjects_delete_own", "DELETE"),
+    ("teacher_subjects", "teacher_subjects_insert_own", "INSERT"),
+    ("teacher_subjects", "teacher_subjects_select_own_or_published", "SELECT"),
+    ("teacher_subjects", "teacher_subjects_update_own", "UPDATE"),
+}
+
+
+def test_table_grants_match_expected_matrix(admin) -> None:
+    rows = admin.execute(
+        "select grantee, table_name, privilege_type from information_schema.role_table_grants "
+        "where table_schema = 'public' and grantee in ('anon', 'authenticated') "
+        "and table_name = any(%s)",
+        (APP_TABLES,),
+    ).fetchall()
+    assert {(r["grantee"], r["table_name"], r["privilege_type"]) for r in rows} == (
+        EXPECTED_TABLE_GRANTS
+    )
+
+
+def test_policies_match_expected_set(admin) -> None:
+    rows = admin.execute(
+        "select tablename, policyname, cmd from pg_policies where schemaname = 'public'"
+    ).fetchall()
+    assert {(r["tablename"], r["policyname"], r["cmd"]) for r in rows} == EXPECTED_POLICIES
