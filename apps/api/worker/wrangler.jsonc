@@ -17,8 +17,5 @@
     "API_JWT_ALGORITHMS": "ES256",
     "API_ENABLE_DOCS": "false"
   },
-  // Criar com: npx wrangler hyperdrive create edusearch-api-db --caching-disabled \
-  //   --connection-string="postgresql://edusearch_api:<senha>@db.<ref>.supabase.co:5432/postgres?sslmode=require"
-  // Em desenvolvimento local, defina CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
-  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000000000000000000000000000" }]
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "2565d7607abb4ba49fb3fec8ed63937e" }]
 }
