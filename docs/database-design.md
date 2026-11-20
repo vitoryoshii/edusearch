@@ -13,6 +13,8 @@ PostgreSQL do Supabase (`edusearch-db`, ref. `pgltvnwdvatyihrozlvn`). Esta fase 
 | `20261119120200_signup_admission_hook.sql` | Allowlist `private.signup_allowlist` e função `public.hook_before_user_created` (o hook **não** é ligado) |
 | `20261119120300_harden_rls_auto_enable.sql` | Revoga EXECUTE de `public.rls_auto_enable()` para PUBLIC, anon e authenticated, e fixa o `search_path` |
 | `20261120013704_disable_unused_pg_graphql.sql` | `drop extension if exists pg_graphql` (sem CASCADE). Não faz nada no remoto, que não tem a extensão |
+| `20261120015728_onboarding_profile_fields.sql` | **Fase 2.6B.** Só adições: colunas do onboarding (dificuldades, especialidades, métodos, várias durações, dias e períodos do professor) com padrão vazio, tabela `student_subjects` com RLS e GRANTs das novas colunas |
+| `20261120015729_api_connection_role.sql` | **Fase 2.6B.** Papel `edusearch_api` (NOLOGIN, NOINHERIT, sem BYPASSRLS) e a política que limita a atribuição de papel ao `sub` do JWT |
 
 O rollback fica em `supabase/rollback/20261119_fase_2_6a_down.sql`, fora da pasta de migrations.
 
@@ -113,6 +115,7 @@ No Supabase, toda tabela nova em `public` nasce com **todos** os privilégios pa
 | `student_profiles` | — | só a própria linha (**privado**) | INSERT/UPDATE da própria linha, **somente com papel `student` persistido**. Colunas do servidor fora do GRANT |
 | `teacher_profiles` | — | própria linha **ou** perfis `is_published` | INSERT/UPDATE da própria linha, **somente com papel `teacher` persistido**. Sem GRANT em `verification_status`, `verified_at`, `is_published`, `published_at` |
 | `teacher_subjects` | — | do próprio professor ou de professores publicados | INSERT/UPDATE (`levels`)/DELETE das próprias linhas |
+| `student_subjects` | — | só as próprias (**privado**) | INSERT/DELETE das próprias linhas. Exige `student_profiles`, que exige o papel `student` |
 | `private.signup_allowlist` | — | — | — (só o dono; o hook lê via `security definer`) |
 
 Garantias verificadas nos testes (`apps/api/tests/db/test_rls.py`):
@@ -124,19 +127,55 @@ Garantias verificadas nos testes (`apps/api/tests/db/test_rls.py`):
 - Nenhuma política usa `user_metadata`/`raw_user_meta_data`. Nenhuma função `security definer` é executável por anon/authenticated.
 - `auth.uid()` é usado como `(select auth.uid())` nas políticas (lint 0003), e há uma política SELECT por tabela (lint 0006).
 
-### Conexão da API
+### Conexão da API (`edusearch_api`)
 
-A FastAPI conecta ao Postgres e, **para cada requisição**, abre uma transação com `SET LOCAL ROLE authenticated` e `request.jwt.claims` = claims do JWT **já verificado** (`apps/api/app/db.py`). Assim `auth.uid()` e o RLS valem também para a API (defesa em profundidade): um bug que consulte o id de outro usuário devolve vazio.
+A FastAPI **não** usa `postgres`, superusuário nem `service_role`. Ela conecta como `edusearch_api`, criado pela migration `20261120015729_api_connection_role.sql`, que é NOLOGIN, NOINHERIT, sem BYPASSRLS e sem CREATEROLE/CREATEDB. Em cada requisição, `apps/api/app/db.py` abre uma transação com as claims do JWT **já verificado** em `request.jwt.claims` e:
 
-Papel de conexão recomendado no projeto remoto (criar manualmente, com senha forte guardada no gerenciador de segredos do provedor da API):
+| Operação | Papel efetivo | Proteção |
+| -------- | ------------- | -------- |
+| Ler e gravar dados do usuário (`/v1/me*`) | `SET LOCAL ROLE authenticated` | RLS e GRANTs de `authenticated`, como um cliente da Data API |
+| Catálogo (`/v1/subjects`) | `SET LOCAL ROLE anon` | Só `subjects` ativas |
+| Atribuir papel (`POST /v1/me/roles`) | `edusearch_api` | Só `INSERT (user_id, role)` em `account_roles`; a política `account_roles_insert_via_api` exige `user_id` = `sub` das claims. Sem SELECT, UPDATE ou DELETE |
+
+Fora do `SET ROLE`, o papel não lê `profiles`, `account_roles`, perfis de aluno ou professor, `auth.users` nem a allowlist. Também não assume `service_role`, `postgres` ou `supabase_auth_admin`. Os testes `test_api_connection_role_is_least_privilege` e `test_api_role_cannot_grant_role_to_another_user` cobrem isso.
+
+Em produção (`API_ENVIRONMENT=production`), a API **se recusa a iniciar** se o papel de conexão for superusuário ou tiver BYPASSRLS. Em desenvolvimento, apenas registra um aviso.
+
+**Habilitar o login no projeto remoto** (passo manual, com aprovação, depois de aplicar as migrations):
 
 ```sql
-create role edusearch_api login password '<gerada-fora-do-git>' noinherit;
-grant authenticated to edusearch_api;     -- permite SET ROLE authenticated; nada além disso
-grant usage on schema public to edusearch_api;
+alter role edusearch_api with login password '<gerada-fora-do-git, 32+ caracteres>';
 ```
 
-Use a string de conexão do **pooler** (Supavisor, modo transação, porta 6543) com `sslmode=require`. A API desliga prepared statements (`prepare_threshold=None`) para ser compatível com o pooler. Não use a senha do `postgres` nem a `service_role` na API.
+- Guarde a senha só no gerenciador de segredos do provedor da API (`API_DATABASE_URL`). Nunca no Git nem no frontend.
+- Use o **pooler** (Supavisor, modo transação, porta 6543) com o usuário `edusearch_api.pgltvnwdvatyihrozlvn` e `sslmode=require`. A API desliga prepared statements (`prepare_threshold=None`).
+- Para trocar a senha: `alter role edusearch_api with password '…'`. Para cortar o acesso: `alter role edusearch_api nologin`.
+
+## Onboarding ↔ banco (Fase 2.6B)
+
+Comparação campo a campo dos formulários (`apps/web/src/lib/onboarding.ts`) com o schema. Nenhuma resposta é descartada.
+
+| Formulário | Campo da API | Coluna |
+| ---------- | ------------ | ------ |
+| Aluno · Seu objetivo | `learning_goal` | `student_profiles.learning_goal` |
+| Aluno · Nível atual | `education_level` | `student_profiles.education_level` |
+| Aluno · Disciplinas de interesse | `subjects` (slugs) | **`student_subjects`** (nova) |
+| Aluno · Principais dificuldades (chips) | `difficulty_areas` | **`student_profiles.difficulty_areas`** (nova). `difficulties` (texto) fica reservada para observações |
+| Aluno · Dias / Períodos / Modalidade | `preferred_weekdays` / `preferred_periods` / `preferred_modality` | `student_profiles.*` |
+| Aluno · Valor por aula (faixa) | `budget_min_cents` / `budget_max_cents` | `student_profiles.*`. Mapeamento exato das 4 faixas em [api-contract.md](api-contract.md) |
+| Professor · Biografia | `bio` | `teacher_profiles.bio` |
+| Professor · Disciplinas | `subjects` | `teacher_subjects`. Os níveis existentes são preservados ao reenviar |
+| Professor · Especialidades (texto) | `specialties` | **`teacher_profiles.specialties`** (nova) |
+| Professor · Formação / Experiência | `academic_background` / `experience` | `teacher_profiles.*` |
+| Professor · Metodologia (chips) | `teaching_methods` | **`teacher_profiles.teaching_methods`** (nova) |
+| Professor · Como são suas aulas (texto) | `methodology` | `teacher_profiles.methodology` |
+| Professor · Valor da aula | `price_cents` | `teacher_profiles.price_cents` |
+| Professor · Duração das aulas (várias) | `lesson_durations_minutes` | **`teacher_profiles.lesson_durations_minutes`** (nova). `lesson_duration_minutes` passa a ser a principal (a menor), com constraint de coerência |
+| Professor · Modalidade | `modality` | `teacher_profiles.modality` |
+| Professor · Dias / Períodos | `available_weekdays` / `available_periods` | **`teacher_profiles.*`** (novas). Visão geral; os horários detalhados virão da agenda |
+| Professor · Verificação de formação | — | Nenhuma coleta de documentos. `verification_status` continua do servidor |
+
+A migration só adiciona colunas com padrão vazio e uma tabela nova, e todas as constraints aceitam os valores padrão. As linhas existentes continuam válidas (`test_existing_rows_survive_new_columns`).
 
 ## Controle de admissão (Before User Created Hook)
 
@@ -203,7 +242,7 @@ Nenhum passo abaixo foi executado. Cada um exige aprovação explícita do respo
 ```bash
 supabase login                      # conta com acesso ao projeto edusearch-db
 supabase link --project-ref pgltvnwdvatyihrozlvn
-supabase db push --dry-run          # deve listar exatamente as 5 migrations da 2.6A
+supabase db push --dry-run          # deve listar só as migrations ainda não aplicadas (2.6B: 2)
 supabase db push                    # somente após a aprovação
 ```
 
@@ -223,7 +262,8 @@ supabase db push                    # somente após a aprovação
 **Rollback**
 
 1. Se o problema for só de política ou privilégio, prefira uma migration corretiva nova.
-2. Rollback completo (apaga as tabelas e os dados de perfil, sem tocar em `auth.users`): restaurar backup **ou** executar `supabase/rollback/20261119_fase_2_6a_down.sql` no SQL Editor. O script também remove as versões de `supabase_migrations.schema_migrations`.
+2. Rollback só da 2.6B (remove as colunas e a tabela novas e o papel `edusearch_api`, mantendo o schema da 2.6A): `supabase/rollback/20261120_fase_2_6b_down.sql`. Desligue a API antes.
+3. Rollback completo (apaga as tabelas e os dados de perfil, sem tocar em `auth.users`): restaurar backup **ou** executar o rollback da 2.6B e depois `supabase/rollback/20261119_fase_2_6a_down.sql` no SQL Editor. O script também remove as versões de `supabase_migrations.schema_migrations`.
 3. Desligar o hook no painel, se estiver ativo, **antes** de remover a função.
 
 ## Ambiente local e CI

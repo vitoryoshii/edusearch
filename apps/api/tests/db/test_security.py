@@ -14,6 +14,7 @@ APP_TABLES = [
     "student_profiles",
     "teacher_profiles",
     "teacher_subjects",
+    "student_subjects",
 ]
 
 
@@ -221,15 +222,21 @@ EXPECTED_TABLE_GRANTS = {
     ("authenticated", "teacher_profiles", "SELECT"),
     ("authenticated", "teacher_subjects", "SELECT"),
     ("authenticated", "teacher_subjects", "DELETE"),
+    ("authenticated", "student_subjects", "SELECT"),
+    ("authenticated", "student_subjects", "DELETE"),
 }
 
 EXPECTED_POLICIES = {
+    ("account_roles", "account_roles_insert_via_api", "INSERT"),
     ("account_roles", "account_roles_select_own", "SELECT"),
     ("profiles", "profiles_select_own", "SELECT"),
     ("profiles", "profiles_update_own", "UPDATE"),
     ("student_profiles", "student_profiles_insert_own", "INSERT"),
     ("student_profiles", "student_profiles_select_own", "SELECT"),
     ("student_profiles", "student_profiles_update_own", "UPDATE"),
+    ("student_subjects", "student_subjects_delete_own", "DELETE"),
+    ("student_subjects", "student_subjects_insert_own", "INSERT"),
+    ("student_subjects", "student_subjects_select_own", "SELECT"),
     ("subjects", "subjects_select_active", "SELECT"),
     ("teacher_profiles", "teacher_profiles_insert_own", "INSERT"),
     ("teacher_profiles", "teacher_profiles_select_own_or_published", "SELECT"),
@@ -244,7 +251,7 @@ EXPECTED_POLICIES = {
 def test_table_grants_match_expected_matrix(admin) -> None:
     rows = admin.execute(
         "select grantee, table_name, privilege_type from information_schema.role_table_grants "
-        "where table_schema = 'public' and grantee in ('anon', 'authenticated') "
+        "where table_schema = 'public' and grantee in ('anon', 'authenticated', 'edusearch_api') "
         "and table_name = any(%s)",
         (APP_TABLES,),
     ).fetchall()

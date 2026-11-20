@@ -11,8 +11,8 @@ from app import __version__
 from app.auth.jwt import JwksKeyResolver, TokenVerifier
 from app.config import Settings, get_settings
 from app.db import Database
-from app.errors import install_error_handlers
-from app.routers import health, me
+from app.errors import ApiError, install_error_handlers
+from app.routers import health, me, onboarding
 
 logger = logging.getLogger("edusearch.api")
 
@@ -47,6 +47,24 @@ def build_database(settings: Settings) -> Database | None:
     )
 
 
+def _check_connection_role(db: Database, settings: Settings) -> None:
+    """A API deve conectar com um papel SEM superusuário e SEM BYPASSRLS (edusearch_api).
+
+    Em produção, um papel privilegiado impede a inicialização. Fora dela, só avisa (o banco
+    local de desenvolvimento costuma usar "postgres").
+    """
+    try:
+        info = db.connection_role()
+    except ApiError:
+        logger.warning("não foi possível conferir o papel de conexão (banco indisponível)")
+        return
+    if info["superuser"] or info["bypassrls"]:
+        message = f"papel de conexão privilegiado: {info['name']} (use edusearch_api)"
+        if settings.environment == "production":
+            raise RuntimeError(message)
+        logger.warning(message)
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -64,6 +82,7 @@ def create_app(
             logger.warning("API_SUPABASE_URL ausente: rotas autenticadas responderão 503")
         if db is not None:
             db.open()
+            _check_connection_role(db, settings)
         else:
             logger.warning("API_DATABASE_URL ausente: rotas com banco responderão 503")
         try:
@@ -92,7 +111,8 @@ def create_app(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=False,
-        allow_methods=["GET", "PUT", "OPTIONS"],
+        # Somente os métodos efetivamente implementados.
+        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
         max_age=600,
     )
@@ -110,6 +130,7 @@ def create_app(
 
     app.include_router(health.router)
     app.include_router(me.router)
+    app.include_router(onboarding.router)
     return app
 
 

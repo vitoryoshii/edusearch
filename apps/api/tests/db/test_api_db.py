@@ -10,8 +10,9 @@ from app.main import create_app
 
 
 @pytest.fixture
-def client(settings, verifier, database_url):
-    database = Database(database_url, min_size=0, max_size=2, connect_timeout=5)
+def client(settings, verifier, api_database_url):
+    # Conecta como edusearch_api, o papel de menor privilégio usado em produção.
+    database = Database(api_database_url, min_size=0, max_size=2, connect_timeout=5)
     app = create_app(settings, token_verifier=verifier, database=database)
     with TestClient(app) as c:
         yield c
@@ -96,14 +97,14 @@ def test_suspended_account_cannot_edit(client, users, make_token, admin) -> None
     assert r.json()["code"] == "account_suspended"
 
 
-def test_api_queries_run_under_rls(database_url, users, make_token, verifier, settings) -> None:
+def test_api_queries_run_under_rls(api_database_url, users, make_token, verifier, settings) -> None:
     """Mesmo chamando o repositório com o id de OUTRO usuário, o RLS devolve nada."""
     from app.auth.jwt import user_from_claims
     from app.repositories.profiles import ProfileRepository
 
     a, b = users.create("A"), users.create("B")
     user_a = user_from_claims({"sub": str(a), "role": "authenticated", "aud": "authenticated"})
-    database = Database(database_url, min_size=0, max_size=1)
+    database = Database(api_database_url, min_size=0, max_size=1)
     database.open()
     try:
         with database.user_transaction(user_a) as conn:

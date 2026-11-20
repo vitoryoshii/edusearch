@@ -9,6 +9,7 @@ PERSONAL_TABLES = [
     "public.student_profiles",
     "public.teacher_profiles",
     "public.teacher_subjects",
+    "public.student_subjects",
 ]
 
 TEACHER_INSERT = """

@@ -15,6 +15,29 @@ ProfileStatus = Literal["onboarding", "active", "suspended"]
 _CONTROL_CHARS = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]")
 
 
+OnboardingStatus = Literal["pending", "completed"]
+VerificationStatus = Literal["pending", "approved", "rejected"]
+
+
+class StudentOnboarding(BaseModel):
+    status: OnboardingStatus = Field(description="completed = perfil de aluno salvo no servidor.")
+
+
+class TeacherOnboarding(BaseModel):
+    status: OnboardingStatus = Field(description="completed = perfil profissional salvo.")
+    verification_status: VerificationStatus | None = Field(
+        description="Definido pelo servidor. null enquanto o perfil não foi salvo."
+    )
+    is_published: bool = Field(description="Definido pelo servidor (exige aprovação).")
+
+
+class OnboardingState(BaseModel):
+    """Estado do cadastro por papel. null = a conta não tem esse papel."""
+
+    student: StudentOnboarding | None = None
+    teacher: TeacherOnboarding | None = None
+
+
 class MeResponse(BaseModel):
     """Dados do usuário autenticado. Somente o que ele próprio pode ver."""
 
@@ -26,8 +49,17 @@ class MeResponse(BaseModel):
     avatar_url: str | None
     status: ProfileStatus
     roles: list[AccountRole]
+    onboarding: OnboardingState = Field(default_factory=OnboardingState)
     created_at: datetime
     updated_at: datetime
+
+
+class RoleSelection(BaseModel):
+    """Papel escolhido pelo próprio usuário. Somente student ou teacher."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: AccountRole
 
 
 class ProfileUpdate(BaseModel):
