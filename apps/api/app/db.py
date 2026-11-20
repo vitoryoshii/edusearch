@@ -67,11 +67,36 @@ class Database:
     @contextmanager
     def user_transaction(self, user: AuthenticatedUser) -> Iterator[psycopg.Connection]:
         """Transação com o papel ``authenticated`` e as claims do usuário (RLS aplicado)."""
+        with self._transaction("authenticated", user.claims) as conn:
+            yield conn
+
+    @contextmanager
+    def anon_transaction(self) -> Iterator[psycopg.Connection]:
+        """Transação com o papel ``anon`` (dados públicos, ex.: catálogo de disciplinas)."""
+        with self._transaction("anon", {"role": "anon"}) as conn:
+            yield conn
+
+    def connection_role(self) -> dict[str, object]:
+        """Atributos do papel de conexão (para recusar superusuário/BYPASSRLS em produção)."""
+        try:
+            with self._pool.connection(timeout=self._timeout) as conn:
+                row = conn.execute(
+                    "select current_user::text, rolsuper, rolbypassrls from pg_roles "
+                    "where rolname = current_user"
+                ).fetchone()
+        except (PoolTimeout, psycopg.Error) as exc:
+            raise database_unavailable() from exc
+        if row is None:
+            raise database_unavailable()
+        return {"name": row[0], "superuser": bool(row[1]), "bypassrls": bool(row[2])}
+
+    @contextmanager
+    def _transaction(self, role: str, claims: dict) -> Iterator[psycopg.Connection]:
         try:
             with self._pool.connection(timeout=self._timeout) as conn:
                 conn.row_factory = dict_row
                 with conn.transaction():
-                    conn.execute("set local role authenticated")
+                    conn.execute(sql.SQL("set local role {}").format(sql.Identifier(role)))
                     conn.execute(
                         sql.SQL("set local statement_timeout = {}").format(
                             sql.Literal(self._statement_timeout_ms)
@@ -79,7 +104,7 @@ class Database:
                     )
                     conn.execute(
                         "select set_config('request.jwt.claims', %s, true)",
-                        (json.dumps(user.claims, separators=(",", ":"), default=str),),
+                        (json.dumps(claims, separators=(",", ":"), default=str),),
                     )
                     yield conn
         except ApiError:
@@ -93,3 +118,16 @@ class Database:
         except (psycopg.OperationalError, psycopg.errors.QueryCanceled) as exc:
             logger.warning("falha de banco: %s", exc.__class__.__name__)
             raise database_unavailable() from exc
+
+
+@contextmanager
+def as_connection_role(conn: psycopg.Connection) -> Iterator[None]:
+    """Dentro de uma transação de usuário, executa como o PAPEL DE CONEXÃO (edusearch_api).
+
+    Usado só para atribuir papel (INSERT em account_roles, limitado por RLS ao ``sub`` das
+    claims). Ao sair, volta para ``authenticated``.
+    """
+    conn.execute("set local role none")
+    yield
+    # Sem "finally": se o bloco falhar, a transação inteira é desfeita (ROLLBACK).
+    conn.execute("set local role authenticated")
