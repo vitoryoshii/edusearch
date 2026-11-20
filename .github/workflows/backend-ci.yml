@@ -2,6 +2,9 @@
 #
 # - api: lint (ruff), formatação e testes da FastAPI SEM banco (JWT com chaves efêmeras geradas no
 #   teste, JWKS local, serviço falso, banco inalcançável → 503).
+# - worker: empacota a API para Cloudflare Python Workers (Pyodide) e roda o e2e completo no
+#   workerd local (pywrangler dev), com Hyperdrive em modo local apontando para o Postgres do
+#   Supabase CLI. Sem conta Cloudflare, sem segredos.
 # - database: sobe SOMENTE o PostgreSQL local do Supabase CLI (imagem oficial, Docker do runner),
 #   que cria o schema do zero aplicando supabase/migrations; roda o lint do Supabase, os testes de
 #   RLS/integridade/hook e da API contra esse banco, e os lints do Security Advisor (splinter).
@@ -127,6 +130,69 @@ jobs:
         run: |
           supabase db reset --local
           cd apps/api && pytest -q tests/db
+
+      - name: Parar o banco
+        if: always()
+        run: supabase stop --no-backup
+
+  worker:
+    name: Worker — Pyodide/workerd + e2e (JWT, RLS, isolamento)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ADMIN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # Senha SOMENTE do banco local e descartável do CI.
+      CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgresql://edusearch_api:ci-local-only@127.0.0.1:54322/postgres
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.4"
+
+      - name: Banco limpo com as migrations
+        run: |
+          supabase db start
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c "alter role edusearch_api with login password 'ci-local-only'"
+
+      - name: Dependências do e2e (cliente)
+        working-directory: apps/api
+        run: pip install -c constraints.txt -e ".[dev]"
+
+      - name: Empacotar o Worker (pacotes Pyodide) e iniciar o workerd local
+        working-directory: apps/api/worker
+        run: |
+          uv sync --frozen
+          uv run python sync_app.py
+          uv run pywrangler dev --port 8787 --ip 127.0.0.1             --var API_SUPABASE_URL:http://127.0.0.1:54400 > "$RUNNER_TEMP/worker.log" 2>&1 &
+          for i in $(seq 1 120); do curl -sf -m 5 http://127.0.0.1:8787/health > /dev/null && break; sleep 3; done
+          curl -sf -m 120 http://127.0.0.1:8787/health || { tail -n 80 "$RUNNER_TEMP/worker.log"; exit 1; }
+
+      - name: E2E no runtime do Worker (contratos, 401/403/404/422, isolamento A/B, concorrência)
+        working-directory: apps/api
+        env:
+          E2E_ADMIN_DATABASE_URL: ${{ env.ADMIN_DATABASE_URL }}
+          PYTHONIOENCODING: utf-8
+        run: python worker/e2e.py local http://127.0.0.1:8787 | tee "$RUNNER_TEMP/e2e.txt"
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo "### Worker (workerd local)"
+            echo '```'
+            [ -f "$RUNNER_TEMP/e2e.txt" ] && tail -n 20 "$RUNNER_TEMP/e2e.txt" || tail -n 40 "$RUNNER_TEMP/worker.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Parar o banco
         if: always()

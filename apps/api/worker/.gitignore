@@ -1,0 +1,9 @@
+# Gerados: cópia da API, pacotes vendorizados pelo pywrangler, ambientes e estado local.
+src/app/
+src/vendor/
+python_modules/
+.venv/
+.venv-workers/
+.wrangler/
+node_modules/
+.dev.vars
