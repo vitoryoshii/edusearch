@@ -32,5 +32,7 @@ grant insert (user_id, role) on public.account_roles to edusearch_api;
 create policy account_roles_insert_via_api on public.account_roles
   for insert to edusearch_api
   with check (
-    user_id = (select (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')::uuid)
+    -- current_setting() direto dentro do (select ...): avaliado uma vez por consulta (initplan,
+    -- lint 0003_auth_rls_initplan). NULLIF, extração do "sub" e conversão para uuid ficam fora.
+    user_id = (nullif((select current_setting('request.jwt.claims', true)), '')::jsonb ->> 'sub')::uuid
   );
