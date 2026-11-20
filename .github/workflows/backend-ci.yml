@@ -173,7 +173,11 @@ jobs:
         run: |
           uv sync --frozen
           uv run python sync_app.py
-          uv run pywrangler dev --port 8787 --ip 127.0.0.1             --var API_SUPABASE_URL:http://127.0.0.1:54400 > "$RUNNER_TEMP/worker.log" 2>&1 &
+          # setsid: o Worker (uv → pywrangler → wrangler/node → workerd) ganha sessão e grupo de
+          # processos PRÓPRIOS (PID == PGID). O passo de limpeza encerra só esse grupo.
+          setsid uv run pywrangler dev --port 8787 --ip 127.0.0.1             --var API_SUPABASE_URL:http://127.0.0.1:54400             > "$RUNNER_TEMP/worker.log" 2>&1 < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/worker.pgid"
+          echo "Worker iniciado: PGID $(cat "$RUNNER_TEMP/worker.pgid")"
           for i in $(seq 1 120); do curl -sf -m 5 http://127.0.0.1:8787/health > /dev/null && break; sleep 3; done
           curl -sf -m 120 http://127.0.0.1:8787/health || { tail -n 80 "$RUNNER_TEMP/worker.log"; exit 1; }
 
@@ -183,6 +187,33 @@ jobs:
           E2E_ADMIN_DATABASE_URL: ${{ env.ADMIN_DATABASE_URL }}
           PYTHONIOENCODING: utf-8
         run: python worker/e2e.py local http://127.0.0.1:8787 | tee "$RUNNER_TEMP/e2e.txt"
+
+      # Antes dos post-jobs (setup-uv faz "uv cache prune --ci", que espera o lock do cache):
+      # nenhum processo do Worker pode sobreviver ao job.
+      - name: Encerrar o Worker (grupo de processos deste job)
+        if: always()
+        run: |
+          f="$RUNNER_TEMP/worker.pgid"
+          if [ ! -s "$f" ]; then echo "Worker não foi iniciado."; exit 0; fi
+          pgid="$(cat "$f")"
+          if kill -0 -- "-$pgid" 2>/dev/null; then
+            echo "Encerrando o grupo $pgid:"; pgrep -a -g "$pgid" || true
+            kill -TERM -- "-$pgid" 2>/dev/null || true
+            for i in $(seq 1 20); do kill -0 -- "-$pgid" 2>/dev/null || break; sleep 1; done
+            if kill -0 -- "-$pgid" 2>/dev/null; then
+              echo "Grupo $pgid não terminou com TERM em 20 s; enviando KILL."
+              kill -KILL -- "-$pgid" 2>/dev/null || true
+              sleep 2
+            fi
+          fi
+          if pgrep -g "$pgid" > /dev/null; then
+            echo "::error::Processos do Worker ainda ativos no grupo $pgid"; pgrep -a -g "$pgid"; exit 1
+          fi
+          # Verificação: nada de uv/pywrangler/workerd segurando o cache do uv.
+          if pgrep -a -f "pywrangler|workerd|uv run" | grep -v pgrep; then
+            echo "::error::Processos uv/pywrangler/workerd remanescentes"; exit 1
+          fi
+          echo "Worker encerrado; nenhum processo uv/pywrangler/workerd remanescente."
 
       - name: Resumo
         if: always()
