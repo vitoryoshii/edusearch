@@ -25,6 +25,7 @@ export type FeatureEnv = {
   VITE_STAGE_GOOGLE_AUTH?: string;
   VITE_STAGE_EMAIL_AUTH?: string;
   VITE_STAGE_EMAIL_SIGNUP?: string;
+  VITE_STAGE_PROFILE_PERSISTENCE?: string;
 };
 
 export type FeatureInputs = {
@@ -40,6 +41,12 @@ export type Features = {
   emailAuth: Stage;
   /** Criar conta com e-mail e senha. Padrão "off"; nunca acima do estágio do login por e-mail. */
   emailSignup: Stage;
+  /**
+   * Persistência real do perfil/onboarding na API (Fase 2.6B). Padrão "off" (deployments
+   * públicos). Exige login real; sem ele fica "off". "off" = prévia sem envio (comportamento
+   * anterior); "testing"/"production" = papel e cadastro salvos e lidos do servidor.
+   */
+  profilePersistence: Stage;
   /** Pagamentos: sempre demonstrativos nesta fase (não há como ativá-los pelo frontend). */
   payments: "demo";
   /** Há algum login real disponível neste build. */
@@ -55,11 +62,14 @@ export function resolveFeatures(env: FeatureEnv, inputs: FeatureInputs): Feature
   const googleAuth = inputs.googleReady ? guard(parseStage(env.VITE_STAGE_GOOGLE_AUTH, "testing"), inputs.legalPublished) : "off";
   const emailAuth = inputs.supabaseReady ? guard(parseStage(env.VITE_STAGE_EMAIL_AUTH, "off"), inputs.legalPublished) : "off";
   const emailSignup = min(guard(parseStage(env.VITE_STAGE_EMAIL_SIGNUP, "off"), inputs.legalPublished), emailAuth);
+  const realAuth = googleAuth !== "off" || emailAuth !== "off";
+  const profilePersistence = realAuth ? guard(parseStage(env.VITE_STAGE_PROFILE_PERSISTENCE, "off"), inputs.legalPublished) : "off";
   return {
     googleAuth,
     emailAuth,
     emailSignup,
+    profilePersistence,
     payments: "demo",
-    realAuth: googleAuth !== "off" || emailAuth !== "off",
+    realAuth,
   };
 }

@@ -1,3 +1,4 @@
+import { useDisplayProfile } from "../app/account";
 import { Suspense, useEffect, useRef } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import {
@@ -79,8 +80,9 @@ export function AppShell({ role }: { role: ShellMode }) {
   const items = NAV[role];
   const mobileItems = items.filter((i) => i.mobile);
   const overflow = items.filter((i) => !i.mobile);
-  const name = isAccount ? (auth.profile?.displayName ?? "Sua conta") : (session?.name ?? "Visitante");
-  const avatarSrc = isAccount ? (auth.profile?.avatarUrl ?? undefined) : undefined;
+  const display = useDisplayProfile();
+  const name = isAccount ? (display?.displayName ?? "Sua conta") : (session?.name ?? "Visitante");
+  const avatarSrc = isAccount ? (display?.avatarUrl ?? undefined) : undefined;
   const subtitle = isAccount ? "Conta Google · testes" : `${role === "student" ? "Aluno" : "Professor"} · demo`;
 
   // Ao trocar de tela: volta ao topo e move o foco para o conteúdo (leitores de tela).

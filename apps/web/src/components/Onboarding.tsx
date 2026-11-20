@@ -1,11 +1,12 @@
 import { Suspense, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link, Outlet } from "react-router";
 import { AlertIcon, ArrowLeftIcon, Avatar, Button, Chip, InfoIcon, LoadingState, Logo, ProgressBar } from "@edusearch/ui";
-import { useAuth } from "../app/auth";
+import { useDisplayProfile } from "../app/account";
+import { describeError } from "../lib/api/client";
 
 /** Moldura das telas de boas-vindas e cadastro da conta real (sem menu lateral). */
 export function OnboardingLayout() {
-  const { profile } = useAuth();
+  const profile = useDisplayProfile();
   return (
     <div className="flex min-h-dvh flex-col bg-bg pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <header className="mx-auto flex h-16 w-full max-w-2xl items-center justify-between gap-4 px-5 sm:h-20 sm:px-8">
@@ -35,6 +36,69 @@ export function PreviewNotice() {
         enviado nem salvo até a API de perfis estar disponível. Ao sair, elas são descartadas.
       </span>
     </p>
+  );
+}
+
+/** Aviso do modo servidor: o cadastro é salvo na conta somente ao final, após confirmação. */
+export function SaveNotice({ saved }: { saved: boolean }) {
+  return (
+    <p className="flex items-start gap-2.5 rounded-card bg-surface-muted px-4 py-3 text-sm text-fg" data-testid="onboarding-save-notice">
+      <InfoIcon className="mt-0.5 h-4 w-4 shrink-0 text-link" />
+      <span>
+        {saved ? (
+          <>
+            <strong className="font-semibold text-fg-strong">Cadastro salvo na sua conta.</strong> Você pode revisar e salvar
+            novamente quando quiser.
+          </>
+        ) : (
+          <>
+            <strong className="font-semibold text-fg-strong">Suas respostas serão salvas na sua conta</strong> quando você
+            confirmar na última etapa. Até lá, nada é enviado.
+          </>
+        )}
+      </span>
+    </p>
+  );
+}
+
+/**
+ * Botão final do modo servidor. O cadastro só é considerado concluído depois da resposta de
+ * sucesso da API; erros ficam visíveis (role=alert) com "Tentar novamente".
+ */
+export function SaveProfile({ onSave }: { onSave: () => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave();
+    } catch (e) {
+      setError(describeError(e));
+      setSaving(false);
+    }
+  };
+  return (
+    <div>
+      {error && (
+        <p role="alert" className="mb-3 flex items-start gap-2 text-sm text-danger-text" data-testid="save-error">
+          <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Não foi possível salvar seu cadastro. {error}{" "}
+            <button type="button" className="font-semibold underline underline-offset-4" onClick={() => void run()}>
+              Tentar novamente
+            </button>
+          </span>
+        </p>
+      )}
+      <Button size="lg" fullWidth className="sm:w-auto sm:min-w-48" loading={saving} onClick={() => void run()} data-testid="save-profile">
+        Salvar perfil
+      </Button>
+      <p className="sr-only" aria-live="polite">
+        {saving ? "Salvando seu cadastro…" : ""}
+      </p>
+    </div>
   );
 }
 

@@ -17,6 +17,8 @@ interface ImportMetaEnv {
   readonly VITE_STAGE_EMAIL_AUTH?: string;
   /** Estágio do cadastro por e-mail: off | testing | production (padrão off). */
   readonly VITE_STAGE_EMAIL_SIGNUP?: string;
+  /** Persistência real do perfil na API (off | testing | production). Padrão: off. */
+  readonly VITE_STAGE_PROFILE_PERSISTENCE?: string;
   /** URL pública (https) dos Termos de Uso — definir só quando publicados. */
   readonly VITE_LEGAL_TERMS_URL?: string;
   /** URL pública (https) da Política de Privacidade — definir só quando publicada. */

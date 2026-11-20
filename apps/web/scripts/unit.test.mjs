@@ -283,7 +283,89 @@ import {
   studentStepIssue,
   teacherStepIssue,
   toggle,
+  BUDGET_RANGE_CENTS,
+  budgetRangeFromCents,
+  centsToPriceInput,
+  studentDraftToPayload,
+  studentPayloadToDraft,
+  teacherDraftToPayload,
+  teacherPayloadToDraft,
 } from "../src/lib/onboarding.ts";
+
+describe("onboarding ↔ API (Fase 2.6B): nenhuma resposta descartada", () => {
+  const student = {
+    goal: "  Passar no ENEM  ",
+    level: "medio",
+    subjects: ["matematica", "fisica"],
+    difficulties: ["exercicios", "base"],
+    days: ["seg", "qua"],
+    periods: ["noite"],
+    modality: "online",
+    budget: "50-80",
+  };
+  const teacher = {
+    bio: "Professora fictícia de matemática com foco em ENEM.",
+    subjects: ["matematica"],
+    specialties: "  ",
+    education: "Licenciatura em Matemática",
+    experience: "3-5",
+    methodologies: ["exercicios", "pratica"],
+    methodologyNotes: "Listas comentadas",
+    price: "80,50",
+    durations: [60, 30],
+    modality: "hibrido",
+    days: ["ter"],
+    periods: ["tarde", "noite"],
+  };
+
+  test("aluno: todos os campos do formulário vão para a API", () => {
+    const p = studentDraftToPayload(student);
+    assert.deepEqual(p, {
+      learning_goal: "Passar no ENEM",
+      education_level: "medio",
+      subjects: ["matematica", "fisica"],
+      difficulty_areas: ["exercicios", "base"],
+      preferred_weekdays: ["seg", "qua"],
+      preferred_periods: ["noite"],
+      preferred_modality: "online",
+      budget_min_cents: 5000,
+      budget_max_cents: 8000,
+    });
+    assert.deepEqual(studentPayloadToDraft(p), { ...student, goal: "Passar no ENEM" });
+  });
+
+  test("aluno: as 4 faixas de valor ida e volta, sem perda", () => {
+    for (const [range, { min, max }] of Object.entries(BUDGET_RANGE_CENTS)) assert.equal(budgetRangeFromCents(min, max), range);
+    assert.deepEqual(BUDGET_RANGE_CENTS["ate-50"], { min: null, max: 5000 });
+    assert.deepEqual(BUDGET_RANGE_CENTS["120-mais"], { min: 12000, max: null });
+    assert.equal(budgetRangeFromCents(1, 2), null);
+  });
+
+  test("professor: todos os campos, durações ordenadas, texto vazio vira null", () => {
+    const p = teacherDraftToPayload(teacher);
+    assert.equal(p.price_cents, 8050);
+    assert.deepEqual(p.lesson_durations_minutes, [30, 60]);
+    assert.equal(p.specialties, null);
+    assert.equal(p.methodology, "Listas comentadas");
+    assert.deepEqual(p.teaching_methods, ["exercicios", "pratica"]);
+    assert.deepEqual([p.available_weekdays, p.available_periods], [["ter"], ["tarde", "noite"]]);
+    const back = teacherPayloadToDraft(p);
+    assert.equal(back.price, "80,50");
+    assert.equal(parsePriceToCents(back.price), 8050);
+    assert.deepEqual(back.durations, [30, 60]);
+    assert.equal(back.specialties, "");
+  });
+
+  test("valor em centavos ↔ campo de texto", () => {
+    for (const c of [2000, 8050, 100000, 2005]) assert.equal(parsePriceToCents(centsToPriceInput(c)), c);
+    assert.equal(centsToPriceInput(2005), "20,05");
+  });
+
+  test("rascunho incompleto não é convertido (nunca envia cadastro pela metade)", () => {
+    assert.throws(() => studentDraftToPayload({ ...student, budget: null }));
+    assert.throws(() => teacherDraftToPayload({ ...teacher, price: "abc" }));
+  });
+});
 
 describe("onboarding: próxima etapa após o login", () => {
   test("primeiro acesso (sem papel) vai para as boas-vindas", () => {
@@ -405,7 +487,7 @@ import {
 describe("estágios por recurso", () => {
   const ready = { supabaseReady: true, googleReady: true, legalPublished: false };
   test("padrões: Google em testes, e-mail e cadastro por e-mail desligados, pagamentos demonstrativos", () => {
-    assert.deepEqual(resolveFeatures({}, ready), { googleAuth: "testing", emailAuth: "off", emailSignup: "off", payments: "demo", realAuth: true });
+    assert.deepEqual(resolveFeatures({}, ready), { googleAuth: "testing", emailAuth: "off", emailSignup: "off", profilePersistence: "off", payments: "demo", realAuth: true });
   });
   test("sem configuração técnica tudo fica desligado (versão pública)", () => {
     const f = resolveFeatures({ VITE_STAGE_GOOGLE_AUTH: "production", VITE_STAGE_EMAIL_AUTH: "production" }, { supabaseReady: false, googleReady: false, legalPublished: true });
@@ -427,6 +509,15 @@ describe("estágios por recurso", () => {
     assert.equal(resolveFeatures({ VITE_STAGE_EMAIL_AUTH: "testing", VITE_STAGE_EMAIL_SIGNUP: "production" }, { ...ready, legalPublished: true }).emailSignup, "testing");
     const onlyEmail = resolveFeatures({ VITE_STAGE_GOOGLE_AUTH: "off", VITE_STAGE_EMAIL_AUTH: "testing" }, ready);
     assert.deepEqual([onlyEmail.googleAuth, onlyEmail.emailAuth, onlyEmail.realAuth], ["off", "testing", true]);
+  });
+  test("persistência do perfil: desligada por padrão, exige login real e documentos para produção", () => {
+    assert.equal(resolveFeatures({}, ready).profilePersistence, "off");
+    assert.equal(resolveFeatures({ VITE_STAGE_PROFILE_PERSISTENCE: "testing" }, ready).profilePersistence, "testing");
+    assert.equal(resolveFeatures({ VITE_STAGE_PROFILE_PERSISTENCE: "production" }, ready).profilePersistence, "testing");
+    assert.equal(resolveFeatures({ VITE_STAGE_PROFILE_PERSISTENCE: "production" }, { ...ready, legalPublished: true }).profilePersistence, "production");
+    const noAuth = resolveFeatures({ VITE_STAGE_PROFILE_PERSISTENCE: "testing" }, { supabaseReady: false, googleReady: false, legalPublished: true });
+    assert.equal(noAuth.profilePersistence, "off");
+    assert.equal(resolveFeatures({ VITE_STAGE_PROFILE_PERSISTENCE: "sim" }, ready).profilePersistence, "off");
   });
   test("valores inválidos caem no padrão", () => {
     assert.equal(parseStage("ligado", "off"), "off");

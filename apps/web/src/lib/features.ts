@@ -8,6 +8,7 @@ import { resolveFeatures } from "./stages";
  *   VITE_STAGE_GOOGLE_AUTH   off | testing | production   (padrão: testing, se configurado)
  *   VITE_STAGE_EMAIL_AUTH    off | testing | production   (padrão: off)
  *   VITE_STAGE_EMAIL_SIGNUP  off | testing | production   (padrão: off)
+ *   VITE_STAGE_PROFILE_PERSISTENCE off | testing | production (padrão: off; exige login real)
  *
  * Demonstração: sempre disponível e identificada. Pagamentos: sempre simulados.
  */

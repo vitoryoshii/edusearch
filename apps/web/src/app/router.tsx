@@ -5,6 +5,7 @@ import { OnboardingLayout } from "../components/Onboarding";
 import { sanitizeNext } from "../lib/auth/oauth";
 import { PublicLayout, SuspenseOutlet } from "../components/PublicLayout";
 import { ErrorScreen, RouteError } from "../components/RouteError";
+import { RequireAccount } from "./account";
 import { RequireAuth } from "./auth";
 import { RequireRole } from "./session";
 
@@ -116,7 +117,9 @@ const routes: RouteObject[] = [
         path: "conta",
         element: (
           <RequireAuth>
-            <OnboardingLayout />
+            <RequireAccount>
+              <OnboardingLayout />
+            </RequireAccount>
           </RequireAuth>
         ),
         children: [
@@ -129,7 +132,9 @@ const routes: RouteObject[] = [
         path: "conta",
         element: (
           <RequireAuth>
-            <AppShell role="account" />
+            <RequireAccount>
+              <AppShell role="account" />
+            </RequireAccount>
           </RequireAuth>
         ),
         children: [
