@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.auth.jwt import JwksKeyResolver, TokenVerifier
 from app.config import Settings, get_settings
-from app.db import Database
+from app.db import BaseDatabase, Database
 from app.errors import ApiError, install_error_handlers
 from app.routers import health, me, onboarding
 
@@ -47,7 +47,7 @@ def build_database(settings: Settings) -> Database | None:
     )
 
 
-def _check_connection_role(db: Database, settings: Settings) -> None:
+def _check_connection_role(db: BaseDatabase, settings: Settings) -> None:
     """A API deve conectar com um papel SEM superusuário e SEM BYPASSRLS (edusearch_api).
 
     Em produção, um papel privilegiado impede a inicialização. Fora dela, só avisa (o banco
@@ -69,7 +69,8 @@ def create_app(
     settings: Settings | None = None,
     *,
     token_verifier: TokenVerifier | None = None,
-    database: Database | None = None,
+    database: BaseDatabase | None = None,
+    check_connection_role: bool = True,
 ) -> FastAPI:
     """Monta a aplicação. Testes injetam ``token_verifier`` e ``database``."""
     settings = settings or get_settings()
@@ -82,7 +83,8 @@ def create_app(
             logger.warning("API_SUPABASE_URL ausente: rotas autenticadas responderão 503")
         if db is not None:
             db.open()
-            _check_connection_role(db, settings)
+            if check_connection_role:
+                _check_connection_role(db, settings)
         else:
             logger.warning("API_DATABASE_URL ausente: rotas com banco responderão 503")
         try:

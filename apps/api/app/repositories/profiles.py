@@ -1,4 +1,4 @@
-"""Consultas de perfil e papéis. Rodam sempre dentro de ``Database.user_transaction`` (RLS ativo).
+"""Consultas de perfil e papéis, sempre dentro de ``user_transaction`` (RLS ativo).
 
 As consultas filtram por ``user_id`` explicitamente E o RLS filtra por ``auth.uid()``: as duas
 camadas precisam concordar para uma linha aparecer.

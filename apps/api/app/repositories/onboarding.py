@@ -1,4 +1,4 @@
-"""SQL do onboarding. Sempre dentro de ``Database.user_transaction`` (RLS ativo como o usuário).
+"""SQL do onboarding. Sempre dentro de ``BaseDatabase.user_transaction`` (RLS ativo como o usuário).
 
 Exceção única: :meth:`OnboardingRepository.insert_role`, chamado dentro de
 ``as_connection_role`` (papel edusearch_api; RLS limita o INSERT ao ``sub`` das claims).

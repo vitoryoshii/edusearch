@@ -39,6 +39,8 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Cópias geradas pelo empacotamento do Worker (fonte da verdade: app/).
+extend-exclude = ["worker/src/app", "worker/src/vendor", "worker/python_modules", "worker/.venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S", "BLE"]
@@ -48,3 +50,5 @@ select = ["E", "F", "I", "UP", "B", "S", "BLE"]
 "tests/**" = ["S101", "S105", "S106"]
 # SQL literal nos testes de banco: consultas legíveis numa linha valem mais que o limite de 100.
 "tests/db/**" = ["S101", "S105", "S106", "S608", "E501"]
+# Script de e2e: imprime relatório; tokens fictícios no modo local.
+"worker/e2e.py" = ["S101", "S105", "S106", "E501"]
