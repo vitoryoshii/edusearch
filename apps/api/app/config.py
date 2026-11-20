@@ -1,19 +1,113 @@
-from functools import lru_cache
+"""Configuração da API, lida de variáveis de ambiente (prefixo ``API_``) ou de ``.env``.
 
+Nenhum segredo tem valor padrão. Ver ``apps/api/.env.example``.
+"""
+
+from functools import lru_cache
+from urllib.parse import urlsplit
+
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Algoritmos assimétricos aceitos. HS256 (segredo compartilhado legado) e "none" nunca são aceitos.
+_ALLOWED_JWT_ALGORITHMS = frozenset({"ES256", "RS256", "EdDSA"})
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 class Settings(BaseSettings):
-    """Configurações da API lidas de variáveis de ambiente (ou de um arquivo .env)."""
-
     model_config = SettingsConfigDict(env_file=".env", env_prefix="API_", extra="ignore")
 
-    # Origens liberadas no CORS, separadas por vírgula.
-    cors_origins: str = "http://localhost:5173,http://localhost:5174"
+    environment: str = "development"
+
+    # CORS: origens EXATAS separadas por vírgula. Curinga não é aceito.
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5190"
+
+    # Supabase Auth. Ex.: https://pgltvnwdvatyihrozlvn.supabase.co
+    supabase_url: str | None = None
+    jwt_audience: str = "authenticated"
+    jwt_algorithms: str = "ES256"
+    jwt_leeway_seconds: int = Field(default=10, ge=0, le=60)
+    # A documentação do Supabase pede para não guardar o JWKS por mais de 10 minutos.
+    jwks_cache_seconds: int = Field(default=600, ge=30, le=600)
+    jwks_min_refresh_seconds: int = Field(default=30, ge=1, le=300)
+    jwks_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+
+    # PostgreSQL. O papel de conexão precisa poder "SET ROLE authenticated"
+    # (ver docs/database-design.md).
+    database_url: SecretStr | None = None
+    db_pool_min_size: int = Field(default=1, ge=0, le=20)
+    db_pool_max_size: int = Field(default=5, ge=1, le=50)
+    db_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    db_statement_timeout_ms: int = Field(default=5000, ge=100, le=60000)
+
+    # Hosts aceitos para avatar_url (sufixos). A foto do Google e o Storage do projeto.
+    avatar_allowed_host_suffixes: str = "googleusercontent.com"
+
+    enable_docs: bool = True
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _validate_origins(cls, value: str) -> str:
+        for origin in _split_csv(value):
+            parts = urlsplit(origin)
+            if origin == "*" or "*" in origin:
+                raise ValueError("API_CORS_ORIGINS não aceita curinga; liste as origens exatas")
+            bad_scheme = parts.scheme not in {"http", "https"}
+            if bad_scheme or not parts.netloc or parts.path not in {"", "/"}:
+                raise ValueError(f"origem inválida em API_CORS_ORIGINS: {origin!r}")
+            if parts.scheme == "http" and parts.hostname not in {"localhost", "127.0.0.1"}:
+                raise ValueError(f"origem sem HTTPS só é aceita para localhost: {origin!r}")
+        return value
+
+    @field_validator("supabase_url")
+    @classmethod
+    def _validate_supabase_url(cls, value: str | None) -> str | None:
+        if value is None or value.strip() == "":
+            return None
+        value = value.strip().rstrip("/")
+        parts = urlsplit(value)
+        local = parts.hostname in {"localhost", "127.0.0.1"}
+        if parts.scheme != "https" and not (local and parts.scheme == "http"):
+            raise ValueError("API_SUPABASE_URL deve usar https")
+        if parts.path or parts.query:
+            raise ValueError("API_SUPABASE_URL deve ser só a origem do projeto (sem caminho)")
+        return value
+
+    @field_validator("jwt_algorithms")
+    @classmethod
+    def _validate_algorithms(cls, value: str) -> str:
+        algs = _split_csv(value)
+        if not algs or any(a not in _ALLOWED_JWT_ALGORITHMS for a in algs):
+            raise ValueError(f"API_JWT_ALGORITHMS aceita apenas {sorted(_ALLOWED_JWT_ALGORITHMS)}")
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        return [o.rstrip("/") for o in _split_csv(self.cors_origins)]
+
+    @property
+    def jwt_algorithm_list(self) -> list[str]:
+        return _split_csv(self.jwt_algorithms)
+
+    @property
+    def jwt_issuer(self) -> str | None:
+        return f"{self.supabase_url}/auth/v1" if self.supabase_url else None
+
+    @property
+    def jwks_url(self) -> str | None:
+        return f"{self.supabase_url}/auth/v1/.well-known/jwks.json" if self.supabase_url else None
+
+    @property
+    def avatar_host_suffix_list(self) -> list[str]:
+        suffixes = [s.lower().lstrip(".") for s in _split_csv(self.avatar_allowed_host_suffixes)]
+        if self.supabase_url:
+            host = urlsplit(self.supabase_url).hostname
+            if host:
+                suffixes.append(host.lower())
+        return suffixes
 
 
 @lru_cache
