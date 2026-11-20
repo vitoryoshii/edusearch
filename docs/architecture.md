@@ -63,6 +63,6 @@ Segredos de integrações ficam **somente na API** (variáveis de ambiente); o f
 - Integração Gemini para o matching pedagógico.
 - Google Calendar/Meet para agendamento e aulas.
 - AbacatePay para Pix, split e repasse.
-- Hospedagem gratuita da API (provedor compatível com FastAPI a definir).
+- Hospedagem da API: Cloudflare Python Workers + Hyperdrive (Fase 2.6C) — ver [deployment-workers.md](deployment-workers.md).
 
 Nenhuma dessas integrações está configurada no código atual.

@@ -7,7 +7,7 @@ from fastapi import Depends, Request
 
 from app.auth.dependencies import get_database
 from app.auth.jwt import AuthenticatedUser
-from app.db import Database
+from app.db import BaseDatabase
 from app.errors import ApiError, forbidden, not_found
 from app.repositories.onboarding import OnboardingRepository
 from app.repositories.profiles import ProfileRepository, ProfileRow
@@ -79,7 +79,7 @@ def build_me(
 
 
 class DbProfileService:
-    def __init__(self, database: Database, avatar_host_suffixes: list[str]) -> None:
+    def __init__(self, database: BaseDatabase, avatar_host_suffixes: list[str]) -> None:
         self._db = database
         self._avatar_hosts = avatar_host_suffixes
 
@@ -105,6 +105,6 @@ class DbProfileService:
 
 
 def get_profile_service(
-    request: Request, database: Annotated[Database, Depends(get_database)]
+    request: Request, database: Annotated[BaseDatabase, Depends(get_database)]
 ) -> ProfileService:
     return DbProfileService(database, request.app.state.settings.avatar_host_suffix_list)

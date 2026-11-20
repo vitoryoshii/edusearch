@@ -7,7 +7,7 @@ from fastapi import Depends
 
 from app.auth.dependencies import get_database
 from app.auth.jwt import AuthenticatedUser
-from app.db import Database, as_connection_role
+from app.db import BaseDatabase, as_connection_role
 from app.errors import ApiError, forbidden, not_found
 from app.repositories.onboarding import OnboardingRepository, UnknownSubjectsError
 from app.repositories.profiles import ProfileRepository
@@ -50,7 +50,7 @@ def _unknown_subjects(exc: UnknownSubjectsError) -> ApiError:
 
 
 class DbOnboardingService:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: BaseDatabase) -> None:
         self._db = database
 
     # ------------------------------------------------------------------ papel
@@ -135,6 +135,6 @@ class DbOnboardingService:
 
 
 def get_onboarding_service(
-    database: Annotated[Database, Depends(get_database)],
+    database: Annotated[BaseDatabase, Depends(get_database)],
 ) -> OnboardingService:
     return DbOnboardingService(database)

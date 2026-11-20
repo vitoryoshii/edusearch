@@ -15,7 +15,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.jwt import AuthenticatedUser, TokenVerifier
-from app.db import Database
+from app.db import BaseDatabase
 from app.errors import forbidden, missing_credentials, service_unavailable, unauthorized
 from app.repositories.profiles import ProfileRepository
 
@@ -31,8 +31,8 @@ def get_token_verifier(request: Request) -> TokenVerifier:
     return verifier
 
 
-def get_database(request: Request) -> Database:
-    database: Database | None = getattr(request.app.state, "database", None)
+def get_database(request: Request) -> BaseDatabase:
+    database: BaseDatabase | None = getattr(request.app.state, "database", None)
     if database is None:
         raise service_unavailable(
             "database_unavailable", "Serviço temporariamente indisponível. Tente novamente."
@@ -64,7 +64,7 @@ CurrentUser = Annotated[AuthenticatedUser, Depends(require_user)]
 
 
 def get_user_roles(
-    user: CurrentUser, database: Annotated[Database, Depends(get_database)]
+    user: CurrentUser, database: Annotated[BaseDatabase, Depends(get_database)]
 ) -> set[str]:
     with database.user_transaction(user) as conn:
         return set(ProfileRepository(conn).list_roles(user.id))

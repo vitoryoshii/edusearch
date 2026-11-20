@@ -1,0 +1,24 @@
+// Worker ISOLADO de validação da API EduSearch (Fase 2.6C).
+// Sem rotas/domínios: só o endereço *.workers.dev. O app público NÃO aponta para ele.
+// Segredos: nenhum aqui. A senha do banco fica só na configuração do Hyperdrive (Cloudflare).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "edusearch-api-staging",
+  "main": "src/entry.py",
+  "compatibility_date": "2026-11-20",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": {
+    "API_ENVIRONMENT": "staging",
+    "API_SUPABASE_URL": "https://pgltvnwdvatyihrozlvn.supabase.co",
+    "API_CORS_ORIGINS": "http://localhost:5190",
+    "API_JWT_ALGORITHMS": "ES256",
+    "API_ENABLE_DOCS": "false"
+  },
+  // Criar com: npx wrangler hyperdrive create edusearch-api-db --caching-disabled \
+  //   --connection-string="postgresql://edusearch_api:<senha>@db.<ref>.supabase.co:5432/postgres?sslmode=require"
+  // Em desenvolvimento local, defina CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "00000000000000000000000000000000" }]
+}
