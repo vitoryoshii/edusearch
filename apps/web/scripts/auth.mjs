@@ -482,6 +482,25 @@ await check((await b.evaluate(`document.querySelectorAll('script[src*="accounts.
 const opts = await b.evaluate(`window.__gis.opts`);
 await check(opts?.text === "continue_with" && opts?.locale === "pt-BR" && opts?.type === "standard", "botão \"Continuar com o Google\" em pt-BR");
 await check(opts?.shape === "pill", "botão oficial do GIS com shape \"pill\" (sem CSS no iframe)");
+{
+  // Tema do botão oficial acompanha o app: "outline" no claro, "outline_dark" no escuro
+  // ("filled_black" deixava o botão personalizado com contorno claro destoando do e-mail).
+  // Opções efetivamente ENVIADAS ao GIS; a aparência real foi conferida no GIS de verdade.
+  const seen = {};
+  for (const dark of [false, true]) {
+    await b.viewport(390, { dark });
+    await sleep(500);
+    seen[dark ? "escuro" : "claro"] = await b.evaluate(
+      `(() => { const o = window.__gis.opts; const box = document.querySelector('[data-testid=google-signin]')?.parentElement; return o && [o.theme, o.shape, o.size, o.width === Math.floor(box.clientWidth)].join("/"); })()`,
+    );
+  }
+  await b.viewport(1280);
+  await sleep(200);
+  await check(
+    seen.claro === "outline/pill/large/true" && seen.escuro === "outline_dark/pill/large/true",
+    `tema do GIS: "outline" no claro e "outline_dark" no escuro, pill, large, largura do contêiner (${JSON.stringify(seen)})`,
+  );
+}
 await check(!(await b.evaluate(text("Fase de testes"))), "sem aviso fixo de \"Fase de testes\" na tela de acesso");
 await ctaParity("[data-testid=google-signin] [data-fake-gis]", "login Google ativo");
 await axe("entrada com login Google ativo");

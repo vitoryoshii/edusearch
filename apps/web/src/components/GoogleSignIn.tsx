@@ -116,10 +116,23 @@ function GisButton({ next }: { next: string }) {
       el.replaceChildren();
       gis.renderButton(el, {
         type: "standard",
-        theme: resolved === "dark" ? "filled_black" : "outline",
+        /*
+         * Tema escuro: "outline_dark" (fundo escuro + contorno discreto), o par do "outline"
+         * claro — mesmo desenho do CTA de e-mail (fundo da superfície + borda). O
+         * "filled_black" deixava o botão personalizado ("Continuar como …") com contorno
+         * claro de alto contraste, destoando do e-mail.
+         */
+        theme: resolved === "dark" ? "outline_dark" : "outline",
         size: "large",
         text: "continue_with",
-        shape: "pill", // formato oficial do GIS; nenhum CSS é aplicado ao iframe do Google
+        /*
+         * Formato oficial do GIS; nenhum CSS é aplicado ao iframe do Google.
+         * LIMITAÇÃO (verificada no GIS real, nov/2026): só o botão GENÉRICO respeita "pill".
+         * O botão PERSONALIZADO ("Continuar como <nome>", com avatar e e-mail), exibido a quem
+         * já tem sessão Google e usou este Client ID, é sempre um retângulo de cantos
+         * arredondados, qualquer que seja o "shape". O tema é respeitado nos dois.
+         */
+        shape: "pill",
         logo_alignment: "left",
         width,
         locale: "pt-BR",
