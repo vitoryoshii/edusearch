@@ -62,6 +62,27 @@ def database_url() -> str:
     return TEST_DATABASE_URL
 
 
+# Senha SOMENTE para o banco descartável de testes (local/CI). Nunca usada no remoto.
+API_ROLE_TEST_PASSWORD = "edusearch-api-test-only"
+
+
+@pytest.fixture(scope="session")
+def api_database_url(database_url: str) -> str:
+    """Conexão como edusearch_api (papel de menor privilégio da API), com login de teste."""
+    from psycopg import sql
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        conn.execute(
+            sql.SQL("alter role edusearch_api with login password {}").format(
+                sql.Literal(API_ROLE_TEST_PASSWORD)
+            )
+        )
+    params = conninfo_to_dict(database_url)
+    params.update(user="edusearch_api", password=API_ROLE_TEST_PASSWORD)
+    return make_conninfo(**params)
+
+
 @pytest.fixture
 def admin(database_url: str) -> Iterator[psycopg.Connection]:
     """Conexão do dono do schema (papel de migration / servidor), em autocommit."""

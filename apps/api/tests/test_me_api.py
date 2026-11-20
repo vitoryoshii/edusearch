@@ -124,6 +124,7 @@ def test_get_me_returns_only_the_token_owner(client: TestClient, service, make_t
         "avatar_url",
         "status",
         "roles",
+        "onboarding",
         "created_at",
         "updated_at",
     }
