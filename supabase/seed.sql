@@ -1,0 +1,5 @@
+-- Seed do ambiente LOCAL (supabase db reset). Intencionalmente vazio.
+--
+-- O catálogo de disciplinas vem da migration (dado de referência). Usuários de teste são criados
+-- pelos próprios testes, com e-mails @example.com e nomes fictícios. Nunca coloque aqui dados
+-- reais, e-mails de pessoas ou dados de menores de idade.
