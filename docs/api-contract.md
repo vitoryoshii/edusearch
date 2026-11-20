@@ -79,7 +79,7 @@ As origens são exatas e configuradas em `API_CORS_ORIGINS`: local `http://local
 Público. Não consulta o banco nem expõe configuração.
 
 ```json
-200 { "status": "ok", "service": "edusearch-api", "version": "0.2.0" }
+200 { "status": "ok", "service": "edusearch-api", "version": "0.3.0" }
 ```
 
 ### `GET /v1/me`
@@ -133,65 +133,112 @@ O banco reforça a regra: `authenticated` só tem `UPDATE (display_name, avatar_
 
 ---
 
-## Planejado (próximas fases: proposta para revisão)
-
-Nada abaixo existe na API. O frontend continua com o `mockDataSource` e com os métodos `not_implemented` do adapter HTTP até cada contrato ser implementado.
+## Implementado na Fase 2.6B: onboarding
 
 ### `POST /v1/me/roles`: escolher papel
 
-Substitui a escolha local de "Quero aprender" ou "Quero ensinar".
-
 ```json
-{ "role": "student" }   → 201 { …MeResponse }
+{ "role": "student" }
 ```
 
-- Idempotente: repetir o mesmo papel devolve 200.
-- Só aceita `student` e `teacher`. Papéis administrativos nunca passam por aqui.
-- Escolher `teacher` **não** publica nem aprova nada.
+- Aceita **somente** `student` ou `teacher`. Qualquer outro valor ou campo extra devolve 422. Papéis administrativos nunca passam por aqui.
+- **Idempotente:** devolve `201` quando o papel foi criado agora e `200` quando já existia. Em ambos os casos o corpo é o `MeResponse` atualizado.
+- Uma conta pode ter os dois papéis. Escolher `teacher` **não** aprova nem publica nada.
+- O papel é gravado pelo servidor, que conecta como `edusearch_api`. O RLS limita o INSERT ao `sub` do JWT verificado.
+- Erros: 401, 403 `account_suspended`, 404 `profile_not_found`, 422, 503.
 
-### `GET` e `PUT /v1/me/student-profile`: onboarding do aluno
+### Estado do cadastro em `GET /v1/me`
 
-Exige o papel `student` persistido (senão 403 `role_required`).
+`MeResponse` ganhou o campo `onboarding`. A mudança é aditiva e compatível.
+
+```json
+"onboarding": {
+  "student": { "status": "completed" },
+  "teacher": { "status": "pending", "verification_status": null, "is_published": false }
+}
+```
+
+| Valor | Significado |
+| ----- | ----------- |
+| `student`/`teacher` = `null` | A conta não tem esse papel |
+| `status: "pending"` | Papel escolhido, cadastro ainda não salvo |
+| `status: "completed"` | Cadastro salvo com sucesso no servidor |
+| `verification_status` | `pending` \| `approved` \| `rejected`, definido pelo servidor (`null` até salvar) |
+| `is_published` | Definido pelo servidor. Exige aprovação |
+
+### `GET` e `PUT /v1/me/student-profile`: cadastro do aluno
+
+Exige o papel `student` persistido; sem ele, a resposta é 403 `role_required`. Os dados são **privados**: nenhum endpoint os expõe a terceiros. O `PUT` cria ou substitui o cadastro inteiro numa única transação, e salvar significa cadastro concluído.
 
 ```json
 {
-  "learning_goal": "Passar no Enem",          // 3–200
+  "learning_goal": "Passar no ENEM",          // 3–200, obrigatório
   "education_level": "medio",                 // fundamental | medio | pre-vestibular | graduacao | concursos | livre
-  "subjects": ["matematica", "fisica"],       // slugs de /v1/subjects
-  "difficulties": "…",                        // <= 500
-  "preferred_weekdays": ["seg", "qua"],       // seg … dom
-  "preferred_periods": ["noite"],             // manha | tarde | noite
+  "subjects": ["matematica", "fisica"],       // 1–20 slugs de /v1/subjects, sem repetição
+  "difficulty_areas": ["exercicios"],         // 0–5: base | exercicios | pratica | fala | organizacao
+  "preferred_weekdays": ["seg", "qua"],       // 1–7: seg … dom
+  "preferred_periods": ["noite"],             // 1–3: manha | tarde | noite
   "preferred_modality": "online",             // online | presencial | hibrido
-  "budget_min_cents": 5000,
+  "budget_min_cents": 5000,                   // ao menos um dos dois; min <= max
   "budget_max_cents": 8000
 }
 ```
 
-`GET` retorna o mesmo formato e devolve 404 enquanto o aluno não tiver salvo nada. Os dados do aluno são **privados**: nenhum endpoint os expõe a terceiros.
+A resposta tem o mesmo formato, mais `created_at` e `updated_at`. O `GET` devolve 404 `student_profile_not_found` enquanto nada foi salvo. Uma disciplina inexistente ou inativa resulta em 422 `unknown_subject`, e nada é gravado.
 
-### `GET` e `PUT /v1/me/teacher-profile`: onboarding do professor
+Faixas de valor do formulário (o frontend converte, sem perda):
 
-Exige o papel `teacher` persistido.
+| Faixa na tela | `budget_min_cents` | `budget_max_cents` |
+| ------------- | ------------------ | ------------------ |
+| Até R$ 50 | `null` | `5000` |
+| R$ 50 a R$ 80 | `5000` | `8000` |
+| R$ 80 a R$ 120 | `8000` | `12000` |
+| Acima de R$ 120 | `12000` | `null` |
+
+### `GET` e `PUT /v1/me/teacher-profile`: cadastro do professor
+
+Exige o papel `teacher` persistido. O `PUT` cria ou substitui o cadastro e as disciplinas. As disciplinas mantidas conservam seus níveis; as removidas saem.
 
 ```json
 {
-  "headline": "Professora de matemática",     // 3–120
-  "bio": "…",                                 // 30–600
+  "headline": null,                           // opcional, 3–120
+  "bio": "…",                                 // 30–600, obrigatório
+  "subjects": ["matematica"],                 // 1–20 slugs
+  "specialties": "ENEM, cálculo I",           // opcional, <= 200 ("" vira null)
   "academic_background": "Licenciatura …",    // 3–200
   "experience": "3-5",                        // menos-1 | 1-3 | 3-5 | 5-mais
-  "methodology": "…",                         // <= 400
+  "teaching_methods": ["exercicios"],         // 1–5: pratica | teorica | exercicios | conversacao | projetos
+  "methodology": "Como são minhas aulas…",    // opcional, <= 400
   "price_cents": 8000,                        // 2000–100000
-  "lesson_duration_minutes": 60,              // 30 | 45 | 60 | 90
+  "lesson_durations_minutes": [45, 60],       // 1–4 de: 30 | 45 | 60 | 90
   "modality": "online",
-  "subjects": [{ "slug": "matematica", "levels": ["medio", "pre-vestibular"] }]
+  "available_weekdays": ["ter", "qui"],       // 1–7 (visão geral; horários detalhados virão da agenda)
+  "available_periods": ["tarde", "noite"]     // 1–3
 }
 ```
 
-Resposta: o corpo enviado mais os campos **somente leitura** `verification_status` (`pending` | `approved` | `rejected`), `is_published` e `published_at`. Esses campos são recusados no corpo (422). Uma futura regra de negócio deve decidir se a edição de um perfil aprovado volta para a análise.
+A resposta traz o corpo enviado mais os campos **somente leitura**:
+
+- `lesson_duration_minutes`: a duração principal, que é a menor das oferecidas;
+- `verification_status`: `pending` no primeiro envio;
+- `is_published` (`false`) e `published_at`;
+- `created_at` e `updated_at`.
+
+Enviar `verification_status`, `is_published`, `published_at`, `verified_at` ou `lesson_duration_minutes` devolve **422**. Salvar de novo **não** altera a verificação: um perfil rejeitado continua rejeitado, e um aprovado continua aprovado. Revisar a reanálise após edição de um perfil aprovado fica para uma fase futura. O `GET` devolve 404 `teacher_profile_not_found` enquanto nada foi salvo.
 
 ### `GET /v1/subjects`: catálogo
 
-Público (sem token). Devolve `[{ "slug": "matematica", "name": "Matemática" }]`, só disciplinas ativas.
+Público, sem token. Devolve `[{ "slug": "matematica", "name": "Matemática" }, …]` com as disciplinas ativas, em ordem alfabética. Roda no banco como `anon`.
+
+### Novos códigos de erro
+
+| HTTP | `code` | Quando |
+| ---- | ------ | ------ |
+| 403 | `role_required` | Cadastro de aluno/professor sem o papel correspondente |
+| 404 | `student_profile_not_found` / `teacher_profile_not_found` | Papel escolhido, cadastro ainda não salvo |
+| 422 | `unknown_subject` | Slug inexistente ou inativo |
+
+CORS: `GET`, `POST`, `PUT` e `OPTIONS` (somente os métodos implementados).
 
 ### Ainda sem contrato
 
@@ -201,5 +248,6 @@ Busca de professores, matching (Gemini), horários, agendamento, Pix e Google Ag
 
 | Versão | Fase | Mudanças |
 | ------ | ---- | -------- |
+| 0.3.0 | 2.6B | `POST /v1/me/roles`, cadastros de aluno e professor, `GET /v1/subjects`, `onboarding` em `/v1/me` |
 | 0.2.0 | 2.6A | `GET /v1/me`, `PUT /v1/me/profile`, formato de erro, autenticação JWT (JWKS/ES256) |
 | 0.1.0 | 1 | `GET /health` |

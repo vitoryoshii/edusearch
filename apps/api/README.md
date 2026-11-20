@@ -7,6 +7,10 @@ API Python/FastAPI do EduSearch. Contrato: [docs/api-contract.md](../../docs/api
 | `GET /health` | — | Verifica se a API está no ar |
 | `GET /v1/me` | Bearer (JWT do Supabase) | Perfil do usuário autenticado |
 | `PUT /v1/me/profile` | Bearer | Atualiza nome e foto do próprio perfil |
+| `POST /v1/me/roles` | Bearer | Escolhe aprender/ensinar (idempotente; só `student`/`teacher`) |
+| `GET`/`PUT /v1/me/student-profile` | Bearer + papel `student` | Cadastro do aluno (privado) |
+| `GET`/`PUT /v1/me/teacher-profile` | Bearer + papel `teacher` | Cadastro do professor (verificação/publicação só do servidor) |
+| `GET /v1/subjects` | — | Catálogo de disciplinas |
 
 ## Estrutura
 
@@ -71,7 +75,8 @@ Todas as variáveis estão em [.env.example](.env.example). As principais:
 | `API_CORS_ORIGINS` | `http://localhost:5173,…:5174,…:5190` | Origens exatas (sem curinga). Produção: `https://app.edusearch.com.br` |
 | `API_SUPABASE_URL` | — | Origem do projeto. Define o emissor e o JWKS |
 | `API_JWT_ALGORITHMS` | `ES256` | Somente assimétricos (`ES256`, `RS256`, `EdDSA`) |
-| `API_DATABASE_URL` | — | Segredo. Papel com permissão de `SET ROLE authenticated` (ver database-design.md) |
+| `API_DATABASE_URL` | — | Segredo. Conecta como `edusearch_api` (menor privilégio; ver database-design.md → "Conexão da API") |
+| `API_ENVIRONMENT` | `development` | Em `production`, a API não inicia com papel de conexão superusuário/BYPASSRLS |
 | `API_AVATAR_ALLOWED_HOST_SUFFIXES` | `googleusercontent.com` | Hosts aceitos para foto (o do projeto Supabase é incluído) |
 
 Dependências: faixas em `pyproject.toml` e versões exatas em `constraints.txt`. Não há Redis, Celery nem outra infraestrutura paga.
