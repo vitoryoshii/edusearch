@@ -12,6 +12,7 @@ PostgreSQL do Supabase (`edusearch-db`, ref. `pgltvnwdvatyihrozlvn`). Esta fase 
 | `20261119120100_rls_policies.sql` | Revoga o acesso padrão da Data API e concede privilégios mínimos (por coluna quando necessário), além das políticas RLS |
 | `20261119120200_signup_admission_hook.sql` | Allowlist `private.signup_allowlist` e função `public.hook_before_user_created` (o hook **não** é ligado) |
 | `20261119120300_harden_rls_auto_enable.sql` | Revoga EXECUTE de `public.rls_auto_enable()` para PUBLIC, anon e authenticated, e fixa o `search_path` |
+| `20261120013704_disable_unused_pg_graphql.sql` | `drop extension if exists pg_graphql` (sem CASCADE). Não faz nada no remoto, que não tem a extensão |
 
 O rollback fica em `supabase/rollback/20261119_fase_2_6a_down.sql`, fora da pasta de migrations.
 
@@ -158,6 +159,16 @@ A lista de *Test users* do Google Cloud **não basta**: quem obtiver um ID token
 
 Desativar: desligar o hook no painel. A função pode permanecer.
 
+## GraphQL (`pg_graphql`) desativado
+
+O EduSearch não usa GraphQL: nenhum código em `apps/web`, `apps/api` ou nas migrations o referencia. A imagem local do Supabase instala `pg_graphql` por padrão, e com ela toda tabela com SELECT para anon/authenticated aparece no schema GraphQL (lints `0026_pg_graphql_anon_table_exposed` e `0027_pg_graphql_authenticated_table_exposed`). O projeto remoto `edusearch-db` não tem a extensão.
+
+- A migration `20261120013704_disable_unused_pg_graphql.sql` executa `drop extension if exists pg_graphql`. **Sem CASCADE**: se algo depender da extensão, ela falha em vez de apagar o objeto.
+- `supabase/config.toml` expõe só `public` em `[api].schemas` (retirado `graphql_public`).
+- GRANTs e políticas RLS **não mudam**. Os testes `test_table_grants_match_expected_matrix` e `test_policies_match_expected_set` fixam a matriz exata, e `test_pg_graphql_is_not_installed` confere a remoção.
+- O Security Advisor continua bloqueando qualquer WARN/ERROR novo no CI.
+- **Rollback** (só se GraphQL vier a ser adotado conscientemente): `create extension if not exists pg_graphql with schema graphql;` e devolver `graphql_public` a `[api].schemas`. Antes, revise quais tabelas ficarão visíveis no GraphQL.
+
 ## `public.rls_auto_enable()`
 
 A função existe no projeto remoto (event trigger que liga o RLS em tabelas novas), mas não aparece nas migrations porque foi criada fora delas. Problemas apontados: EXECUTE padrão para PUBLIC/anon/authenticated (lints 0028/0029 quando é `security definer`) e possível `search_path` mutável (lint 0011).
@@ -192,13 +203,13 @@ Nenhum passo abaixo foi executado. Cada um exige aprovação explícita do respo
 ```bash
 supabase login                      # conta com acesso ao projeto edusearch-db
 supabase link --project-ref pgltvnwdvatyihrozlvn
-supabase db push --dry-run          # deve listar exatamente as 4 migrations da 2.6A
+supabase db push --dry-run          # deve listar exatamente as 5 migrations da 2.6A
 supabase db push                    # somente após a aprovação
 ```
 
 **Validar**
 
-1. *Advisors → Security Advisor*: nenhum alerta novo relacionado a `profiles`, `account_roles`, `subjects`, `student_profiles`, `teacher_profiles`, `teacher_subjects`, `private.*` ou `hook_before_user_created`. Os alertas de `rls_auto_enable` devem sumir.
+1. *Advisors → Security Advisor*: nenhum alerta novo relacionado a `profiles`, `account_roles`, `subjects`, `student_profiles`, `teacher_profiles`, `teacher_subjects`, `private.*` ou `hook_before_user_created`. Os alertas de `rls_auto_enable` devem sumir. Confirme também que `select extname from pg_extension where extname = 'pg_graphql'` continua vazio.
 2. SQL:
    ```sql
    select relname, relrowsecurity from pg_class

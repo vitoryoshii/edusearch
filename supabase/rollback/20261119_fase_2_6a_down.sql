@@ -7,6 +7,12 @@
 -- Não reverte o endurecimento de public.rls_auto_enable() (revogar EXECUTE de anon/authenticated
 -- não tem efeito colateral). Se for mesmo necessário, restaure os privilégios anotados no backup.
 --
+-- pg_graphql (migration 20261120013704): NÃO é recriada aqui. O EduSearch não usa GraphQL e o
+-- projeto remoto nunca teve a extensão. Se algum dia for necessária, recrie conscientemente
+-- (isso volta a expor no GraphQL as tabelas com SELECT para anon/authenticated):
+--   create extension if not exists pg_graphql with schema graphql;
+-- e devolva "graphql_public" a [api].schemas em supabase/config.toml.
+--
 -- Depois de executar, remova os registros das versões em supabase_migrations.schema_migrations
 -- (bloco no final), para que o histórico do CLI fique coerente.
 
@@ -41,6 +47,8 @@ drop type if exists public.account_role;
 drop schema if exists private;
 
 delete from supabase_migrations.schema_migrations
- where version in ('20261119120000', '20261119120100', '20261119120200', '20261119120300');
+ where version in (
+   '20261119120000', '20261119120100', '20261119120200', '20261119120300', '20261120013704'
+ );
 
 commit;
