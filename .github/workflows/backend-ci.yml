@@ -1,0 +1,133 @@
+# CI do backend (apps/api) e do banco (supabase/).
+#
+# - api: lint (ruff), formatação e testes da FastAPI SEM banco (JWT com chaves efêmeras geradas no
+#   teste, JWKS local, serviço falso, banco inalcançável → 503).
+# - database: sobe SOMENTE o PostgreSQL local do Supabase CLI (imagem oficial, Docker do runner),
+#   que cria o schema do zero aplicando supabase/migrations; roda o lint do Supabase, os testes de
+#   RLS/integridade/hook e da API contra esse banco, e os lints do Security Advisor (splinter).
+#
+# Nada aqui usa segredos ou toca o projeto remoto: sem SUPABASE_ACCESS_TOKEN, sem `supabase link`,
+# sem `db push`. As credenciais postgres/postgres são as padrão do banco LOCAL e descartável.
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "supabase/**"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "supabase/**"
+      - ".github/workflows/backend-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+env:
+  PYTHON_VERSION: "3.13"
+  SUPABASE_CLI_VERSION: "2.78.1"
+  # Lints do Security Advisor: commit fixo + SHA-256 do arquivo (integridade do que é executado).
+  SPLINTER_COMMIT: cc529aa9d3eeffd2e64576c7591e60b22abd205c
+  SPLINTER_SHA256: e652eb2be316eaf44ad523e8b0e6e76bb4952942be86692811064d0b72402b46
+
+jobs:
+  api:
+    name: API — lint e testes (sem banco)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            apps/api/pyproject.toml
+            apps/api/constraints.txt
+      - name: Instalar dependências (versões fixas)
+        run: pip install -c constraints.txt -e ".[dev]"
+      - name: Ruff (lint)
+        run: ruff check --output-format=github .
+      - name: Ruff (formatação)
+        run: ruff format --check .
+      - name: Testes (testes de banco são pulados aqui)
+        run: pytest -q -rs
+
+  database:
+    name: Banco — migrations, RLS e Security Advisor
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            apps/api/pyproject.toml
+            apps/api/constraints.txt
+      - name: Instalar dependências da API
+        working-directory: apps/api
+        run: pip install -c constraints.txt -e ".[dev]"
+
+      - name: Criar banco limpo e aplicar as migrations
+        run: supabase db start
+
+      - name: Migrations aplicadas
+        run: |
+          supabase migration list --local | tee migrations.txt
+          for f in supabase/migrations/*.sql; do
+            version=$(basename "$f" | cut -d_ -f1)
+            grep -q "$version" migrations.txt || { echo "::error::migration $version não aplicada"; exit 1; }
+          done
+
+      - name: Lint do Supabase (plpgsql_check)
+        run: supabase db lint --local --schema public,private --level warning --fail-on error
+
+      - name: Testes de RLS, integridade, hook e API com banco
+        working-directory: apps/api
+        run: pytest -q -rs tests/db
+
+      - name: Security Advisor (splinter)
+        working-directory: apps/api
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/supabase/splinter/${SPLINTER_COMMIT}/splinter.sql" \
+            -o "$RUNNER_TEMP/splinter.sql"
+          echo "${SPLINTER_SHA256}  $RUNNER_TEMP/splinter.sql" | sha256sum -c -
+          python scripts/security_advisor.py "$TEST_DATABASE_URL" "$RUNNER_TEMP/splinter.sql" \
+            | tee "$RUNNER_TEMP/advisor.txt"
+          {
+            echo "### Security Advisor (banco local recém-migrado)"
+            echo '```'
+            cat "$RUNNER_TEMP/advisor.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Recriar do zero (reset) e testar de novo
+        run: |
+          supabase db reset --local
+          cd apps/api && pytest -q tests/db
+
+      - name: Parar o banco
+        if: always()
+        run: supabase stop --no-backup
