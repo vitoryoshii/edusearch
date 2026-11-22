@@ -6,7 +6,6 @@ import {
   Button,
   CalendarIcon,
   Card,
-  InfoIcon,
   Input,
   PlusIcon,
   Select,
@@ -47,9 +46,16 @@ export default function AccountAgenda() {
 function AgendaPage() {
   return (
     <>
-      <PageHeader title="Agenda" description="Conecte a Google Agenda e defina quando você pode dar aulas. Horários de Brasília." />
+      <PageHeader
+        title="Agenda"
+        description={
+          <>
+            Conecte a Google Agenda e defina quando você pode dar aulas. Horários de Brasília.{" "}
+            <span data-testid="scheduling-test-notice">Aulas do piloto, sem cobrança.</span>
+          </>
+        }
+      />
       <div className="space-y-5">
-        <TestPhaseNotice />
         <CalendarConnectionCard />
         <AvailabilityEditor />
         <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -60,18 +66,6 @@ function AgendaPage() {
         </Card>
       </div>
     </>
-  );
-}
-
-function TestPhaseNotice() {
-  return (
-    <Card tone="muted" className="flex items-start gap-3 text-sm" data-testid="scheduling-test-notice">
-      <InfoIcon className="mt-0.5 h-5 w-5 shrink-0 text-link" />
-      <p className="leading-relaxed text-fg">
-        <strong className="font-semibold text-fg-strong">Fase de testes:</strong> as aulas reservadas aqui são de teste, sem
-        cobrança e sem pagamento. Não há aulas comerciais nesta fase.
-      </p>
-    </Card>
   );
 }
 

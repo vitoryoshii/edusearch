@@ -12,7 +12,7 @@ export default function AccountLessons() {
   const student = hasRole(me, "student");
   return (
     <>
-      <PageHeader title="Minhas aulas" description="Horários de Brasília. O link do Google Meet aparece em cada aula confirmada." />
+      <PageHeader title="Minhas aulas" description="Horários de Brasília. O link do Google Meet aparece em cada aula confirmada. Aulas do piloto, sem cobrança." />
       <Card>
         <LessonList
           emptyAction={

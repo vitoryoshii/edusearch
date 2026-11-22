@@ -828,7 +828,7 @@ b.setStep("início da conta (sessão existente)");
 await b.go(testBase + "/conta", 1800);
 await check(await waitFor(ctaVisible("aluno", "/conta/cadastro/aluno")), "usuário sem perfil concluído vê \"Continuar cadastro\"");
 await check(await b.evaluate(`${text("Cadastro em análise")} && !/cadastro conclu[ií]do/i.test(document.body.innerText)`), "perfil provisório não aparece como cadastro concluído");
-await check(await b.evaluate(`${text("Sessão autenticada")} && !${text("Modo demonstração")}`), "sessão autenticada diferenciada da demonstração");
+await check(await b.evaluate(`!!document.querySelector('[data-shell=account]') && !${text("Modo demonstração")}`), "sessão autenticada diferenciada da demonstração");
 await check(await b.evaluate(`document.querySelector('main [data-testid=profile-email]')?.textContent.trim() === 'ana.teste@example.com'`), "início da conta mostra nome, e-mail e foto");
 await axe("início da conta");
 await shot("conta-inicio", [390, 1440]);
