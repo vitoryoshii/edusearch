@@ -6,7 +6,7 @@ Nenhum segredo tem valor padrão. Ver ``apps/api/.env.example``.
 from functools import lru_cache
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Algoritmos assimétricos aceitos. HS256 (segredo compartilhado legado) e "none" nunca são aceitos.
@@ -64,6 +64,64 @@ class Settings(BaseSettings):
     token_encryption_key: SecretStr | None = None
     token_encryption_key_version: int = Field(default=1, ge=1, le=32767)
     google_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+
+    # ------------------------------------------------------------------ pagamentos (Fase 5)
+    # off (padrão) | sandbox (chave abc_dev_, sem dinheiro real) |
+    # production (chave abc_prod_ + aprovação operacional).
+    payments_stage: str = "off"
+    abacatepay_api_key: SecretStr | None = None
+    # Segredo do webhook (32+ caracteres) cadastrado ao criar o webhook na AbacatePay.
+    abacatepay_webhook_secret: SecretStr | None = None
+    # Chave PÚBLICA HMAC da AbacatePay (constante da documentação de segurança dos webhooks).
+    # Copie exatamente de docs.abacatepay.com/pages/notificacoes/seguranca. Sem ela, todo webhook
+    # é recusado.
+    abacatepay_webhook_public_key: SecretStr | None = None
+    # Split Pix com subcontas: só depois que o suporte da AbacatePay habilitar na conta.
+    abacatepay_split_enabled: bool = False
+    # Autorização operacional EXPLÍCITA para cobrar de verdade.
+    payments_production_approved: bool = False
+    payments_hold_seconds: int = Field(default=900, ge=300, le=3600)
+    abacatepay_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+
+    @field_validator("payments_stage")
+    @classmethod
+    def _validate_payments_stage(cls, value: str) -> str:
+        if value not in {"off", "sandbox", "production"}:
+            raise ValueError("API_PAYMENTS_STAGE aceita apenas off, sandbox ou production")
+        return value
+
+    @model_validator(mode="after")
+    def _payments_guardrails(self) -> "Settings":
+        """Impede subir com chave do ambiente errado (falha na inicialização, não na cobrança)."""
+        key = self.abacatepay_api_key.get_secret_value() if self.abacatepay_api_key else ""
+        if key.startswith("abc_prod_") and self.payments_stage != "production":
+            raise ValueError(
+                "chave de PRODUÇÃO da AbacatePay só é aceita com API_PAYMENTS_STAGE=production"
+            )
+        if self.payments_stage == "sandbox" and key and not key.startswith("abc_dev_"):
+            raise ValueError("API_PAYMENTS_STAGE=sandbox exige chave de desenvolvimento (abc_dev_)")
+        if self.payments_stage == "production":
+            if not key.startswith("abc_prod_"):
+                raise ValueError(
+                    "API_PAYMENTS_STAGE=production exige chave de produção (abc_prod_)"
+                )
+            if not self.payments_production_approved:
+                raise ValueError(
+                    "produção exige API_PAYMENTS_PRODUCTION_APPROVED=true (autorização operacional)"
+                )
+        secret = self.abacatepay_webhook_secret
+        if secret is not None and len(secret.get_secret_value()) < 32:
+            raise ValueError("API_ABACATEPAY_WEBHOOK_SECRET precisa ter ao menos 32 caracteres")
+        return self
+
+    @property
+    def payments_configured(self) -> bool:
+        return bool(
+            self.payments_stage != "off"
+            and self.abacatepay_api_key
+            and self.abacatepay_webhook_secret
+            and self.abacatepay_webhook_public_key
+        )
 
     @field_validator("scheduling_stage")
     @classmethod

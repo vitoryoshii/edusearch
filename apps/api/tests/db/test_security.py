@@ -17,6 +17,10 @@ APP_TABLES = [
     "student_subjects",
     "teacher_availability",
     "lessons",
+    "payment_intents",
+    "payment_splits",
+    "teacher_payout_accounts",
+    "refund_requests",
 ]
 
 
@@ -231,6 +235,11 @@ EXPECTED_TABLE_GRANTS = {
     ("authenticated", "teacher_availability", "DELETE"),
     ("authenticated", "lessons", "SELECT"),
     ("edusearch_api", "lessons", "SELECT"),
+    # Fase 5A: tabelas financeiras são SOMENTE LEITURA para o app (escrita só por funções private).
+    ("authenticated", "payment_intents", "SELECT"),
+    ("authenticated", "payment_splits", "SELECT"),
+    ("authenticated", "teacher_payout_accounts", "SELECT"),
+    ("authenticated", "refund_requests", "SELECT"),
 }
 
 EXPECTED_POLICIES = {
@@ -260,6 +269,10 @@ EXPECTED_POLICIES = {
     ("lessons", "lessons_update_participant", "UPDATE"),
     ("lessons", "lessons_select_via_api", "SELECT"),
     ("lessons", "lessons_update_calendar_via_api", "UPDATE"),
+    ("payment_intents", "payment_intents_select_participant", "SELECT"),
+    ("payment_splits", "payment_splits_select_teacher", "SELECT"),
+    ("teacher_payout_accounts", "teacher_payout_accounts_select_own", "SELECT"),
+    ("refund_requests", "refund_requests_select_participant", "SELECT"),
 }
 
 
