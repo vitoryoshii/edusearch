@@ -28,6 +28,7 @@ export const STALE_MS = {
   payments: 15_000,
   paymentsStatus: 5 * 60_000,
   payoutAccount: 60_000,
+  teacherFinance: 15_000,
 } as const;
 
 /** Quanto tempo um dado sem uso fica em memória antes de ser descartado. */

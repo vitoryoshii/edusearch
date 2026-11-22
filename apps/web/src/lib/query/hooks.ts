@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../app/auth";
 import { accountApi } from "../api/account";
-import { paymentsApi, type CheckoutRequest, type Payment } from "../api/payments";
+import { paymentsApi, type CheckoutRequest, type Payment, type TeacherFinancePeriod } from "../api/payments";
 import { pollDelay } from "../payments";
 import { schedulingApi, type CalendarConnection, type CatalogQuery, type Lesson, type LessonRequest } from "../api/scheduling";
 import type { AsyncState } from "../hooks/useAsync";
@@ -287,6 +287,17 @@ export function usePayoutAccountQuery(enabled = true) {
     queryKey: queryKeys.payoutAccount(uid),
     queryFn: ({ signal }) => paymentsApi.payoutAccount(signal),
     staleTime: STALE_MS.payoutAccount,
+    enabled: enabled && !!uid,
+  });
+}
+
+/** Painel financeiro agregado pela API; a chave é privada por conta e período. */
+export function useTeacherFinanceQuery(period: TeacherFinancePeriod, enabled = true) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.teacherFinance(uid, period),
+    queryFn: ({ signal }) => paymentsApi.teacherFinance(period, signal),
+    staleTime: STALE_MS.teacherFinance,
     enabled: enabled && !!uid,
   });
 }

@@ -303,7 +303,7 @@ async function lessons() {
     const idx = await run(`[...document.querySelectorAll("main article")].findIndex((a) => a.querySelector("time")?.getAttribute("datetime") === ${JSON.stringify(start)})`);
     if (idx < 0) throw new Error("aula reservada não encontrada em Minhas aulas");
     await run(`[...document.querySelectorAll("main article")][${idx}].querySelector("button[aria-label^='Detalhes']").click()`);
-    await until(`!!document.querySelector("dialog[open]") && ${textHas("Código da reserva")} && ${textHas("Não cobrado (demonstração)")}`, "detalhes da aula");
+    await until(`!!document.querySelector("dialog[open]") && ${textHas("Código da reserva")} && ${textHas("Pagamento confirmado (simulado)")}`, "detalhes da aula");
     await shot("6-detalhes");
     await clickText("button", "Cancelar aula"); // no diálogo de detalhes
     await until(`${textHas("Cancelar esta aula?")}`, "confirmação de cancelamento");

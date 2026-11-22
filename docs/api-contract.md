@@ -302,6 +302,7 @@ Detalhes, estados, casos difíceis e variáveis em [payments.md](payments.md). I
 | GET | `/v1/me/payments` | histórico |
 | GET/PUT | `/v1/me/payout-account` | professor: subconta para split (só os 4 últimos dígitos ficam salvos) |
 | POST | `/v1/payments/webhooks/abacatepay` | público; segredo + HMAC-SHA256 do corpo bruto |
+| GET | `/v1/me/teacher-finance?period=30d` | professor; agregados e histórico próprios, em centavos; nunca saldo disponível |
 
 `GET /v1/me/lessons`: `status` agora inclui `awaiting_payment` e `expired`; `is_test` é `false`
 para aulas pagas, que trazem `payment {id, status, amount_cents}`.

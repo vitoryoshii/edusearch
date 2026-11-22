@@ -269,6 +269,15 @@ function api(method, path, sub, body, query = new URLSearchParams()) {
     return [200, paymentOut(p, sub)];
   }
   if (path === "/v1/me/payout-account" && method === "GET") return teacher ? [200, { status: "split_unavailable" }] : err(403, "role_required", "Disponível apenas para contas de professor.");
+  if (path === "/v1/me/teacher-finance" && method === "GET") {
+    if (!teacher) return err(403, "role_required", "Disponível apenas para contas de professor.");
+    const mine = state.payments.filter((p) => p.status === "paid");
+    return [200, {
+      period: query.get("period") ?? "30d", environment: "sandbox", commission_bps: 1500,
+      summary: { gross_cents: mine.length * PRICE, commission_cents: mine.length * 1200, teacher_share_cents: mine.length * 6800, gateway_fee_cents: 0, paid_lessons: mine.length, pending_lessons: state.payments.filter((p) => p.status === "pending").length, cancelled_lessons: state.payments.filter((p) => ["cancelled", "expired", "failed"].includes(p.status)).length, refunded_lessons: state.payments.filter((p) => p.status === "refunded").length },
+      payout_account: { status: "split_unavailable" }, payments: state.payments.map((p) => paymentOut(p, sub)).reverse(),
+    }];
+  }
   if (path === "/v1/me/payments") return [200, state.payments.filter((p) => sub === USERS.T.id || p.sub === sub).map((p) => paymentOut(p, sub)).reverse()];
   return err(404, "not_found", "Recurso não encontrado.");
 }
@@ -547,6 +556,10 @@ await check(await waitFor(`${payStatus} === 'paid'`), "professor vê o pagamento
 await check(await waitFor(text("R$ 68,00") + " && " + text("R$ 12,00")), "professor vê comissão (15%) e a parte dele, calculadas pelo servidor");
 await check(!(await b.evaluate("!!document.querySelector('[data-testid=pix-code]') || !!document.querySelector('[data-testid=pix-simulate]')")), "professor não vê Pix nem simulação");
 await axe("pagamento (professor)");
+await b.go(base + "/conta/pagamentos", 1500);
+await check(await waitFor("!!document.querySelector('[data-testid=teacher-finance]')") && (await b.evaluate(text("Parcela atribuída"))) && (await b.evaluate(text("não é saldo disponível"))), "financeiro do professor: valores simulados sem tratar parcela como saldo disponível");
+await axe("financeiro do professor");
+await fitsPayment("financeiro-professor", [320, 768, 1440]);
 await b.go(base + "/conta/configuracoes", 1500);
 await check(await waitFor("!!document.querySelector('[data-testid=payout-unavailable]') && !document.querySelector('[data-testid=payout-form]')"), "recebimentos: split não habilitado é informado, sem formulário nem repasse simulado");
 await axe("configurações (recebimentos)");

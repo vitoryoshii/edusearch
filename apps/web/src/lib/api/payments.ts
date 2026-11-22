@@ -65,12 +65,35 @@ export type PayoutAccount = {
   created_at?: string | null;
 };
 
+export type TeacherFinancePeriod = "7d" | "30d" | "90d";
+
+/** Leitura do backend: parcela atribuída não significa saldo disponível ou repasse concluído. */
+export type TeacherFinance = {
+  period: TeacherFinancePeriod;
+  environment: "sandbox" | "production";
+  commission_bps: number;
+  summary: {
+    gross_cents: number;
+    commission_cents: number;
+    teacher_share_cents: number;
+    gateway_fee_cents: number;
+    paid_lessons: number;
+    pending_lessons: number;
+    cancelled_lessons: number;
+    refunded_lessons: number;
+  };
+  payout_account: PayoutAccount;
+  payments: Payment[];
+};
+
 export const paymentsApi = {
   status: (signal?: AbortSignal) => apiRequest<PaymentsStatusInfo>("/v1/payments/status", { signal }),
   checkout: (body: CheckoutRequest) => apiRequest<Payment>("/v1/payments/checkout", { method: "POST", body }),
   get: (id: string, signal?: AbortSignal) => apiRequest<Payment>(`/v1/payments/${encodeURIComponent(id)}`, { signal }),
   simulate: (id: string) => apiRequest<Payment>(`/v1/payments/${encodeURIComponent(id)}/simulate`, { method: "POST" }),
   history: (signal?: AbortSignal) => apiRequest<Payment[]>("/v1/me/payments", { signal }),
+  teacherFinance: (period: TeacherFinancePeriod, signal?: AbortSignal) =>
+    apiRequest<TeacherFinance>(`/v1/me/teacher-finance?period=${period}`, { signal }),
   payoutAccount: (signal?: AbortSignal) => apiRequest<PayoutAccount>("/v1/me/payout-account", { signal }),
   savePayoutAccount: (body: { legal_name: string; tax_id: string }) =>
     apiRequest<PayoutAccount>("/v1/me/payout-account", { method: "PUT", body }),
