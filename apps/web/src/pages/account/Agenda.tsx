@@ -213,20 +213,30 @@ function AvailabilityEditor() {
             <div className="space-y-3">
               {windows.length === 0 && <p className="text-sm text-fg-muted">Nenhuma janela cadastrada.</p>}
               {windows.map((w, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 sm:grid-cols-[10rem_8rem_8rem_auto]">
-                  <Select
-                    label="Dia"
-                    hideLabel={i > 0}
-                    value={w.weekday}
-                    onChange={(e) => update(i, { weekday: e.target.value as Weekday })}
-                    options={WEEKDAY_ORDER.map((d) => ({ value: d, label: WEEKDAY_LABEL[d] }))}
-                    className="col-span-3 sm:col-span-1"
-                  />
-                  <Input label="Início" hideLabel={i > 0} type="time" step={900} value={w.start} onChange={(e) => update(i, { start: e.target.value })} />
-                  <Input label="Fim" hideLabel={i > 0} type="time" step={900} value={w.end === "24:00" ? "23:59" : w.end} onChange={(e) => update(i, { end: e.target.value === "23:59" ? "24:00" : e.target.value })} />
-                  <Button variant="ghost" size="sm" className="mb-1" aria-label={`Remover janela de ${WEEKDAY_LABEL[w.weekday]}`} onClick={() => setDraft(windows.filter((_, j) => j !== i))}>
-                    <TrashIcon className="h-4 w-4" />
-                  </Button>
+                /*
+                  Sem largura mínima implícita: o wrapper de cada campo é item de grid/flex com
+                  min-width:auto, e input type=time não encolhe abaixo do conteúdo ("09:00 AM" em
+                  navegadores en-US). Por isso min-w-0 + trilhas minmax(0,1fr).
+                  - Celular: [Dia ......][lixeira] / Início e Fim empilhados (< 400px) ou lado a lado.
+                  - sm+: uma linha [Dia][Início][Fim][lixeira] (sm:contents + order).
+                */
+                <div key={i} className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end" data-testid="availability-row">
+                  <div className="flex min-w-0 items-end gap-2 sm:contents">
+                    <Select
+                      label="Dia"
+                      value={w.weekday}
+                      onChange={(e) => update(i, { weekday: e.target.value as Weekday })}
+                      options={WEEKDAY_ORDER.map((d) => ({ value: d, label: WEEKDAY_LABEL[d] }))}
+                      className="min-w-0 flex-1"
+                    />
+                    <Button variant="ghost" size="sm" className="mb-1 shrink-0 sm:order-last" aria-label={`Remover janela de ${WEEKDAY_LABEL[w.weekday]}`} onClick={() => setDraft(windows.filter((_, j) => j !== i))}>
+                      <TrashIcon className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-1 gap-2 min-[400px]:grid-cols-2 sm:contents">
+                    <Input label="Início" className="min-w-0" type="time" step={900} value={w.start} onChange={(e) => update(i, { start: e.target.value })} />
+                    <Input label="Fim" className="min-w-0" type="time" step={900} value={w.end === "24:00" ? "23:59" : w.end} onChange={(e) => update(i, { end: e.target.value === "23:59" ? "24:00" : e.target.value })} />
+                  </div>
                 </div>
               ))}
               <div className="flex flex-wrap items-center gap-2 pt-1">

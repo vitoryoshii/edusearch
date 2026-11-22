@@ -283,6 +283,45 @@ async function shot(name, widths = [320, 390, 768, 1440]) {
 }
 const calendarStatus = `document.querySelector('[data-testid=calendar-status]')?.dataset.status`;
 
+/**
+ * Nenhum elemento dos cartões da agenda passa da borda do PRÓPRIO cartão (mais rigoroso que "sem
+ * rolagem": um campo pode vazar do cartão sem chegar à borda da tela). Com `stress`, simula o
+ * controle nativo de horário largo do Chrome em inglês ("09:00 AM", CI Linux) em qualquer máquina.
+ */
+const CARDS = ["calendar-card", "availability-card", "booking-card", "lesson-list"];
+async function fitsInCards(label, { stress = false, widths = [320, 360, 390, 430, 768, 1440] } = {}) {
+  if (stress) await b.evaluate(`(() => { const s = document.createElement('style'); s.id = 'stress-time'; s.textContent = 'input[type=time]{min-width:9.5rem}'; document.head.append(s); return true; })()`);
+  const bad = [];
+  for (const w of widths)
+    for (const dark of [false, true]) {
+      await b.viewport(w, { dark });
+      await sleep(300);
+      const r = await b.evaluate(`(() => {
+        const out = [];
+        if (document.documentElement.scrollWidth > innerWidth + 1) out.push('página ' + document.documentElement.scrollWidth + '>' + innerWidth);
+        for (const id of ${JSON.stringify(CARDS)}) {
+          const card = document.querySelector('[data-testid=' + id + ']');
+          if (!card) continue;
+          const c = card.getBoundingClientRect();
+          for (const el of card.querySelectorAll('*')) {
+            const e = el.getBoundingClientRect();
+            if (e.width === 0 || e.height === 0 || getComputedStyle(el).position === 'fixed') continue;
+            if (e.right > c.right + 0.5 || e.left < c.left - 0.5) {
+              out.push(id + ' > ' + el.tagName.toLowerCase() + (el.getAttribute('type') ? '[' + el.getAttribute('type') + ']' : '') + ' ' + Math.round(e.left) + '–' + Math.round(e.right) + ' (cartão ' + Math.round(c.left) + '–' + Math.round(c.right) + ')');
+              break;
+            }
+          }
+        }
+        return out.join('; ');
+      })()`);
+      if (r) bad.push(`${w}px ${dark ? "escuro" : "claro"}: ${r}`);
+    }
+  if (stress) await b.evaluate(`document.getElementById('stress-time')?.remove() || true`);
+  await b.viewport(1280);
+  await sleep(150);
+  await check(bad.length === 0, `${label}: nada vaza dos cartões em 320/360/390/430/768/1440 px, claro e escuro${bad.length ? " — " + bad.slice(0, 4).join(" | ") : ""}`);
+}
+
 /* ------------------------------ 1. Professor: Google Agenda ------------------------------ */
 console.log("Professor");
 b.setStep?.("professor");
@@ -318,6 +357,20 @@ await clickButton("Salvar disponibilidade", "[data-testid=availability-card]");
 const put = apiLog.filter((r) => r.method === "PUT" && r.path === "/v1/me/availability").at(-1);
 await check(put?.body?.windows?.length === 2 && put.body.windows[1].weekday === "qua", "disponibilidade salva com PUT /v1/me/availability");
 await shot("agenda-professor");
+await fitsInCards("agenda do professor");
+await fitsInCards("agenda do professor com horário nativo largo (Chrome en-US)", { stress: true });
+await check(
+  await b.evaluate(`[...document.querySelectorAll('[data-testid=availability-row]')].every((row) => ['Dia', 'Início', 'Fim'].every((l) => [...row.querySelectorAll('label')].some((x) => x.textContent.trim() === l && x.offsetWidth > 0)))`),
+  "cada janela tem rótulos visíveis (Dia, Início, Fim)",
+);
+
+/* Remover uma janela */
+await act("remover a janela de quarta", `(() => { const x = document.querySelector('[aria-label="Remover janela de Quarta"]'); if (!x) return false; x.click(); return true; })()`);
+await check(await waitFor(`document.querySelectorAll('[data-testid=availability-row]').length === 1`), "lixeira remove a janela da lista");
+await clickButton("Salvar disponibilidade", "[data-testid=availability-card]");
+await sleep(300);
+const afterRemove = apiLog.filter((r) => r.method === "PUT" && r.path === "/v1/me/availability").at(-1);
+await check(afterRemove?.body?.windows?.length === 1 && afterRemove.body.windows[0].weekday === "seg", "remoção salva (PUT com uma janela)");
 
 /* Desconectar */
 await clickButton("Desconectar", "[data-testid=calendar-card]");
@@ -355,6 +408,7 @@ await sleep(500);
 await check(apiLog.filter((r) => r.path.endsWith("/slots")).length > before, "409: horários recarregados");
 await axe("agenda da aluna");
 await shot("agenda-aluna");
+await fitsInCards("agenda da aluna");
 
 /* Cancelar */
 await clickButton("Cancelar", "[data-testid=lesson-list]");
