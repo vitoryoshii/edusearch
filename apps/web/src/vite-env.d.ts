@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   /** URL pública da API FastAPI (ex.: http://localhost:8000). */
   readonly VITE_API_BASE_URL?: string;
   /** "mock" (padrão, dados de demonstração) ou "api". */
+  /** Sem efeito desde a Fase 4B: a demonstração usa sempre dados fictícios. */
   readonly VITE_DATA_SOURCE?: "mock" | "api";
   /** URL do projeto Supabase (ex.: https://<ref>.supabase.co). Pública. */
   readonly VITE_SUPABASE_URL?: string;

@@ -1,5 +1,7 @@
 # Integração com a API — necessidades do frontend
 
+> **Fase 4B:** o adapter HTTP (`src/lib/data/http/adapter.ts`) foi **removido**. A demonstração (`/aluno`, `/professor`) usa sempre dados fictícios, e `VITE_DATA_SOURCE` não tem efeito. O produto real (`/conta`) consome a API pelos clientes `src/lib/api/account.ts` e `src/lib/api/scheduling.ts`, conforme [`docs/api-contract.md`](../api-contract.md). O restante deste documento é histórico.
+
 > **Status:** o contrato oficial está em [`docs/api-contract.md`](../api-contract.md) (Fase 2.6A: `GET /v1/me` e `PUT /v1/me/profile` implementados; onboarding planejado). Este documento **não define contratos**: lista as necessidades das telas. Onde houver contrato, ele prevalece e o adapter `src/lib/data/http/adapter.ts` deve segui-lo. O frontend ainda **não** consome os novos endpoints.
 
 ## Arquitetura no frontend

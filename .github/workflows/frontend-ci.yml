@@ -175,6 +175,8 @@ jobs:
           VITE_STAGE_PROFILE_PERSISTENCE: testing
           VITE_STAGE_SCHEDULING: testing
           VITE_API_BASE_URL: https://api.edusearch-ci.test
+          # Igual à produção: garante que a demonstração continua isolada (dados fictícios) mesmo assim.
+          VITE_DATA_SOURCE: api
         run: |
           pnpm --filter @edusearch/web exec vite --port 5193 --strictPort > "$RUNNER_TEMP/logs/vite-agenda.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://localhost:5193 > /dev/null && break; sleep 1; done
@@ -182,7 +184,7 @@ jobs:
           curl -sf http://localhost:5193/src/main.tsx > /dev/null
           sleep 2
 
-      - name: Agenda real (Google Agenda/Meet, disponibilidade, reserva idempotente, 409, cancelamento, axe, 320–1440 px)
+      - name: Agenda e marketplace reais (Explorar, perfil, reserva idempotente, 409, aulas, painel, URLs legadas, demo isolada, axe, 320–1440 px)
         if: success() || failure()
         timeout-minutes: 6
         run: node apps/web/scripts/agenda.mjs http://localhost:5193 "$RUNNER_TEMP/auth-screens/agenda" 2>&1 | tee "$RUNNER_TEMP/logs/agenda.log"

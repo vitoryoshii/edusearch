@@ -25,3 +25,22 @@ export function accountNav(roles: readonly string[], schedulingOn: boolean): Acc
   let mobile = 0;
   return items.map((i) => (i.mobile && ++mobile > 5 ? { ...i, mobile: false } : i));
 }
+
+/**
+ * URL legada da demonstração → tela REAL equivalente, para quem tem conta real e NÃO escolheu entrar
+ * na demonstração. IDs da demonstração nunca são levados para a conta real (são fictícios).
+ */
+export function legacyRealPath(pathname: string): string {
+  const p = pathname.replace(/\/+$/, "") || "/";
+  const rules: Array<[RegExp, string]> = [
+    [/^\/aluno\/(buscar|recomendados|assistente|professores(\/.*)?)$/, "/conta/explorar"],
+    [/^\/aluno\/aulas(\/.*)?$/, "/conta/aulas"],
+    [/^\/aluno\/perfil$/, "/conta/perfil"],
+    [/^\/professor\/(agenda|disponibilidade)$/, "/conta/agenda"],
+    [/^\/professor\/aulas(\/.*)?$/, "/conta/aulas"],
+    [/^\/professor\/(perfil|especialidades)$/, "/conta/perfil-profissional"],
+    [/^\/professor\/configuracoes$/, "/conta/configuracoes"],
+  ];
+  for (const [re, to] of rules) if (re.test(p)) return to;
+  return "/conta";
+}

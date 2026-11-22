@@ -19,7 +19,6 @@ import type {
   TimeSlot,
   WeeklyAvailability,
 } from "../api/types";
-import { httpDataSource } from "./http/adapter";
 import { mockDataSource } from "./mock/adapter";
 
 /**
@@ -81,11 +80,14 @@ export interface DataSource {
 }
 
 /**
- * VITE_DATA_SOURCE=mock (padrão) usa dados sintéticos de demonstração.
- * VITE_DATA_SOURCE=api usa a API real (somente o que já existe no backend).
+ * Origem de dados da DEMONSTRAÇÃO (/aluno, /professor): SEMPRE dados fictícios, isolados da conta
+ * real. O produto real (/conta) usa os clientes da API (lib/api/account.ts e lib/api/scheduling.ts),
+ * nunca esta interface.
+ *
+ * Antes (até a Fase 3A), VITE_DATA_SOURCE=api ligava aqui um adapter HTTP sem nenhum método
+ * implementado: em produção a demonstração inteira mostrava "recurso indisponível" e não exibia o
+ * aviso de dados fictícios. A variável não tem mais efeito.
  */
-export const DATA_SOURCE_KIND: DataSource["kind"] = import.meta.env.VITE_DATA_SOURCE === "api" ? "api" : "mock";
-
-export const dataSource: DataSource = DATA_SOURCE_KIND === "api" ? httpDataSource : mockDataSource;
+export const dataSource: DataSource = mockDataSource;
 
 export const isDemo = dataSource.kind === "mock";

@@ -38,7 +38,7 @@ Variáveis públicas do app: copie `apps/web/.env.example` para `apps/web/.env`.
 | Variável | Padrão | Uso |
 | -------- | ------ | --- |
 | `VITE_API_BASE_URL` | `http://localhost:8000` | URL da API FastAPI |
-| `VITE_DATA_SOURCE` | `mock` | `mock` (demonstração) ou `api` |
+| `VITE_DATA_SOURCE` | — | **Sem efeito** desde a Fase 4B: a demonstração (`/aluno`, `/professor`) usa sempre dados fictícios; a conta real (`/conta`) usa a API |
 | `VITE_SUPABASE_URL` | — | `https://pgltvnwdvatyihrozlvn.supabase.co` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | — | Chave **publicável** do Supabase (nunca a service_role) |
 | `VITE_GOOGLE_CLIENT_ID` | — | Client ID Web do Google (nunca o Client Secret). Com as três variáveis, o login real é ativado |
