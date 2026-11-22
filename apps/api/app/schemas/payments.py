@@ -102,6 +102,7 @@ class PaymentOut(BaseModel):
     status: PaymentStatus
     environment: Literal["sandbox", "production"]
     amount_cents: int
+    commission_policy_version: str
     commission_bps: int
     commission_cents: int
     teacher_share_cents: int
@@ -162,3 +163,23 @@ class TeacherFinanceOut(BaseModel):
     summary: TeacherFinanceSummary
     payout_account: PayoutAccountOut
     payments: list[PaymentOut]
+
+
+class CommissionProgressOut(BaseModel):
+    """Leitura da política ativa; não é saldo, promessa de ganho nem autorização de repasse."""
+
+    environment: Literal["sandbox", "production"]
+    policy_version: str
+    progression_active: bool
+    current_level: int
+    current_rate_bps: int
+    next_rate_bps: int | None
+    eligible_paid_lessons: int
+    next_level_paid_lessons: int | None
+    lessons_remaining: int | None
+    evaluation_days: int
+    eligibility: Literal["eligible", "no_next_level"]
+    # Exemplo calculado pelo servidor: informação educativa, não saldo ou promessa.
+    simulation_amount_cents: int
+    simulation_commission_cents: int
+    simulation_teacher_share_cents: int

@@ -303,9 +303,17 @@ Detalhes, estados, casos difíceis e variáveis em [payments.md](payments.md). I
 | GET/PUT | `/v1/me/payout-account` | professor: subconta para split (só os 4 últimos dígitos ficam salvos) |
 | POST | `/v1/payments/webhooks/abacatepay` | público; segredo + HMAC-SHA256 do corpo bruto |
 | GET | `/v1/me/teacher-finance?period=30d` | professor; agregados e histórico próprios, em centavos; nunca saldo disponível |
+| GET | `/v1/me/commission-progress` | professor; política/versionamento e progresso próprio, derivados do JWT; sem saldo, repasse ou alteração de comissão |
 
 `GET /v1/me/lessons`: `status` agora inclui `awaiting_payment` e `expired`; `is_test` é `false`
 para aulas pagas, que trazem `payment {id, status, amount_cents}`.
+
+## Implementado na Fase 6.3: base de comissão progressiva
+
+Política comercial versionada, snapshot por cobrança e endpoint de transparência estão documentados
+em [progressive-commission.md](progressive-commission.md). A política efetiva continua em **15%**
+(`v1`) nos dois ambientes; as faixas demonstrativas até 10% estão inativas e não podem afetar
+cobranças existentes ou Production sem ativação administrativa auditada.
 
 ## Histórico
 

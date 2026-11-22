@@ -3,9 +3,9 @@ import { Badge, Card, buttonClasses } from "@edusearch/ui";
 import { Link } from "react-router";
 import { QueryContent } from "../QueryContent";
 import { formatBRL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE } from "../../lib/payments";
-import { useTeacherFinanceQuery } from "../../lib/query/hooks";
+import { useCommissionProgressQuery, useTeacherFinanceQuery } from "../../lib/query/hooks";
 import type { TeacherFinancePeriod } from "../../lib/api/payments";
-import { CommissionLevelCard, GoalsAndAchievementsCard, NextCommissionTierCard, QualifiedReferralsCard } from "./TeacherGrowth";
+import { CommissionLevelCard, CommissionProgressCard, GoalsAndAchievementsCard, QualifiedReferralsCard } from "./TeacherGrowth";
 
 const PERIODS: Array<{ value: TeacherFinancePeriod; label: string }> = [
   { value: "7d", label: "7 dias" },
@@ -27,6 +27,7 @@ function Metric({ label, value, note }: { label: string; value: string; note?: s
 export function TeacherFinancePanel() {
   const [period, setPeriod] = useState<TeacherFinancePeriod>("30d");
   const finance = useTeacherFinanceQuery(period);
+  const commission = useCommissionProgressQuery();
   return (
     <section className="space-y-5" aria-labelledby="finance-title" data-testid="teacher-finance">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -88,7 +89,7 @@ export function TeacherFinancePanel() {
                   </Card>
                 </div>
               </div>
-              <section aria-labelledby="teacher-growth-title"><h3 id="teacher-growth-title" className="mb-3 text-base font-semibold text-fg-strong">Evolução profissional</h3><div className="grid gap-3 sm:grid-cols-2"><CommissionLevelCard commissionBps={data.commission_bps} /><NextCommissionTierCard /><GoalsAndAchievementsCard /><QualifiedReferralsCard /></div><Link to="/conta/configuracoes" className="mt-3 inline-flex text-sm font-semibold text-link underline-offset-4 hover:underline">Ver configurações de recebimento</Link></section>
+              <section aria-labelledby="teacher-growth-title"><h3 id="teacher-growth-title" className="mb-3 text-base font-semibold text-fg-strong">Evolução profissional</h3><div className="grid gap-3 sm:grid-cols-2"><CommissionLevelCard commissionBps={commission.data?.current_rate_bps ?? data.commission_bps} />{commission.data ? <CommissionProgressCard progress={commission.data} /> : <Card tone="soft"><h3 className="font-semibold text-fg-strong">Evolução da comissão</h3><p className="mt-1 text-sm text-fg-muted">{commission.isError ? "Não foi possível carregar a política de comissão agora." : "Carregando política de comissão…"}</p></Card>}<GoalsAndAchievementsCard /><QualifiedReferralsCard /></div><Link to="/conta/configuracoes" className="mt-3 inline-flex text-sm font-semibold text-link underline-offset-4 hover:underline">Ver configurações de recebimento</Link></section>
             </div>
           );
         }}

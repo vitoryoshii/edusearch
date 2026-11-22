@@ -320,6 +320,7 @@ def test_checkout_freezes_server_price_and_commission(client, people, abacate) -
     )
     assert (
         p["commission_bps"] == 1500
+        and p["commission_policy_version"] == "v1"
         and p["br_code"].startswith("00020126")
         and p["br_code_image"].startswith("data:image/png")
     )
@@ -468,6 +469,131 @@ def test_teacher_finance_is_aggregated_and_private(client, people, abacate) -> N
         "/v1/me/teacher-finance?period=30d", headers=auth(people["tokens"][people["s1"]])
     )
     assert student.status_code == 403 and student.json()["code"] == "role_required"
+
+
+def test_commission_progress_is_private_versioned_and_freezes_existing_charges(
+    client, make_client, people, admin, users, make_token
+) -> None:
+    """A API deriva professor/ambiente; demo-v2 só afeta cobranças FUTURAS quando ativada no teste."""
+    token = auth(people["tokens"][people["teacher"]])
+    initial = client.get("/v1/me/commission-progress", headers=token)
+    assert initial.status_code == 200
+    assert initial.json() == {
+        "environment": "sandbox",
+        "policy_version": "v1",
+        "progression_active": False,
+        "current_level": 0,
+        "current_rate_bps": 1500,
+        "next_rate_bps": None,
+        "eligible_paid_lessons": 0,
+        "next_level_paid_lessons": None,
+        "lessons_remaining": None,
+        "evaluation_days": 90,
+        "eligibility": "no_next_level",
+        "simulation_amount_cents": 10000,
+        "simulation_commission_cents": 1500,
+        "simulation_teacher_share_cents": 8500,
+    }
+
+    old = checkout(client, people, slot(client, people)).json()
+    assert (old["commission_policy_version"], old["commission_bps"]) == ("v1", 1500)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        admin.execute(
+            "insert into public.commission_policy_tiers "
+            "(policy_version, environment, tier, min_eligible_paid_lessons, commission_bps) "
+            "values ('demo-v2', 'sandbox', 99, 99, 999)"
+        )
+    # Dez eventos pagos persistidos e distintos habilitam a primeira faixa somente no fixture inativo.
+    for _ in range(10):
+        admin.execute(
+            """
+            insert into public.payment_intents (
+              student_id, teacher_id, amount_cents, commission_bps, commission_cents,
+              teacher_share_cents, environment, status, idempotency_key, expires_at,
+              paid_at, paid_amount_cents
+            ) values (%s, %s, 8000, 1500, 1200, 6800, 'sandbox', 'paid', %s,
+                      now() + interval '15 minutes', now(), 8000)
+            """,
+            (uuid.uuid4(), people["teacher"], uuid.uuid4()),
+        )
+    # Cancelamento e reembolso são eventos persistidos, mas não tornam uma aula elegível.
+    for status in ("cancelled", "refunded"):
+        admin.execute(
+            """
+            insert into public.payment_intents (
+              student_id, teacher_id, amount_cents, commission_bps, commission_cents,
+              teacher_share_cents, environment, status, idempotency_key, expires_at,
+              paid_at, paid_amount_cents
+            ) values (%s, %s, 8000, 1500, 1200, 6800, 'sandbox', %s::public.payment_status, %s,
+                      now() + interval '15 minutes', case when %s = 'refunded' then now() else null end,
+                      case when %s = 'refunded' then 8000 else null end)
+            """,
+            (uuid.uuid4(), people["teacher"], status, uuid.uuid4(), status, status),
+        )
+    # Esta alteração representa operação privilegiada de homologação; não há rota de admin.
+    admin.execute(
+        "update public.commission_policies set is_active = false, retired_at = now() "
+        "where version = 'v1' and environment = 'sandbox'"
+    )
+    admin.execute(
+        "update public.commission_policies set is_active = true, activated_at = now(), retired_at = null "
+        "where version = 'demo-v2' and environment = 'sandbox'"
+    )
+    try:
+        progressed = client.get("/v1/me/commission-progress", headers=token)
+        assert progressed.status_code == 200
+        assert progressed.json() == {
+            "environment": "sandbox",
+            "policy_version": "demo-v2",
+            "progression_active": True,
+            "current_level": 1,
+            "current_rate_bps": 1400,
+            "next_rate_bps": 1250,
+            "eligible_paid_lessons": 10,
+            "next_level_paid_lessons": 25,
+            "lessons_remaining": 15,
+            "evaluation_days": 90,
+            "eligibility": "eligible",
+            "simulation_amount_cents": 10000,
+            "simulation_commission_cents": 1400,
+            "simulation_teacher_share_cents": 8600,
+        }
+        new = checkout(client, people, slot(client, people, skip=1)).json()
+        assert (new["commission_policy_version"], new["commission_bps"]) == ("demo-v2", 1400)
+        assert (new["commission_cents"], new["teacher_share_cents"]) == (1120, 6880)
+        # A cobrança anterior segue imutável mesmo depois da troca de política.
+        old_again = client.get(
+            f"/v1/payments/{old['id']}", headers=auth(people["tokens"][people["s1"]])
+        ).json()
+        assert (old_again["commission_policy_version"], old_again["commission_bps"]) == ("v1", 1500)
+
+        other_teacher = users.create("Outra Professora")
+        users.grant_role(other_teacher, "teacher")
+        other = client.get("/v1/me/commission-progress", headers=auth(make_token(other_teacher)))
+        assert other.status_code == 200 and other.json()["eligible_paid_lessons"] == 0
+        assert other.json()["current_rate_bps"] == 1500
+
+        # Production usa a política v1, e pagamentos Sandbox não vazam para a métrica dela.
+        production = make_client("production").get("/v1/me/commission-progress", headers=token)
+        assert production.status_code == 200
+        assert production.json()["environment"] == "production"
+        assert production.json()["policy_version"] == "v1"
+        assert production.json()["eligible_paid_lessons"] == 0
+    finally:
+        # Não deixa a fixture de demonstração ativa para os testes seguintes.
+        admin.execute(
+            "update public.commission_policies set is_active = false, retired_at = now() "
+            "where version = 'demo-v2' and environment = 'sandbox'"
+        )
+        admin.execute(
+            "update public.commission_policies set is_active = true, activated_at = now(), retired_at = null "
+            "where version = 'v1' and environment = 'sandbox'"
+        )
+    audit = admin.execute(
+        "select count(*) as n from private.commission_policy_audit_log "
+        "where policy_version in ('v1', 'demo-v2') and environment = 'sandbox'"
+    ).fetchone()
+    assert audit["n"] >= 4
 
 
 def test_teacher_finance_isolated_by_server_environment(
@@ -781,6 +907,8 @@ def test_financial_tables_are_read_only_and_private(
         "update public.teacher_payout_accounts set sub_account_id = 'sacc_hack1234'",
         "select private.payment_confirm('x', 1, 'x')",
         "select * from private.payment_webhook_events",
+        "select * from public.commission_policies",
+        "select * from public.commission_policy_tiers",
     ):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             s1.execute(stmt)

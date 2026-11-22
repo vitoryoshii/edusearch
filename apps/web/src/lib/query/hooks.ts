@@ -302,6 +302,17 @@ export function useTeacherFinanceQuery(period: TeacherFinancePeriod, enabled = t
   });
 }
 
+/** Progresso comercial calculado e autorizado pela API para a própria conta. */
+export function useCommissionProgressQuery(enabled = true) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.commissionProgress(uid),
+    queryFn: ({ signal }) => paymentsApi.commissionProgress(signal),
+    staleTime: STALE_MS.commissionProgress,
+    enabled: enabled && !!uid,
+  });
+}
+
 export function useSavePayoutAccountMutation() {
   const qc = useQueryClient();
   const uid = useAccountUid();

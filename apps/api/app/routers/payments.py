@@ -8,6 +8,7 @@ from app.auth.dependencies import CurrentUser
 from app.schemas.common import ErrorResponse
 from app.schemas.payments import (
     CheckoutIn,
+    CommissionProgressOut,
     FinancePeriod,
     PaymentOut,
     PaymentsStatus,
@@ -80,6 +81,12 @@ def teacher_finance(
 ) -> TeacherFinanceOut:
     """Leitura financeira agregada do próprio professor; não representa saldo ou saque."""
     return service.teacher_finance(user, period)
+
+
+@router.get("/v1/me/commission-progress", response_model=CommissionProgressOut, responses=_ERRORS)
+def commission_progress(user: CurrentUser, service: Service) -> CommissionProgressOut:
+    """Política e progresso do professor autenticado; não aceita professor nem ambiente na URL."""
+    return service.commission_progress(user)
 
 
 @router.get("/v1/me/payout-account", response_model=PayoutAccountOut, responses=_ERRORS)

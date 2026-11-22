@@ -23,6 +23,7 @@ export type Payment = {
   status: PaymentStatus;
   environment: "sandbox" | "production";
   amount_cents: number;
+  commission_policy_version: string;
   commission_bps: number;
   commission_cents: number;
   teacher_share_cents: number;
@@ -86,6 +87,24 @@ export type TeacherFinance = {
   payments: Payment[];
 };
 
+/** Política aplicada pelo backend. Nenhuma regra comercial é recalculada no navegador. */
+export type CommissionProgress = {
+  environment: "sandbox" | "production";
+  policy_version: string;
+  progression_active: boolean;
+  current_level: number;
+  current_rate_bps: number;
+  next_rate_bps: number | null;
+  eligible_paid_lessons: number;
+  next_level_paid_lessons: number | null;
+  lessons_remaining: number | null;
+  evaluation_days: number;
+  eligibility: "eligible" | "no_next_level";
+  simulation_amount_cents: number;
+  simulation_commission_cents: number;
+  simulation_teacher_share_cents: number;
+};
+
 export const paymentsApi = {
   status: (signal?: AbortSignal) => apiRequest<PaymentsStatusInfo>("/v1/payments/status", { signal }),
   checkout: (body: CheckoutRequest) => apiRequest<Payment>("/v1/payments/checkout", { method: "POST", body }),
@@ -94,6 +113,8 @@ export const paymentsApi = {
   history: (signal?: AbortSignal) => apiRequest<Payment[]>("/v1/me/payments", { signal }),
   teacherFinance: (period: TeacherFinancePeriod, signal?: AbortSignal) =>
     apiRequest<TeacherFinance>(`/v1/me/teacher-finance?period=${period}`, { signal }),
+  commissionProgress: (signal?: AbortSignal) =>
+    apiRequest<CommissionProgress>("/v1/me/commission-progress", { signal }),
   payoutAccount: (signal?: AbortSignal) => apiRequest<PayoutAccount>("/v1/me/payout-account", { signal }),
   savePayoutAccount: (body: { legal_name: string; tax_id: string }) =>
     apiRequest<PayoutAccount>("/v1/me/payout-account", { method: "PUT", body }),
