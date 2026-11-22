@@ -558,7 +558,9 @@ def test_commission_progress_is_private_versioned_and_freezes_existing_charges(
             "simulation_commission_cents": 1400,
             "simulation_teacher_share_cents": 8600,
         }
-        new = checkout(client, people, slot(client, people, skip=1)).json()
+        new_response = checkout(client, people, slot(client, people, skip=1))
+        assert new_response.status_code == 201, new_response.text
+        new = new_response.json()
         assert (new["commission_policy_version"], new["commission_bps"]) == ("demo-v2", 1400)
         assert (new["commission_cents"], new["teacher_share_cents"]) == (1120, 6880)
         # A cobrança anterior segue imutável mesmo depois da troca de política.
