@@ -100,6 +100,22 @@ const FAKE_GIS = `(() => {
     initialize(c) { cfg = c; g.inits++; g.config = { client_id: c.client_id, nonce: c.nonce, ux_mode: c.ux_mode, auto_select: c.auto_select }; },
     renderButton(el, opts) {
       g.renders++; g.opts = opts;
+      if (window.__gisVariant === "personalized") {
+        // Mesma estrutura do botão PERSONALIZADO real: wrapper do tamanho pedido e iframe com
+        // margens -2px -10px, cujo documento NÃO declara color-scheme e desenha um retângulo
+        // arredondado "Continuar como …" (o GIS real ignora shape "pill" nessa variante).
+        const w = opts.width || 320;
+        const wrap = document.createElement("div");
+        wrap.dataset.fakeGisPersonalized = "";
+        wrap.style.cssText = "position:relative;width:" + w + "px;height:40px";
+        const f = document.createElement("iframe");
+        f.title = "Botão Fazer Login com o Google";
+        f.style.cssText = "display:block;border:0;width:" + (w + 20) + "px;height:44px;margin:-2px -10px";
+        f.srcdoc = "<body style='margin:0;padding:2px 10px'><div style='box-sizing:border-box;height:40px;border:1px solid #8e918f;border-radius:4px;background:#131314;color:#e3e3e3;font:500 13px sans-serif;display:flex;align-items:center;padding:0 12px'>Continuar como Ana</div></body>";
+        wrap.appendChild(f);
+        el.appendChild(wrap);
+        return;
+      }
       const btn = document.createElement("button");
       btn.type = "button"; btn.dataset.fakeGis = ""; btn.textContent = "Continuar com o Google";
       btn.style.cssText = "width:" + (opts.width || 320) + "px;height:40px;border:1px solid #747775;border-radius:4px;background:#fff;color:#1f1f1f;font:500 14px sans-serif";
@@ -503,6 +519,50 @@ await check(opts?.shape === "pill", "botão oficial do GIS com shape \"pill\" (s
 }
 await check(!(await b.evaluate(text("Fase de testes"))), "sem aviso fixo de \"Fase de testes\" na tela de acesso");
 await ctaParity("[data-testid=google-signin] [data-fake-gis]", "login Google ativo");
+{
+  /*
+   * Variante PERSONALIZADA ("Continuar como …"): no tema escuro o documento do iframe do GIS não
+   * declara o color-scheme da página e o navegador pinta o iframe com fundo opaco (moldura branca
+   * de 372×44 px). O contêiner precisa resolver color-scheme "light" nos dois temas para o fundo
+   * do iframe continuar transparente — sem recorte e sem CSS dentro do iframe.
+   */
+  await b.evaluate(`window.__gisVariant = "personalized"`);
+  const bad = [];
+  for (const w of [320, 360, 390, 430, 1440]) {
+    for (const dark of [false, true]) {
+      await b.viewport(w, { dark }); // largura/tema novos → o app redesenha o botão
+      await sleep(450);
+      const r = await b.evaluate(`(() => {
+        const wrap = document.querySelector('[data-testid=google-signin] [data-fake-gis-personalized]');
+        const f = wrap?.querySelector('iframe');
+        const e = document.querySelector('[data-testid=email-open]');
+        if (!wrap || !f || !e) return "variante personalizada não desenhada";
+        if (getComputedStyle(f).colorScheme !== "light") return "iframe herda color-scheme " + getComputedStyle(f).colorScheme + " (fundo opaco no escuro)";
+        const a = wrap.getBoundingClientRect(), c = e.getBoundingClientRect();
+        const near = (x, y) => Math.abs(x - y) <= 1;
+        if (!near(a.width, c.width) || !near(a.height, c.height) || !near(a.left, c.left))
+          return "google " + Math.round(a.width) + "x" + Math.round(a.height) + " / e-mail " + Math.round(c.width) + "x" + Math.round(c.height);
+        if (document.documentElement.scrollWidth > innerWidth + 1) return "rolagem horizontal";
+        return "";
+      })()`);
+      if (r) bad.push(`${w}px ${dark ? "escuro" : "claro"}: ${r}`);
+    }
+  }
+  await b.evaluate(`delete window.__gisVariant`);
+  // 1440 → 1280 não muda a largura do contêiner (352 px): passa por 390 px para redesenhar.
+  await b.viewport(390);
+  await sleep(400);
+  await b.viewport(1280);
+  await sleep(400);
+  await check(
+    bad.length === 0,
+    `botão Google personalizado: sem fundo opaco no iframe (color-scheme), mesma caixa do e-mail, 320–1440 px, claro e escuro${bad.length ? " — " + bad.join("; ") : ""}`,
+  );
+  await check(
+    await waitFor(`!!document.querySelector('[data-testid=google-signin] [data-fake-gis]')`),
+    "botão genérico volta a ser desenhado após a variante personalizada",
+  );
+}
 await axe("entrada com login Google ativo");
 await shot("entrada-google");
 

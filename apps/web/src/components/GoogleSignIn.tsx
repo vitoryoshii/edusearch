@@ -208,8 +208,21 @@ function GisButton({ next }: { next: string }) {
     <div data-auth-phase={phase} data-failure={failure ?? undefined}>
       {/* Linha de 44px (iframe do GIS: botão de 40px + 2px de margem) com o CTA centralizado. */}
       <div className="relative flex min-h-11 w-full items-center justify-center">
-        {/* Contêiner do botão oficial (iframe do Google). */}
-        <div ref={slot} data-testid="google-signin" className={phase === "ready" && failure !== "gis_unavailable" ? "flex w-full justify-center" : "hidden"} />
+        {/*
+          Contêiner do botão oficial (iframe do Google).
+          [color-scheme:light]: no tema escuro a página declara color-scheme "dark"; o
+          documento do iframe do botão PERSONALIZADO ("Continuar como <nome>") não declara
+          o mesmo esquema, e o navegador então pinta o iframe inteiro com fundo OPACO
+          (branco) — a "moldura retangular" de 372×44 px (botão de 352×40 + margens de
+          -2px -10px do GIS). Com o mesmo esquema do documento do iframe, o fundo do iframe
+          volta a ser transparente. Não altera o conteúdo do iframe nem o tema do botão
+          ("outline_dark" segue valendo); não recorta nada.
+        */}
+        <div
+          ref={slot}
+          data-testid="google-signin"
+          className={phase === "ready" && failure !== "gis_unavailable" ? "flex w-full justify-center [color-scheme:light]" : "hidden"}
+        />
         {phase === "loading" && <Skeleton className="h-10 w-full rounded-full" />}
         {phase === "signing" && (
           <div role="status" className="flex h-10 w-full items-center justify-center gap-2.5 rounded-full border border-line text-sm font-medium text-fg">
