@@ -88,6 +88,8 @@ class AvailabilityOut(BaseModel):
 
 
 class BookableTeacher(BaseModel):
+    """Item do catálogo. Só dados do cadastro real: sem preço, avaliação ou certificado."""
+
     id: UUID
     display_name: str
     avatar_url: str | None
@@ -95,6 +97,44 @@ class BookableTeacher(BaseModel):
     subjects: list[str]
     lesson_durations_minutes: list[int]
     modality: str | None
+    experience: str | None = None
+    # Primeiro horário livre (menor duração oferecida) nos próximos 14 dias; null se não houver.
+    next_slot: datetime | None = None
+
+
+class TeacherPublicProfile(BaseModel):
+    """Perfil público do professor publicado (ou do próprio, em pré-visualização)."""
+
+    id: UUID
+    display_name: str
+    avatar_url: str | None
+    headline: str | None
+    bio: str | None
+    specialties: str | None
+    academic_background: str | None
+    experience: str | None
+    teaching_methods: list[str]
+    methodology: str | None
+    modality: str | None
+    lesson_durations_minutes: list[int]
+    subjects: list[str]
+    is_published: bool
+    is_own_profile: bool
+    timezone: Literal["America/Sao_Paulo"] = "America/Sao_Paulo"
+
+
+class CatalogFilters(BaseModel):
+    """Filtros do catálogo — somente atributos que o cadastro real tem."""
+
+    q: Annotated[str, Field(min_length=1, max_length=60)] | None = None
+    subject: Annotated[str, Field(max_length=60, pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")] | None = None
+    modality: Literal["online", "presencial", "hibrido"] | None = None
+    # Período com disponibilidade semanal cadastrada (horário de Brasília).
+    period: Literal["manha", "tarde", "noite"] | None = None
+    # Só professores com horário livre nos próximos 14 dias.
+    available_only: bool = False
+    limit: Annotated[int, Field(ge=1, le=50)] = 20
+    offset: Annotated[int, Field(ge=0, le=1000)] = 0
 
 
 class SlotsOut(BaseModel):

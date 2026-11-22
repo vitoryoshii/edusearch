@@ -254,7 +254,8 @@ Todas as rotas abaixo exigem o token e respondem `403 scheduling_disabled` enqua
 | `POST /v1/me/google-calendar/connection` | professor | Corpo `{ code, state }` vindo do retorno do Google. Troca o código e guarda o refresh token cifrado |
 | `DELETE /v1/me/google-calendar` | professor | Revoga no Google e apaga a credencial |
 | `GET` / `PUT /v1/me/availability` | professor | `{ timezone, windows: [{ weekday, start, end }] }`. O PUT substitui tudo; até 28 janelas de 15 em 15 min, sem sobreposição |
-| `GET /v1/teachers` | aluno | Professores **publicados**: `id`, `display_name`, `avatar_url`, `headline`, `subjects`, `lesson_durations_minutes`, `modality` |
+| `GET /v1/teachers` | aluno | Catálogo (Fase 4A): só professores **publicados**. Query opcional: `q` (nome ou disciplina, 1–60), `subject` (slug), `modality` (`online`/`presencial`/`hibrido`; híbrido atende os dois), `period` (`manha`/`tarde`/`noite`, pela disponibilidade semanal), `available_only` (livre nos próximos 14 dias), `limit` (1–50, padrão 20), `offset` (0–1000). Item: `id`, `display_name`, `avatar_url`, `headline`, `subjects`, `lesson_durations_minutes`, `modality`, `experience`, `next_slot`. **Sem preço, avaliação ou certificado** |
+| `GET /v1/teachers/{id}` | aluno (ou o próprio professor) | Perfil público: `bio`, `specialties`, `academic_background`, `experience`, `teaching_methods`, `methodology`, `subjects`, `lesson_durations_minutes`, `modality`, `is_published`, `is_own_profile`. `404 teacher_not_found` se não publicado (o professor pré-visualiza o próprio) |
 | `GET /v1/teachers/{id}/slots?duration=60&days=14` | aluno | `{ timezone, duration_minutes, slots: [ISO…] }`: inícios livres de 30 em 30 min, com antecedência mínima de 2 h e até 60 dias |
 | `POST /v1/lessons` | aluno | Corpo `{ teacher_id, subject, starts_at, duration_minutes, idempotency_key }`. `201` quando cria; `200` quando a mesma chave já existe (mesma aula) |
 | `GET /v1/me/lessons` | qualquer | Aulas em que a conta é professor ou aluno (até 100) |
@@ -291,6 +292,7 @@ Busca de professores com filtros, matching (Gemini) e Pix continuam como necessi
 
 | Versão | Fase | Mudanças |
 | ------ | ---- | -------- |
+| 0.5.0 | 4A | Catálogo do marketplace: filtros e paginação em `GET /v1/teachers`, `GET /v1/teachers/{id}` (perfil público) |
 | 0.4.0 | 3A | Agenda: Google Agenda/Meet do professor, disponibilidade, aulas de teste (reserva idempotente, conflitos, cancelamento), `DELETE` no CORS |
 | 0.3.0 | 2.6B | `POST /v1/me/roles`, cadastros de aluno e professor, `GET /v1/subjects`, `onboarding` em `/v1/me` |
 | 0.2.0 | 2.6A | `GET /v1/me`, `PUT /v1/me/profile`, formato de erro, autenticação JWT (JWKS/ES256) |

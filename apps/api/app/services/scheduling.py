@@ -32,6 +32,7 @@ from app.google_calendar import (
     GoogleUnavailableError,
     pkce_pair,
 )
+from app.repositories.catalog import CatalogRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.scheduling import LessonRejectedError, SchedulingRepository, SlotTakenError
 from app.scheduling import (
@@ -50,15 +51,20 @@ from app.schemas.scheduling import (
     AvailabilityWindow,
     BookableTeacher,
     CalendarConnection,
+    CatalogFilters,
     LessonCreate,
     LessonOut,
     LessonParty,
     SchedulingStatus,
     SlotsOut,
+    TeacherPublicProfile,
 )
 from app.services.profiles import account_suspended, load_profile
 
 logger = logging.getLogger("edusearch.api.scheduling")
+
+# Com "só com horário livre", no máximo estes candidatos são avaliados (piloto: poucos professores).
+CATALOG_SCAN_CAP = 200
 
 
 def scheduling_disabled() -> ApiError:
@@ -88,7 +94,12 @@ class SchedulingService(Protocol):
     def put_availability(
         self, user: AuthenticatedUser, data: AvailabilityIn
     ) -> AvailabilityOut: ...
-    def teachers(self, user: AuthenticatedUser) -> list[BookableTeacher]: ...
+    def teachers(
+        self, user: AuthenticatedUser, filters: CatalogFilters | None = None
+    ) -> list[BookableTeacher]: ...
+    def teacher_profile(
+        self, user: AuthenticatedUser, teacher_id: UUID
+    ) -> TeacherPublicProfile: ...
     def slots(
         self, user: AuthenticatedUser, teacher_id: UUID, duration: int, days: int
     ) -> SlotsOut: ...
@@ -288,13 +299,57 @@ class DbSchedulingService:
 
     # ------------------------------------------------------------------ professores e horários
 
-    def teachers(self, user: AuthenticatedUser) -> list[BookableTeacher]:
+    def teachers(
+        self, user: AuthenticatedUser, filters: CatalogFilters | None = None
+    ) -> list[BookableTeacher]:
+        """Catálogo: professores PUBLICADOS, filtros reais e paginação por limit/offset.
+
+        ``next_slot`` (primeiro horário livre em 14 dias) é calculado só para a página devolvida;
+        com ``available_only`` os candidatos (no máximo ``CATALOG_SCAN_CAP``) são avaliados antes
+        de paginar. Suficiente para o piloto; um índice materializado substitui isto em escala.
+        """
         self._enabled()
+        f = filters or CatalogFilters()
         with self._db.user_transaction(user) as conn:
             self._guard(conn, user, "student")
-            return [
-                BookableTeacher(**r) for r in SchedulingRepository(conn).bookable_teachers(user.id)
-            ]
+            repo = CatalogRepository(conn)
+            common = dict(
+                exclude=user.id, q=f.q, subject=f.subject, modality=f.modality, period=f.period
+            )
+            if f.available_only:
+                rows = repo.search(**common, limit=CATALOG_SCAN_CAP, offset=0)
+                rows = [r | {"next_slot": self._next_slot(conn, user, r)} for r in rows]
+                rows = [r for r in rows if r["next_slot"] is not None]
+                page = rows[f.offset : f.offset + f.limit]
+            else:
+                page = repo.search(**common, limit=f.limit, offset=f.offset)
+                page = [r | {"next_slot": self._next_slot(conn, user, r)} for r in page]
+        return [BookableTeacher(**r) for r in page]
+
+    def _next_slot(
+        self, conn: Any, user: AuthenticatedUser, row: dict[str, Any]
+    ) -> datetime | None:
+        durations = row.get("lesson_durations_minutes") or []
+        if not durations:
+            return None
+        windows = SchedulingRepository(conn).list_windows(row["id"])
+        if not windows:
+            return None
+        busy = self._busy(conn, user, row["id"])
+        slots = available_slots(windows, min(durations), busy, now=self._now(), days=14)
+        return slots[0] if slots else None
+
+    def teacher_profile(self, user: AuthenticatedUser, teacher_id: UUID) -> TeacherPublicProfile:
+        """Perfil público. Aluno vê professores publicados; o professor pré-visualiza o próprio."""
+        self._enabled()
+        with self._db.user_transaction(user) as conn:
+            own = teacher_id == user.id
+            if not own:
+                self._guard(conn, user, "student")
+            row = CatalogRepository(conn).profile(teacher_id)
+        if row is None or (not own and not row["is_published"]):
+            raise not_found("teacher_not_found", "Professor não encontrado.")
+        return TeacherPublicProfile(**row, is_own_profile=own)
 
     def _busy(self, conn: Any, user: AuthenticatedUser, teacher_id: UUID) -> list[tuple]:
         now = self._now()
