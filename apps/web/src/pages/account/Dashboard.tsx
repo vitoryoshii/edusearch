@@ -12,7 +12,7 @@ import { firstNameOf, type AuthenticatedProfile } from "../../lib/auth/profile";
 import { FEATURES } from "../../lib/features";
 import { ONBOARDING_PATH, WELCOME_PATH } from "../../lib/onboarding";
 
-/** Início da conta real: identidade, conclusão do cadastro e limites da fase de testes. */
+/** Início da conta real: próxima aula, atalhos por papel e cadastro. */
 export default function AccountDashboard() {
   const profile = useDisplayProfile();
   const account = useAccount();
@@ -62,7 +62,7 @@ function ServerDashboard({ profile }: { profile: AuthenticatedProfile }) {
         {scheduling && teacher && <TeacherOverview me={me} lessons={lessonData} />}
         {scheduling && student && <StudentShortcuts />}
         {scheduling && <RegistrationSummary me={me} />}
-        <CommercialNotice />
+        <PilotNote />
       </div>
     </>
   );
@@ -159,23 +159,15 @@ function TeacherStatus({ teacher }: { teacher: NonNullable<Me["onboarding"]["tea
   );
 }
 
-function CommercialNotice() {
+/** Uma linha sobre o piloto: aulas sem cobrança e pagamentos desligados (bloqueio comercial mantido). */
+function PilotNote() {
   return (
-    <Card tone="muted" className="flex items-start gap-3 text-sm">
-      <ShieldIcon className="mt-0.5 h-5 w-5 shrink-0 text-link" />
-      <div>
-        <p className="font-semibold text-fg-strong">Conta ainda não habilitada para uso comercial</p>
-        <p className="mt-1 leading-relaxed text-fg">
-          {FEATURES.scheduling !== "off"
-            ? "Nesta fase de testes só há aulas de teste, sem cobrança, e nenhum pagamento real."
-            : "Nesta fase de testes não é possível agendar aulas nem fazer pagamentos reais."}{" "}
-          A demonstração continua disponível com dados fictícios, separados da sua conta — nada dela é copiado para cá.
-        </p>
-        <Link to="/perfil-de-acesso" className="mt-2 inline-flex min-h-11 items-center font-semibold text-link underline-offset-4 hover:underline">
-          Explorar a demonstração
-        </Link>
-      </div>
-    </Card>
+    <p className="flex items-center gap-2 px-1 text-xs text-fg-muted" data-testid="pilot-note">
+      <ShieldIcon className="h-3.5 w-3.5 shrink-0" />
+      {FEATURES.scheduling !== "off"
+        ? "Piloto EduSearch: aulas sem cobrança; pagamentos desativados."
+        : "Piloto EduSearch: agendamento e pagamentos ainda não estão disponíveis."}
+    </p>
   );
 }
 
@@ -210,7 +202,7 @@ function PreviewDashboard({ profile }: { profile: AuthenticatedProfile }) {
           </Link>
         </Card>
 
-        <CommercialNotice />
+        <PilotNote />
       </div>
     </>
   );

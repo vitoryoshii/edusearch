@@ -11,7 +11,6 @@ import {
   GiftIcon,
   GraduationIcon,
   HomeIcon,
-  LockIcon,
   LoadingState,
   Logo,
   LogoutIcon,
@@ -152,7 +151,7 @@ export function AppShell({ role }: { role: ShellMode }) {
   const userMenu = isAccount ? accountMenu : demoMenu;
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[16rem_1fr]">
+    <div className="min-h-dvh lg:grid lg:grid-cols-[16rem_1fr]" data-shell={isAccount ? "account" : "demo"}>
       <a
         href="#conteudo-principal"
         className="sr-only z-[70] focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:rounded-control focus:bg-surface focus:px-4 focus:py-2 focus:shadow-raised"
@@ -212,7 +211,8 @@ export function AppShell({ role }: { role: ShellMode }) {
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        {isAccount ? <AccountBanner /> : <DemoBanner />}
+        {/* Demonstração: faixa fixa (dados fictícios). Conta real: sem faixa — o piloto é informado onde importa. */}
+        {!isAccount && <DemoBanner />}
 
         {/* Barra superior (mobile/tablet) */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-bg/95 px-4 backdrop-blur-sm sm:px-6 lg:hidden">
@@ -232,7 +232,23 @@ export function AppShell({ role }: { role: ShellMode }) {
                 trigger={<MoreIcon className="h-6 w-6" />}
               />
             )}
-            <Dropdown label="Menu da conta" items={userMenu} trigger={<Avatar name={name} src={avatarSrc} size="sm" />} />
+            {/*
+              Só o avatar no botão: sem foto, as iniciais seriam o "texto visível" do botão e não estão em
+              "Menu da conta" (WCAG 2.5.3, axe label-content-name-mismatch). Sem foto → ícone, sem texto.
+            */}
+            <Dropdown
+              label="Menu da conta"
+              items={userMenu}
+              trigger={
+                avatarSrc ? (
+                  <Avatar name={name} src={avatarSrc} size="sm" />
+                ) : (
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-link">
+                    <UserIcon className="h-5 w-5" />
+                  </span>
+                )
+              }
+            />
           </div>
         </header>
 
@@ -252,7 +268,7 @@ export function AppShell({ role }: { role: ShellMode }) {
 
       {/* Barra inferior (mobile/tablet) */}
       <nav
-        aria-label="Navegação principal"
+        aria-label="Navegação rápida"
         className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden"
       >
         <ul className="mx-auto grid max-w-lg" style={{ gridTemplateColumns: `repeat(${mobileItems.length}, minmax(0, 1fr))` }}>
@@ -281,19 +297,6 @@ export function AppShell({ role }: { role: ShellMode }) {
           ))}
         </ul>
       </nav>
-    </div>
-  );
-}
-
-/** Faixa da conta real: deixa claro que é uma sessão autenticada em fase de testes. */
-function AccountBanner() {
-  return (
-    <div className="flex items-center justify-center gap-1.5 border-b border-line bg-primary-soft px-4 py-2 text-center text-xs text-fg sm:px-6">
-      <LockIcon className="h-3.5 w-3.5 shrink-0 text-link" />
-      <span>
-        <strong className="font-semibold text-fg-strong">Sessão autenticada</strong> · ambiente de testes. Aulas e pagamentos
-        reais ainda não estão habilitados.
-      </span>
     </div>
   );
 }

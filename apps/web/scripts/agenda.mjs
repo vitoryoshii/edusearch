@@ -102,6 +102,7 @@ const day = new Date(Date.now() + 2 * 86400000);
 const slotAt = (h) => new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h + 3, 0)).toISOString(); // h:00 em SP
 const SLOTS = [slotAt(9), slotAt(10), slotAt(14)];
 const state = {
+  noPhoto: false,
   calendar: "not_connected",
   issuedState: null,
   windows: [{ weekday: "seg", start: "09:00", end: "12:00" }],
@@ -133,7 +134,7 @@ function api(method, path, sub, body, query = new URLSearchParams()) {
   const teacher = user.roles.includes("teacher");
   if (path === "/v1/me" && method === "GET")
     return [200, {
-      id: sub, email: user.email, display_name: user.name, avatar_url: "https://lh3.googleusercontent.com/a/foto-ficticia=s96-c", status: "onboarding", roles: user.roles,
+      id: sub, email: user.email, display_name: user.name, avatar_url: state.noPhoto ? null : "https://lh3.googleusercontent.com/a/foto-ficticia=s96-c", status: "onboarding", roles: user.roles,
       onboarding: { student: user.roles.includes("student") ? { status: "completed" } : null, teacher: teacher ? { status: "completed", verification_status: "approved", is_published: true } : null },
       created_at: NOW, updated_at: NOW,
     }];
@@ -517,6 +518,16 @@ await signOut();
 await signIn("S");
 await b.go(base + "/conta/aulas", 1500);
 await check(await waitFor("document.querySelector('[data-testid=lesson-row]')?.dataset.status === 'cancelled'"), "após novo login, Minhas aulas recupera o histórico");
+
+/* Conta SEM foto: menu do cabeçalho acessível (antes: iniciais fora do nome do botão) */
+state.noPhoto = true;
+await b.viewport(390);
+await b.go(base + "/conta", 1500);
+await waitFor("!!document.querySelector('main h1')");
+await axe("início sem foto (390 px)");
+await check(await b.evaluate("new Set([...document.querySelectorAll('nav')].map((n) => n.getAttribute('aria-label'))).size === document.querySelectorAll('nav').length"), "landmarks de navegação com nomes únicos");
+await b.viewport(1280);
+state.noPhoto = false;
 
 /* ------------------------------ 3. Demonstração isolada ------------------------------ */
 console.log("Demonstração");
