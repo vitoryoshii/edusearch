@@ -194,12 +194,15 @@ def make_client(settings, verifier, api_database_url, google, cipher, abacate):
     clients: list[TestClient] = []
 
     def _make(stage: str = "sandbox", split: bool = False) -> TestClient:
+        api_key = "abc_prod_teste" if stage == "production" else "abc_dev_teste"
         s = settings.model_copy(
             update={
                 "scheduling_stage": "testing",
                 "google_oauth_redirect_uri": "https://app.example.com/conta/agenda/google/retorno",
                 "payments_stage": stage,
-                "abacatepay_api_key": __import__("pydantic").SecretStr("abc_dev_teste"),
+                # Só habilita a configuração de produção no processo de teste: não cria cobrança.
+                "payments_production_approved": stage == "production",
+                "abacatepay_api_key": __import__("pydantic").SecretStr(api_key),
                 "abacatepay_webhook_secret": __import__("pydantic").SecretStr(SECRET),
                 "abacatepay_webhook_public_key": __import__("pydantic").SecretStr(PUBLIC_KEY),
                 "abacatepay_split_enabled": split,
@@ -211,7 +214,7 @@ def make_client(settings, verifier, api_database_url, google, cipher, abacate):
             redirect_uri=s.google_oauth_redirect_uri,
             transport=httpx.MockTransport(google),
         )
-        gateway = AbacatePayClient("abc_dev_teste", transport=httpx.MockTransport(abacate))
+        gateway = AbacatePayClient(api_key, transport=httpx.MockTransport(abacate))
         database = Database(api_database_url, min_size=0, max_size=4, connect_timeout=5)
         app = create_app(
             s,
@@ -465,6 +468,50 @@ def test_teacher_finance_is_aggregated_and_private(client, people, abacate) -> N
         "/v1/me/teacher-finance?period=30d", headers=auth(people["tokens"][people["s1"]])
     )
     assert student.status_code == 403 and student.json()["code"] == "role_required"
+
+
+def test_teacher_finance_isolated_by_server_environment(
+    client, make_client, people, abacate, admin
+) -> None:
+    """O mesmo professor não mistura histórico Sandbox/Production, nem escolhe o ambiente."""
+    sandbox = checkout(client, people, slot(client, people)).json()
+    charge = charge_of(abacate, sandbox)
+    abacate.pay(charge["id"])
+    assert post_webhook(client, webhook_body(charge)).json()["outcome"] == "confirmed"
+
+    # Registro artificial apenas no banco descartável para provar o limite entre os ambientes.
+    admin.execute(
+        """
+        insert into public.payment_intents (
+          student_id, teacher_id, amount_cents, commission_bps, commission_cents,
+          teacher_share_cents, environment, status, idempotency_key, expires_at,
+          paid_at, paid_amount_cents, gateway_fee_cents
+        ) values (%s, %s, 10000, 1500, 1500, 8500, 'production', 'paid', %s,
+                  now() + interval '15 minutes', now(), 10000, 125)
+        """,
+        (uuid.uuid4(), people["teacher"], uuid.uuid4()),
+    )
+
+    token = auth(people["tokens"][people["teacher"]])
+    sandbox_view = client.get("/v1/me/teacher-finance?period=30d", headers=token)
+    assert sandbox_view.status_code == 200
+    sandbox_data = sandbox_view.json()
+    assert sandbox_data["environment"] == "sandbox"
+    assert sandbox_data["summary"]["gross_cents"] == 8000
+    assert sandbox_data["summary"]["gateway_fee_cents"] == 80
+    assert [payment["environment"] for payment in sandbox_data["payments"]] == ["sandbox"]
+
+    # O processo de produção aqui só lê o mesmo banco descartável; não aciona gateway ou cobrança.
+    production_client = make_client("production")
+    production_view = production_client.get("/v1/me/teacher-finance?period=30d", headers=token)
+    assert production_view.status_code == 200
+    production_data = production_view.json()
+    assert production_data["environment"] == "production"
+    assert production_data["summary"]["gross_cents"] == 10000
+    assert production_data["summary"]["commission_cents"] == 1500
+    assert production_data["summary"]["teacher_share_cents"] == 8500
+    assert production_data["summary"]["gateway_fee_cents"] == 125
+    assert [payment["environment"] for payment in production_data["payments"]] == ["production"]
 
 
 def test_simultaneous_confirmations_are_serialized(

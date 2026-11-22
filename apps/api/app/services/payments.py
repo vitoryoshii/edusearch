@@ -438,8 +438,9 @@ class PaymentsService:
             days = {"7d": 7, "30d": 30, "90d": 90}[period]
             since = self._now() - timedelta(days=days)
             repo = PaymentsRepository(conn)
-            summary = repo.teacher_finance_summary(user.id, since)
-            rows = repo.list_for_teacher_since(user.id, since)
+            # O estágio do processo decide o ambiente; ele nunca vem do cliente.
+            summary = repo.teacher_finance_summary(user.id, self._env, since)
+            rows = repo.list_for_teacher_since(user.id, self._env, since)
         return TeacherFinanceOut(
             period=period,
             environment=self._env,  # o ambiente é decidido pelo servidor, nunca pela query.

@@ -33,6 +33,9 @@ aula paga; **não é saldo disponível, repasse confirmado ou valor sacável**.
 ```
 
 - Valores monetários são inteiros em centavos BRL.
+- O período considera `payment_intents.created_at`, isto é, a data de criação da cobrança. Uma
+  evolução de regra financeira deverá decidir explicitamente se os totais de pagamentos devem passar
+  a considerar `paid_at`; essa alteração não pode reinterpretar silenciosamente o histórico atual.
 - `commission_bps` é a regra vigente para novas aulas; cada cobrança preserva também sua regra
   congelada para uma futura evolução de faixas.
 - `gross_cents`, comissão, parcela e tarifas somam somente `payment_intents.status = paid`.
@@ -40,6 +43,8 @@ aula paga; **não é saldo disponível, repasse confirmado ou valor sacável**.
 - A conta de recebimentos é somente o estado já registrado. Não há formulário de repasse quando o
   split está desabilitado.
 - Contas sem papel `teacher` recebem `403 role_required`; a rota não aceita `teacher_id`.
+- O ambiente também não é parâmetro da rota: o backend filtra totais e histórico pelo ambiente ativo
+  do servidor, impedindo que registros Sandbox e Production sejam misturados.
 
 ## Evolução prevista
 

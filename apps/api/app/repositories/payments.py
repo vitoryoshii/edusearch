@@ -47,26 +47,31 @@ class PaymentsRepository:
             (user_id,),
         ).fetchall()
 
-    def list_for_teacher_since(self, teacher_id: UUID, since: datetime) -> list[dict[str, Any]]:
-        """Histórico do próprio professor; a transação ainda carrega as claims para o RLS."""
+    def list_for_teacher_since(
+        self, teacher_id: UUID, environment: str, since: datetime
+    ) -> list[dict[str, Any]]:
+        """Histórico do próprio professor e ambiente ativo; a transação carrega as claims RLS."""
         return self._conn.execute(
             _SELECT
-            + " where p.teacher_id = %s and p.created_at >= %s"
+            + " where p.teacher_id = %s and p.environment = %s::public.payment_environment"
+            + " and p.created_at >= %s"
             + " order by p.created_at desc limit 100",
-            (teacher_id, since),
+            (teacher_id, environment, since),
         ).fetchall()
 
-    def teacher_finance_summary(self, teacher_id: UUID, since: datetime) -> dict[str, Any]:
-        """Agregação no banco, sem expor nem aceitar identificador de outro professor."""
+    def teacher_finance_summary(
+        self, teacher_id: UUID, environment: str, since: datetime
+    ) -> dict[str, Any]:
+        """Agregação do próprio professor, limitada ao ambiente decidido pelo servidor."""
         row = self._conn.execute(
             """
             select
-              coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::integer as gross_cents,
-              coalesce(sum(commission_cents) filter (where status = 'paid'), 0)::integer
+              coalesce(sum(amount_cents) filter (where status = 'paid'), 0) as gross_cents,
+              coalesce(sum(commission_cents) filter (where status = 'paid'), 0)
                 as commission_cents,
-              coalesce(sum(teacher_share_cents) filter (where status = 'paid'), 0)::integer
+              coalesce(sum(teacher_share_cents) filter (where status = 'paid'), 0)
                 as teacher_share_cents,
-              coalesce(sum(gateway_fee_cents) filter (where status = 'paid'), 0)::integer
+              coalesce(sum(gateway_fee_cents) filter (where status = 'paid'), 0)
                 as gateway_fee_cents,
               count(*) filter (where status = 'paid')::integer as paid_lessons,
               count(*) filter (where status = 'pending')::integer as pending_lessons,
@@ -74,9 +79,10 @@ class PaymentsRepository:
                 as cancelled_lessons,
               count(*) filter (where status = 'refunded')::integer as refunded_lessons
             from public.payment_intents
-            where teacher_id = %s and created_at >= %s
+            where teacher_id = %s and environment = %s::public.payment_environment
+              and created_at >= %s
             """,
-            (teacher_id, since),
+            (teacher_id, environment, since),
         ).fetchone()
         assert row is not None  # noqa: S101 — agregação sempre retorna uma linha
         return row
