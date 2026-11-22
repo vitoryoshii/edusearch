@@ -558,19 +558,13 @@ def test_commission_progress_is_private_versioned_and_freezes_existing_charges(
             "simulation_commission_cents": 1400,
             "simulation_teacher_share_cents": 8600,
         }
-        slots_response = client.get(
-            f"/v1/teachers/{people['teacher']}/slots?duration=60&days=3",
+        # Libera a reserva de fixture: a disponibilidade é otimista durante um Pix pendente.
+        cancelled = client.post(
+            f"/v1/lessons/{old['lesson']['id']}/cancel",
             headers=auth(people["tokens"][people["s1"]]),
         )
-        assert slots_response.status_code == 200, slots_response.text
-        old_starts = datetime.fromisoformat(old["lesson"]["starts_at"].replace("Z", "+00:00"))
-        next_starts = next(
-            candidate
-            for candidate in slots_response.json()["slots"]
-            if datetime.fromisoformat(candidate.replace("Z", "+00:00"))
-            >= old_starts + timedelta(minutes=60)
-        )
-        new_response = checkout(client, people, next_starts)
+        assert cancelled.status_code == 200, cancelled.text
+        new_response = checkout(client, people, slot(client, people))
         assert new_response.status_code == 201, new_response.text
         new = new_response.json()
         assert (new["commission_policy_version"], new["commission_bps"]) == ("demo-v2", 1400)
