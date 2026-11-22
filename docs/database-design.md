@@ -15,6 +15,7 @@ PostgreSQL do Supabase (`edusearch-db`, ref. `pgltvnwdvatyihrozlvn`). Esta fase 
 | `20261120013704_disable_unused_pg_graphql.sql` | `drop extension if exists pg_graphql` (sem CASCADE). Não faz nada no remoto, que não tem a extensão |
 | `20261120015728_onboarding_profile_fields.sql` | **Fase 2.6B.** Só adições: colunas do onboarding (dificuldades, especialidades, métodos, várias durações, dias e períodos do professor) com padrão vazio, tabela `student_subjects` com RLS e GRANTs das novas colunas |
 | `20261120015729_api_connection_role.sql` | **Fase 2.6B.** Papel `edusearch_api` (NOLOGIN, NOINHERIT, sem BYPASSRLS) e a política que limita a atribuição de papel ao `sub` do JWT |
+| `20261121120000_scheduling_google_calendar.sql` | **Fase 3A.** `btree_gist` (schema `extensions`), `teacher_availability`, `lessons` (só teste, EXCLUDE por professor/aluno, idempotência, triggers), `private.google_calendar_credentials` (refresh token cifrado; só `edusearch_api`), `private.teacher_busy_ranges` e perfis visíveis para professores publicados e participantes de aula. Ver [google-calendar-integration.md](google-calendar-integration.md) |
 
 O rollback fica em `supabase/rollback/20261119_fase_2_6a_down.sql`, fora da pasta de migrations.
 
@@ -101,7 +102,7 @@ erDiagram
 | `set search_path = ''` em todas as funções | Evita sequestro de `search_path` (lint 0011) |
 | Interesses do aluno (disciplinas) ainda não modelados | Ficam para o contrato de onboarding do aluno, com tabela `student_subjects` e FK para `subjects` |
 | Dados de menores | Não há data de nascimento nem documento. **Não usar dados reais de menores de idade** em desenvolvimento ou testes: só contas fictícias (`@example.com`) |
-| Segredos | Nenhuma tabela guarda senha, Client Secret, token do Google ou chave. Tokens OAuth do Google Agenda, quando existirem, ficarão em armazenamento próprio (Vault), fora destas tabelas |
+| Segredos | Nenhuma tabela guarda senha, Client Secret ou chave. **Exceção (Fase 3A):** o refresh token do Google Agenda do professor fica em `private.google_calendar_credentials`, **cifrado pela API** (AES-256-GCM, chave fora do banco), alcançável só por `edusearch_api`. O Vault foi descartado porque a chave dele fica no próprio projeto (ver [google-calendar-integration.md](google-calendar-integration.md)) |
 
 ## Segurança: privilégios e RLS
 
