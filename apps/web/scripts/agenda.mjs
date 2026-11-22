@@ -496,6 +496,11 @@ await act("reservar 10:00", "(() => { document.querySelector('[data-testid=book-
 await check(await waitFor(text("Este horário acabou de ser reservado.")), "409: mensagem de horário ocupado");
 await sleep(500);
 await check(apiLog.filter((r) => r.path.endsWith("/slots")).length > before, "409: horários recarregados");
+await check(
+  !(await b.evaluate("!!document.querySelector('[data-testid=slot-list] [aria-pressed=\"true\"]')")) &&
+    (await b.evaluate(text("Este horário acabou de ficar indisponível. Escolha outro horário para continuar."))),
+  "409: seleção antiga é limpa e a pessoa recebe orientação",
+);
 await axe("perfil do professor");
 await shot("perfil-professor", [320, 360, 390, 430, 768, 1440]);
 await fitsInCards("perfil do professor (reserva)");

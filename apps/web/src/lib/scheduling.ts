@@ -76,7 +76,8 @@ export function nextSlotLabel(iso: string | null | undefined): string | null {
   return `${dayLabelOf(iso)} · ${timeOf(iso)}`;
 }
 
-export type SlotDay = { key: string; label: string; slots: { iso: string; time: string }[] };
+export type SlotItem = { iso: string; time: string };
+export type SlotDay = { key: string; label: string; slots: SlotItem[] };
 
 /** Agrupa inícios livres por dia (fuso da plataforma), em ordem. */
 export function groupSlotsByDay(isos: readonly string[]): SlotDay[] {
@@ -88,6 +89,26 @@ export function groupSlotsByDay(isos: readonly string[]): SlotDay[] {
     days.set(key, day);
   }
   return [...days.values()];
+}
+
+export type SlotPeriod = "manha" | "tarde" | "noite";
+export const SLOT_PERIOD_LABEL: Record<SlotPeriod, string> = {
+  manha: "Manhã",
+  tarde: "Tarde",
+  noite: "Noite",
+};
+
+/** Agrupa horários já filtrados para um dia no período de Brasília. */
+export function groupSlotsByPeriod(slots: readonly SlotItem[]): Array<{ period: SlotPeriod; slots: SlotItem[] }> {
+  const groups: Record<SlotPeriod, SlotItem[]> = { manha: [], tarde: [], noite: [] };
+  for (const slot of slots) {
+    const hour = Number(slot.time.slice(0, 2));
+    const period: SlotPeriod = hour < 12 ? "manha" : hour < 18 ? "tarde" : "noite";
+    groups[period].push(slot);
+  }
+  return (Object.keys(groups) as SlotPeriod[])
+    .filter((period) => groups[period].length > 0)
+    .map((period) => ({ period, slots: groups[period] }));
 }
 
 export type CalendarReturn = { kind: "code"; code: string; state: string } | { kind: "denied" } | { kind: "invalid" };

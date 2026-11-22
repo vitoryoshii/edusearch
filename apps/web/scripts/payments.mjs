@@ -475,8 +475,15 @@ await signIn("S");
 await check(await b.evaluate(`[...document.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/conta/pagamentos')`), "menu da conta tem \"Pagamentos\"");
 await b.go(base + `/conta/professores/${USERS.T.id}`, 1500);
 await check(await waitFor("document.querySelectorAll('[data-testid=slot-list] button').length === 3"), "horários livres no perfil");
-await check(await waitFor(text("Reservar e pagar com Pix") + " && " + text("sem dinheiro real")), "botão de reserva paga e aviso de ambiente de testes");
+await check(
+  await waitFor("document.querySelector('[data-testid=book-lesson]')?.disabled === true && " + text("Escolha uma data e horário") + " && " + text("sem dinheiro real")),
+  "antes de escolher horário, reserva Pix fica desabilitada e identifica o ambiente de testes",
+);
 await pick("09:00");
+await check(
+  await waitFor("document.querySelector('[data-testid=book-lesson]')?.disabled === false && " + text("Reservar e pagar com Pix")),
+  "após escolher horário, a reserva Pix fica habilitada",
+);
 await act("reservar e pagar (clique duplo)", "(() => { const x = document.querySelector('[data-testid=book-lesson]'); x.click(); x.click(); return true; })()");
 await check(await waitFor(`location.pathname.startsWith('/conta/pagamentos/') && ${payStatus} === 'pending'`), "vai para o checkout com o Pix pendente");
 const checkouts = apiLog.filter((r) => r.method === "POST" && r.path === "/v1/payments/checkout");

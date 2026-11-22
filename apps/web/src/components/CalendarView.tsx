@@ -20,7 +20,7 @@ import {
 import { subjectName } from "../lib/catalog";
 import { STATUS_LABELS, formatTime, formatTimeRange } from "../lib/format";
 
-export type CalendarMode = "week" | "month";
+export type CalendarMode = "day" | "week" | "month";
 
 export type DayInfo = {
   blocked?: boolean;
@@ -197,9 +197,9 @@ export function CalendarView({
     gridRef.current?.querySelector<HTMLButtonElement>(`[data-day="${focus}"]`)?.focus();
   }, [focus]);
 
-  const step = mode === "week" ? (n: number) => addDays(focus, 7 * n) : (n: number) => addMonths(focus, n);
-  const title = mode === "week" ? weekLabel(focus) : monthLabel(focus);
-  const unit = mode === "week" ? "semana" : "mês";
+  const step = mode === "day" ? (n: number) => addDays(focus, n) : mode === "week" ? (n: number) => addDays(focus, 7 * n) : (n: number) => addMonths(focus, n);
+  const title = mode === "day" ? dayLabelLong(focus) : mode === "week" ? weekLabel(focus) : monthLabel(focus);
+  const unit = mode === "day" ? "dia" : mode === "week" ? "semana" : "mês";
 
   const onGridKey = (e: React.KeyboardEvent) => {
     const moves: Record<string, () => string> = {
@@ -222,25 +222,29 @@ export function CalendarView({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between gap-3">
-        <IconButton label={`${mode === "week" ? "Semana" : "Mês"} anterior`} variant="secondary" onClick={() => onFocusChange(step(-1))}>
+        <IconButton label={`${mode === "day" ? "Dia" : mode === "week" ? "Semana" : "Mês"} anterior`} variant="secondary" onClick={() => onFocusChange(step(-1))}>
           <ChevronLeftIcon className="h-5 w-5" />
         </IconButton>
         <div className="text-center">
           <p className="font-semibold text-fg-strong" aria-live="polite">
             {title}
           </p>
-          {(mode === "week" ? !weekDays(focus).includes(today) : !sameMonth(focus, today)) && (
+          {(mode === "day" ? focus !== today : mode === "week" ? !weekDays(focus).includes(today) : !sameMonth(focus, today)) && (
             <button type="button" onClick={() => onFocusChange(today)} className="text-sm font-medium text-link hover:underline">
-              Voltar para {mode === "week" ? "esta semana" : "este mês"}
+              Voltar para {mode === "day" ? "hoje" : mode === "week" ? "esta semana" : "este mês"}
             </button>
           )}
         </div>
-        <IconButton label={`${mode === "week" ? "Próxima semana" : "Próximo mês"}`} variant="secondary" onClick={() => onFocusChange(step(1))}>
+        <IconButton label={`${mode === "day" ? "Próximo dia" : mode === "week" ? "Próxima semana" : "Próximo mês"}`} variant="secondary" onClick={() => onFocusChange(step(1))}>
           <ChevronRightIcon className="h-5 w-5" />
         </IconButton>
       </div>
 
-      {mode === "week" ? (
+      {mode === "day" ? (
+        <section className="rounded-card border border-line bg-surface p-4 shadow-card" aria-label={`Agenda de ${dayLabelLong(focus)}`}>
+          <DayContent dayKey={focus} lessons={lessons} perspective={perspective} info={dayInfo?.(focus)} onSelectLesson={onSelectLesson} actions={renderDayActions?.(focus)} />
+        </section>
+      ) : mode === "week" ? (
         <ol className="grid gap-2.5" aria-label={`Dias da ${unit}`}>
           {weekDays(focus).map((key) => {
             const isToday = key === today;
