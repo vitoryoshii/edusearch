@@ -15,6 +15,8 @@ APP_TABLES = [
     "teacher_profiles",
     "teacher_subjects",
     "student_subjects",
+    "teacher_availability",
+    "lessons",
 ]
 
 
@@ -224,12 +226,17 @@ EXPECTED_TABLE_GRANTS = {
     ("authenticated", "teacher_subjects", "DELETE"),
     ("authenticated", "student_subjects", "SELECT"),
     ("authenticated", "student_subjects", "DELETE"),
+    # Fase 3A: disponibilidade e aulas de teste (INSERT/UPDATE só por coluna, fora desta visão).
+    ("authenticated", "teacher_availability", "SELECT"),
+    ("authenticated", "teacher_availability", "DELETE"),
+    ("authenticated", "lessons", "SELECT"),
+    ("edusearch_api", "lessons", "SELECT"),
 }
 
 EXPECTED_POLICIES = {
     ("account_roles", "account_roles_insert_via_api", "INSERT"),
     ("account_roles", "account_roles_select_own", "SELECT"),
-    ("profiles", "profiles_select_own", "SELECT"),
+    ("profiles", "profiles_select_visible", "SELECT"),
     ("profiles", "profiles_update_own", "UPDATE"),
     ("student_profiles", "student_profiles_insert_own", "INSERT"),
     ("student_profiles", "student_profiles_select_own", "SELECT"),
@@ -245,6 +252,14 @@ EXPECTED_POLICIES = {
     ("teacher_subjects", "teacher_subjects_insert_own", "INSERT"),
     ("teacher_subjects", "teacher_subjects_select_own_or_published", "SELECT"),
     ("teacher_subjects", "teacher_subjects_update_own", "UPDATE"),
+    ("teacher_availability", "teacher_availability_select", "SELECT"),
+    ("teacher_availability", "teacher_availability_insert_own", "INSERT"),
+    ("teacher_availability", "teacher_availability_delete_own", "DELETE"),
+    ("lessons", "lessons_select_participant", "SELECT"),
+    ("lessons", "lessons_insert_student", "INSERT"),
+    ("lessons", "lessons_update_participant", "UPDATE"),
+    ("lessons", "lessons_select_via_api", "SELECT"),
+    ("lessons", "lessons_update_calendar_via_api", "UPDATE"),
 }
 
 
