@@ -12,7 +12,8 @@ import psycopg
 _SELECT = """
 select p.id, p.student_id, p.teacher_id, p.status::text as status,
        p.environment::text as environment,
-       p.amount_cents, p.commission_bps, p.commission_cents, p.teacher_share_cents, p.currency,
+       p.amount_cents, p.commission_policy_version, p.commission_bps, p.commission_cents,
+       p.teacher_share_cents, p.currency,
        p.br_code, p.br_code_image, p.expires_at, p.paid_at, p.split_status::text as split_status,
        p.gateway_charge_id, p.last_checked_at, p.created_at, p.lesson_id,
        l.starts_at, l.ends_at, l.status::text as lesson_status, l.meet_url,
@@ -86,6 +87,13 @@ class PaymentsRepository:
         ).fetchone()
         assert row is not None  # noqa: S101 — agregação sempre retorna uma linha
         return row
+
+    def commission_progress(self, teacher_id: UUID, environment: str) -> dict[str, Any] | None:
+        """Política ativa e contagem elegível; a função privada confere o ``sub`` das claims."""
+        return self._conn.execute(
+            "select * from private.commission_for_teacher(%s, %s::public.payment_environment)",
+            (teacher_id, environment),
+        ).fetchone()
 
     def own_payout(self, teacher_id: UUID) -> dict[str, Any] | None:
         return self._conn.execute(

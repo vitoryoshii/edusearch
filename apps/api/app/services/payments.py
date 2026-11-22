@@ -38,13 +38,14 @@ from app.auth.jwt import AuthenticatedUser
 from app.config import Settings
 from app.db import BaseDatabase, as_connection_role
 from app.errors import ApiError, forbidden, not_found, service_unavailable, unauthorized
-from app.payments_rules import COMMISSION_BPS
+from app.payments_rules import COMMISSION_BPS, split_amount
 from app.repositories.payments import PaymentsRepository
 from app.repositories.profiles import ProfileRepository
 from app.repositories.scheduling import SchedulingRepository
 from app.scheduling import booking_problem
 from app.schemas.payments import (
     CheckoutIn,
+    CommissionProgressOut,
     FinancePeriod,
     PaymentLesson,
     PaymentOut,
@@ -144,6 +145,7 @@ class PaymentsService:
             status=row["status"],
             environment=row["environment"],
             amount_cents=row["amount_cents"],
+            commission_policy_version=row["commission_policy_version"],
             commission_bps=row["commission_bps"],
             commission_cents=row["commission_cents"],
             teacher_share_cents=row["teacher_share_cents"],
@@ -448,6 +450,44 @@ class PaymentsService:
             summary=TeacherFinanceSummary(**summary),
             payout_account=self.payout_account(user),
             payments=[self._out(row, user) for row in rows],
+        )
+
+    def commission_progress(self, user: AuthenticatedUser) -> CommissionProgressOut:
+        """Progressão do próprio professor; política/ambiente nunca vêm da requisição."""
+        if self._settings.payments_stage == "off":
+            raise payments_disabled()
+        with self._db.user_transaction(user) as conn:
+            if "teacher" not in ProfileRepository(conn).list_roles(user.id):
+                raise forbidden("role_required", "Disponível apenas para contas de professor.")
+            # A função é executável apenas pela conexão da API e ainda valida o sub das claims.
+            with as_connection_role(conn):
+                row = PaymentsRepository(conn).commission_progress(user.id, self._env)
+        if row is None:
+            raise service_unavailable(
+                "commission_policy_not_configured", "Política de comissão indisponível."
+            )
+        next_threshold = row["next_min_eligible_paid_lessons"]
+        simulation = split_amount(10_000, row["commission_bps"])
+        return CommissionProgressOut(
+            environment=self._env,
+            policy_version=row["policy_version"],
+            # A v1 contém só a faixa-base. Só será true após ativação operacional auditada.
+            progression_active=next_threshold is not None,
+            current_level=row["current_tier"],
+            current_rate_bps=row["commission_bps"],
+            next_rate_bps=row["next_commission_bps"],
+            eligible_paid_lessons=row["eligible_paid_lessons"],
+            next_level_paid_lessons=next_threshold,
+            lessons_remaining=(
+                max(0, next_threshold - row["eligible_paid_lessons"])
+                if next_threshold is not None
+                else None
+            ),
+            evaluation_days=row["evaluation_days"],
+            eligibility="eligible" if next_threshold is not None else "no_next_level",
+            simulation_amount_cents=simulation.amount_cents,
+            simulation_commission_cents=simulation.commission_cents,
+            simulation_teacher_share_cents=simulation.teacher_share_cents,
         )
 
     # ------------------------------------------------------------------ webhook

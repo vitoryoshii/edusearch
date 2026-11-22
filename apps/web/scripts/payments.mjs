@@ -118,7 +118,7 @@ const paymentOut = (p, sub) => {
   const pending = p.status === "pending";
   return {
     id: p.id, role: student ? "student" : "teacher", status: p.status, environment: "sandbox",
-    amount_cents: PRICE, commission_bps: 1500, commission_cents: 1200, teacher_share_cents: 6800, currency: "BRL",
+    amount_cents: PRICE, commission_policy_version: "v1", commission_bps: 1500, commission_cents: 1200, teacher_share_cents: 6800, currency: "BRL",
     br_code: student && pending && p.chargeReady ? "00020126580014br.gov.bcb.pix0136ficticio-" + p.id.slice(0, 8) + "5204000053039865406" : null,
     br_code_image: student && pending && p.chargeReady ? QR : null,
     expires_at: p.expires_at, paid_at: p.status === "paid" ? NOW : null, split_status: "not_applicable",
@@ -277,6 +277,10 @@ function api(method, path, sub, body, query = new URLSearchParams()) {
       summary: { gross_cents: mine.length * PRICE, commission_cents: mine.length * 1200, teacher_share_cents: mine.length * 6800, gateway_fee_cents: 0, paid_lessons: mine.length, pending_lessons: state.payments.filter((p) => p.status === "pending").length, cancelled_lessons: state.payments.filter((p) => ["cancelled", "expired", "failed"].includes(p.status)).length, refunded_lessons: state.payments.filter((p) => p.status === "refunded").length },
       payout_account: { status: "split_unavailable" }, payments: state.payments.map((p) => paymentOut(p, sub)).reverse(),
     }];
+  }
+  if (path === "/v1/me/commission-progress" && method === "GET") {
+    if (!teacher) return err(403, "role_required", "Disponível apenas para contas de professor.");
+    return [200, { environment: "sandbox", policy_version: "v1", progression_active: false, current_level: 0, current_rate_bps: 1500, next_rate_bps: null, eligible_paid_lessons: state.payments.filter((p) => p.status === "paid").length, next_level_paid_lessons: null, lessons_remaining: null, evaluation_days: 90, eligibility: "no_next_level", simulation_amount_cents: 10000, simulation_commission_cents: 1500, simulation_teacher_share_cents: 8500 }];
   }
   if (path === "/v1/me/payments") return [200, state.payments.filter((p) => sub === USERS.T.id || p.sub === sub).map((p) => paymentOut(p, sub)).reverse()];
   return err(404, "not_found", "Recurso não encontrado.");
@@ -558,6 +562,7 @@ await check(!(await b.evaluate("!!document.querySelector('[data-testid=pix-code]
 await axe("pagamento (professor)");
 await b.go(base + "/conta/pagamentos", 1500);
 await check(await waitFor("!!document.querySelector('[data-testid=teacher-finance]')") && (await b.evaluate(text("Parcela atribuída"))) && (await b.evaluate(text("não é saldo disponível"))), "financeiro do professor: valores simulados sem tratar parcela como saldo disponível");
+await check(await b.evaluate("!!document.querySelector('[data-testid=commission-progress]') && document.body.innerText.includes('Comissão vigente nas novas cobranças:')"), "financeiro do professor: progresso de comissão vem da API e não promete saldo");
 await axe("financeiro do professor");
 await fitsPayment("financeiro-professor", [320, 768, 1440]);
 await b.go(base + "/conta/configuracoes", 1500);

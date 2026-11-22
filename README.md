@@ -89,6 +89,7 @@ Uma plataforma em que:
 | Acompanhamento do aprendizado                   | Planejado    |
 | Pagamentos Pix com AbacatePay                   | Planejado    |
 | Split de pagamento e repasse aos professores    | Planejado    |
+| Política de comissão progressiva auditável      | Base técnica (15% efetivo) |
 
 ## Prévia visual (conceitual)
 

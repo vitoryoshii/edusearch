@@ -48,9 +48,10 @@ aula paga; **não é saldo disponível, repasse confirmado ou valor sacável**.
 
 ## Evolução prevista
 
-Fase 6.3 poderá introduzir uma política versionada de comissão progressiva, com vigência e trilha
-de auditoria. O painel continuará recebendo os valores congelados por cobrança, em vez de
-recalcular histórico com uma regra nova.
+Fase 6.3 introduziu a base versionada de comissão, com vigência, trilha de auditoria e snapshot por
+cobrança. A política efetiva continua em 15%; detalhes e pendências comerciais estão em
+[progressive-commission.md](progressive-commission.md). O painel recebe valores congelados por
+cobrança, em vez de recalcular histórico com uma regra nova.
 
 Fase 6.4 poderá introduzir indicações qualificadas somente após definir elegibilidade, antifraude,
 consentimento e auditoria. Por enquanto a UI informa “em desenvolvimento” e não cria metas,
