@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Button, Chip, Select, buttonClasses, useToast } from "@edusearch/ui";
 import { QueryContent } from "../QueryContent";
 import { ApiError, describeError } from "../../lib/api/client";
 import type { Lesson } from "../../lib/api/scheduling";
-import { useBookLessonMutation, useSlotsQuery } from "../../lib/query/hooks";
+import { FEATURES } from "../../lib/features";
+import { useBookLessonMutation, useCheckoutMutation, useSlotsQuery } from "../../lib/query/hooks";
 import { groupSlotsByDay } from "../../lib/scheduling";
 
 type Offer = { id: string; subjects: string[]; lesson_durations_minutes: number[] };
@@ -13,6 +14,9 @@ type Offer = { id: string; subjects: string[]; lesson_durations_minutes: number[
  * Reserva de aula de TESTE com UM professor (perfil público). Disciplina e duração vêm do cadastro
  * real; os horários, da API (fuso de Brasília). Idempotência por intenção de reserva: clique duplo
  * ou nova tentativa devolvem a MESMA aula.
+ *
+ * Com pagamentos ligados (Fase 5), a reserva vira um checkout Pix: o servidor reserva o horário
+ * (aguardando pagamento), calcula o valor e gera o Pix; o app só envia o horário escolhido.
  */
 export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offer; subjectName: (slug: string) => string; onBooked?: (lesson: Lesson) => void }) {
   const toast = useToast();
@@ -26,15 +30,28 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
   // Horários em cache aparecem na hora e são revalidados; quem garante o horário é o servidor (409).
   const slots = useSlotsQuery(teacher.id, duration);
   const bookMutation = useBookLessonMutation();
+  const checkoutMutation = useCheckoutMutation();
+  const navigate = useNavigate();
+  const paid = FEATURES.payments !== "off";
   const renew = () => {
     setSlot(null);
     key.current = crypto.randomUUID();
   };
   const book = {
-    pending: bookMutation.isPending,
+    pending: bookMutation.isPending || checkoutMutation.isPending,
     run: async () => {
     if (!slot || !subject || inFlight.current) return;
     inFlight.current = true;
+    if (paid) {
+      try {
+        const payment = await checkoutMutation.mutateAsync({ teacher_id: teacher.id, subject, starts_at: slot, duration_minutes: duration, idempotency_key: key.current });
+        renew();
+        navigate(`/conta/pagamentos/${payment.id}`);
+      } finally {
+        inFlight.current = false;
+      }
+      return;
+    }
     let lesson: Lesson;
     try {
       lesson = await bookMutation.mutateAsync({ teacher_id: teacher.id, subject, starts_at: slot, duration_minutes: duration, idempotency_key: key.current });
@@ -97,7 +114,7 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
       </QueryContent>
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={!slot || !subject} loading={book.pending} onClick={() => void book.run().catch(fail)} data-testid="book-lesson">
-          Reservar aula
+          {paid ? "Reservar e pagar com Pix" : "Reservar aula"}
         </Button>
         {booked && (
           <Link to="/conta/aulas" className={buttonClasses({ variant: "ghost", size: "sm" })}>
@@ -105,7 +122,11 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
           </Link>
         )}
       </div>
-      <p className="text-xs text-fg-muted">Aula do piloto, sem cobrança. Você pode cancelar em Minhas aulas.</p>
+      <p className="text-xs text-fg-muted">
+        {paid
+          ? `O horário fica reservado enquanto o Pix estiver válido.${FEATURES.payments === "sandbox" ? " Ambiente de testes: sem dinheiro real." : ""}`
+          : "Aula do piloto, sem cobrança. Você pode cancelar em Minhas aulas."}
+      </p>
     </div>
   );
 }

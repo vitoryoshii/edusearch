@@ -9,13 +9,15 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.abacatepay import AbacatePayClient
 from app.auth.jwt import JwksKeyResolver, TokenVerifier
 from app.config import Settings, get_settings
 from app.crypto import TokenCipher
 from app.db import BaseDatabase, Database
 from app.errors import ApiError, install_error_handlers
 from app.google_calendar import GoogleCalendarClient
-from app.routers import health, me, onboarding, scheduling
+from app.routers import health, me, onboarding, payments, scheduling
+from app.services.payments import build_gateway
 from app.services.scheduling import build_calendar_client
 
 logger = logging.getLogger("edusearch.api")
@@ -78,6 +80,7 @@ def create_app(
     google_calendar: GoogleCalendarClient | None = None,
     token_cipher: TokenCipher | None = None,
     clock: Callable[[], datetime] | None = None,
+    payment_gateway: AbacatePayClient | None = None,
 ) -> FastAPI:
     """Monta a aplicação. Testes injetam ``token_verifier``, ``database`` e o cliente do Google."""
     settings = settings or get_settings()
@@ -85,6 +88,8 @@ def create_app(
     db = database if database is not None else build_database(settings)
     if google_calendar is None and token_cipher is None:
         google_calendar, token_cipher = build_calendar_client(settings)
+    if payment_gateway is None:
+        payment_gateway = build_gateway(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -103,6 +108,8 @@ def create_app(
                 db.close()
             if google_calendar is not None:
                 google_calendar.close()
+            if payment_gateway is not None:
+                payment_gateway.close()
 
     app = FastAPI(
         title="EduSearch API",
@@ -118,6 +125,7 @@ def create_app(
     app.state.database = db
     app.state.google_calendar = google_calendar
     app.state.token_cipher = token_cipher
+    app.state.payment_gateway = payment_gateway
     if clock is not None:
         app.state.clock = clock
 
@@ -149,6 +157,7 @@ def create_app(
     app.include_router(me.router)
     app.include_router(onboarding.router)
     app.include_router(scheduling.router)
+    app.include_router(payments.router)
     return app
 
 

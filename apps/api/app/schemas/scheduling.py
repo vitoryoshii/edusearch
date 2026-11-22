@@ -27,7 +27,7 @@ HHMM = Annotated[str, AfterValidator(_hhmm)]
 
 CalendarStatus = Literal["not_configured", "not_connected", "connected", "revoked"]
 SyncStatus = Literal["not_connected", "pending", "synced", "failed", "removed"]
-LessonStatus = Literal["scheduled", "cancelled"]
+LessonStatus = Literal["scheduled", "cancelled", "awaiting_payment", "expired"]
 
 
 # ------------------------------------------------------------------------------- estado
@@ -178,9 +178,17 @@ class LessonOut(BaseModel):
     starts_at: datetime
     ends_at: datetime
     status: LessonStatus
-    is_test: Literal[True] = True
+    # true = aula do piloto sem cobrança; false = aula paga (ver payment).
+    is_test: bool = True
     calendar_sync_status: SyncStatus
     meet_url: str | None
     cancelled_at: datetime | None
     cancelled_by_role: Literal["teacher", "student"] | None
     created_at: datetime
+    payment: "LessonPayment | None" = None
+
+
+class LessonPayment(BaseModel):
+    id: UUID
+    status: str
+    amount_cents: int

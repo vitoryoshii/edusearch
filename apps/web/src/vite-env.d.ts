@@ -22,6 +22,8 @@ interface ImportMetaEnv {
   readonly VITE_STAGE_PROFILE_PERSISTENCE?: string;
   /** off (padrão) | testing — agenda real com Google Agenda/Meet (Fase 3A). */
   readonly VITE_STAGE_SCHEDULING?: string;
+  /** Fase 5: off | sandbox | production (padrão off). O backend tem o próprio interruptor. */
+  readonly VITE_STAGE_PAYMENTS?: string;
   /** URL pública (https) dos Termos de Uso — definir só quando publicados. */
   readonly VITE_LEGAL_TERMS_URL?: string;
   /** URL pública (https) da Política de Privacidade — definir só quando publicada. */

@@ -15,6 +15,7 @@
     "test:unit": "node --test scripts/unit.test.mjs",
     "test:auth": "node scripts/auth.mjs",
     "test:agenda": "node scripts/agenda.mjs",
+    "test:payments": "node scripts/payments.mjs",
     "screens": "node scripts/screens.mjs"
   },
   "dependencies": {

@@ -52,5 +52,6 @@ select = ["E", "F", "I", "UP", "B", "S", "BLE"]
 "tests/db/**" = ["S101", "S105", "S106", "S608", "E501"]
 # Fixtures do pytest importadas de test_scheduling_db (o ruff as vê como redefinição).
 "tests/db/test_catalog_db.py" = ["S101", "S105", "S106", "S608", "E501", "F811"]
+"tests/db/test_payments_db.py" = ["S101", "S105", "S106", "S608", "E501", "F811"]
 # Script de e2e: imprime relatório; tokens fictícios no modo local.
 "worker/e2e.py" = ["S101", "S105", "S106", "E501"]

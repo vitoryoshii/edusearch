@@ -26,6 +26,9 @@ const AccountExplore = lazy(() => import("../pages/account/Explore"));
 const AccountTeacherDetails = lazy(() => import("../pages/account/TeacherDetails"));
 const AccountProfessionalProfile = lazy(() => import("../pages/account/TeacherDetails").then((m) => ({ default: m.OwnProfessionalProfile })));
 const AccountLessons = lazy(() => import("../pages/account/Lessons"));
+// Pagamentos Pix (Fase 5): redirecionam para /conta se VITE_STAGE_PAYMENTS=off.
+const AccountPayment = lazy(() => import("../pages/account/Payment"));
+const AccountPayments = lazy(() => import("../pages/account/Payments"));
 const GoogleCalendarReturn = lazy(() => import("../pages/account/GoogleCalendarReturn"));
 
 const StudentHome = lazy(() => import("../pages/student/Home"));
@@ -153,6 +156,8 @@ const routes: RouteObject[] = [
           { path: "explorar", element: <AccountExplore /> },
           { path: "professores/:id", element: <AccountTeacherDetails /> },
           { path: "aulas", element: <AccountLessons /> },
+          { path: "pagamentos", element: <AccountPayments /> },
+          { path: "pagamentos/:id", element: <AccountPayment /> },
           { path: "perfil-profissional", element: <AccountProfessionalProfile /> },
           { path: "agenda/google/retorno", element: <GoogleCalendarReturn /> },
         ],

@@ -73,6 +73,17 @@ class BaseDatabase:
         with self._transaction("anon", {"role": "anon"}) as conn:
             yield conn
 
+    @contextmanager
+    def service_transaction(self) -> Iterator[psycopg.Connection]:
+        """Transação como o PAPEL DE CONEXÃO (edusearch_api), SEM usuário e sem claims.
+
+        Só para chamadas do servidor sem JWT (webhook do gateway de pagamento). O papel da API não
+        lê nem escreve tabelas do app sem RLS de participante: aqui ele só consegue executar as
+        funções private.payment_* às quais tem EXECUTE.
+        """
+        with self._transaction(None, {}) as conn:
+            yield conn
+
     def connection_role(self) -> dict[str, object]:
         """Atributos do papel de conexão (para recusar superusuário/BYPASSRLS em produção)."""
         try:
@@ -89,12 +100,13 @@ class BaseDatabase:
         return {"name": row[0], "superuser": bool(row[1]), "bypassrls": bool(row[2])}
 
     @contextmanager
-    def _transaction(self, role: str, claims: dict) -> Iterator[psycopg.Connection]:
+    def _transaction(self, role: str | None, claims: dict) -> Iterator[psycopg.Connection]:
         try:
             with self._connection() as conn:
                 conn.row_factory = dict_row
                 with conn.transaction():
-                    conn.execute(sql.SQL("set local role {}").format(sql.Identifier(role)))
+                    if role is not None:
+                        conn.execute(sql.SQL("set local role {}").format(sql.Identifier(role)))
                     conn.execute(
                         sql.SQL("set local statement_timeout = {}").format(
                             sql.Literal(self._statement_timeout_ms)

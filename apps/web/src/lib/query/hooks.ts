@@ -1,6 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../app/auth";
 import { accountApi } from "../api/account";
+import { paymentsApi, type CheckoutRequest, type Payment } from "../api/payments";
+import { pollDelay } from "../payments";
 import { schedulingApi, type CalendarConnection, type CatalogQuery, type Lesson, type LessonRequest } from "../api/scheduling";
 import type { AsyncState } from "../hooks/useAsync";
 import type { AvailabilityWindow } from "../scheduling";
@@ -202,4 +204,98 @@ export function toAsyncState<T>(q: { data: T | undefined; error: unknown; isErro
   if (q.data !== undefined) return { status: "success", data: q.data, error: undefined };
   if (q.isError) return { status: "error", data: undefined, error: q.error };
   return { status: "loading", data: undefined, error: undefined };
+}
+
+/* ------------------------------- Pagamentos (Fase 5) ------------------------------- */
+
+export function usePaymentsStatusQuery(enabled = true) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.paymentsStatus(uid),
+    queryFn: ({ signal }) => paymentsApi.status(signal),
+    staleTime: STALE_MS.paymentsStatus,
+    enabled: enabled && !!uid,
+  });
+}
+
+/**
+ * Pagamento com consulta periódica em backoff (3 s → 20 s; 30 s+ com a aba oculta) enquanto
+ * pendente. Quem confirma é o servidor (webhook/conciliação); a tela só reflete o estado dele.
+ */
+export function usePaymentQuery(id: string) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.payment(uid, id),
+    queryFn: ({ signal }) => paymentsApi.get(id, signal),
+    staleTime: STALE_MS.payment,
+    enabled: !!uid && !!id,
+    refetchInterval: (query) =>
+      pollDelay(query.state.data?.status, query.state.dataUpdateCount - 1, typeof document !== "undefined" && document.hidden),
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function usePaymentsQuery(enabled = true) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.payments(uid),
+    queryFn: ({ signal }) => paymentsApi.history(signal),
+    staleTime: STALE_MS.payments,
+    enabled: enabled && !!uid,
+  });
+}
+
+function afterPaymentChange(qc: QueryClient, uid: string, payment: Payment) {
+  qc.setQueryData(queryKeys.payment(uid, payment.id), payment);
+  void qc.invalidateQueries({ queryKey: queryKeys.payments(uid), exact: true });
+  void qc.invalidateQueries({ queryKey: queryKeys.lessons(uid) });
+}
+
+export function useCheckoutMutation() {
+  const qc = useQueryClient();
+  const uid = useAccountUid();
+  return useMutation({
+    mutationFn: (body: CheckoutRequest) => paymentsApi.checkout(body),
+    onSuccess: (payment, body) => {
+      afterPaymentChange(qc, uid, payment);
+      invalidateAfterLessonChange(qc, uid, body.teacher_id);
+    },
+    // 409 (horário tomado): horários em cache estavam velhos — busca de novo.
+    onError: (_e, body) => invalidateAfterLessonChange(qc, uid, body.teacher_id),
+  });
+}
+
+export function useSimulatePaymentMutation() {
+  const qc = useQueryClient();
+  const uid = useAccountUid();
+  return useMutation({
+    mutationFn: (id: string) => paymentsApi.simulate(id),
+    onSuccess: (payment) => afterPaymentChange(qc, uid, payment),
+  });
+}
+
+/** Ao ficar pago/expirar, a lista de aulas e os horários livres mudam. */
+export function onPaymentSettled(qc: QueryClient, uid: string) {
+  void qc.invalidateQueries({ queryKey: queryKeys.lessons(uid) });
+  void qc.invalidateQueries({ queryKey: queryKeys.payments(uid), exact: true });
+  void qc.invalidateQueries({ queryKey: queryKeys.slotsAll(uid) });
+}
+
+export function usePayoutAccountQuery(enabled = true) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.payoutAccount(uid),
+    queryFn: ({ signal }) => paymentsApi.payoutAccount(signal),
+    staleTime: STALE_MS.payoutAccount,
+    enabled: enabled && !!uid,
+  });
+}
+
+export function useSavePayoutAccountMutation() {
+  const qc = useQueryClient();
+  const uid = useAccountUid();
+  return useMutation({
+    mutationFn: (body: { legal_name: string; tax_id: string }) => paymentsApi.savePayoutAccount(body),
+    onSuccess: (saved) => qc.setQueryData(queryKeys.payoutAccount(uid), saved),
+  });
 }
