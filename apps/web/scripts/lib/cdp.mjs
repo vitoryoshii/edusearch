@@ -122,6 +122,8 @@ export async function launch() {
     ArrowLeft: { code: "ArrowLeft", vk: 37 },
     Home: { code: "Home", vk: 36 },
     End: { code: "End", vk: 35 },
+    PageUp: { code: "PageUp", vk: 33 },
+    PageDown: { code: "PageDown", vk: 34 },
   };
 
   /** Pressiona uma tecla de verdade (eventos de teclado do navegador, não JS sintético). */
