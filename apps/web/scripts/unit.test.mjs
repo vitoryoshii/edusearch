@@ -621,3 +621,37 @@ describe("agenda real (Fase 3A)", () => {
     assert.ok(!isGoogleAuthorizationUrl("javascript:alert(1)"));
   });
 });
+
+import { EMPTY_FILTERS, activeFilterCount, filtersFromSearch, filtersToSearch, hasMorePages, toCatalogQuery } from "../src/lib/marketplace.ts";
+import { accountNav } from "../src/lib/navigation.ts";
+
+describe("marketplace real (Fase 4A)", () => {
+  test("filtros → query da API: vazios omitidos, busca aparada, paginação", () => {
+    assert.deepEqual(toCatalogQuery(EMPTY_FILTERS, 0), { limit: 12, offset: 0 });
+    const f = { q: "  Ana  ", subject: "fisica", modality: "online", period: "noite", availableOnly: true };
+    assert.deepEqual(toCatalogQuery(f, 2), { q: "Ana", subject: "fisica", modality: "online", period: "noite", available_only: true, limit: 12, offset: 24 });
+    assert.equal(toCatalogQuery({ ...EMPTY_FILTERS, q: "x".repeat(80) }, 0).q.length, 60);
+    assert.equal(activeFilterCount(f), 5);
+  });
+  test("filtros ↔ URL: ida e volta e valores inválidos descartados", () => {
+    const f = { q: "Bruno", subject: "fisica", modality: "presencial", period: "manha", availableOnly: true };
+    assert.deepEqual(filtersFromSearch(filtersToSearch(f)), f);
+    assert.equal(filtersToSearch(EMPTY_FILTERS), "");
+    assert.deepEqual(filtersFromSearch("?modalidade=ead&periodo=madrugada&materia=F%C3%ADsica&livres=sim"), EMPTY_FILTERS);
+  });
+  test("paginação: há mais quando a página veio cheia", () => {
+    assert.equal(hasMorePages(12), true);
+    assert.equal(hasMorePages(5), false);
+  });
+  test("menu por papel: aluno, professor, ambos e agenda desligada", () => {
+    const paths = (roles, on = true) => accountNav(roles, on).map((i) => i.to);
+    assert.deepEqual(paths(["student"]), ["/conta", "/conta/explorar", "/conta/aulas", "/conta/perfil", "/conta/configuracoes"]);
+    assert.deepEqual(paths(["teacher"]), ["/conta", "/conta/agenda", "/conta/aulas", "/conta/perfil-profissional", "/conta/configuracoes"]);
+    assert.equal(accountNav(["teacher"], true)[0].label, "Painel");
+    const both = accountNav(["student", "teacher"], true);
+    assert.equal(both.filter((i) => i.to === "/conta/aulas").length, 1);
+    assert.ok(both.filter((i) => i.mobile).length <= 5);
+    assert.deepEqual(paths(["student"], false), ["/conta", "/conta/perfil", "/conta/configuracoes"]);
+    assert.ok(!paths(["teacher"]).includes("/conta/explorar"));
+  });
+});

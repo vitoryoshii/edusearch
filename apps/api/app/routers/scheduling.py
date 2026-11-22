@@ -12,10 +12,12 @@ from app.schemas.scheduling import (
     AvailabilityOut,
     BookableTeacher,
     CalendarConnection,
+    CatalogFilters,
     LessonCreate,
     LessonOut,
     SchedulingStatus,
     SlotsOut,
+    TeacherPublicProfile,
 )
 from app.services.scheduling import SchedulingService, get_scheduling_service
 
@@ -101,10 +103,25 @@ def put_availability(
 # ------------------------------------------------------------------ reservas (aluno)
 
 
-@router.get("/v1/teachers", response_model=list[BookableTeacher], responses=_ERRORS)
-def list_teachers(user: CurrentUser, service: Service) -> list[BookableTeacher]:
-    """Professores PUBLICADOS (aprovados) disponíveis para aula de teste."""
-    return service.teachers(user)
+@router.get("/v1/teachers", response_model=list[BookableTeacher], responses=_WRITE)
+def list_teachers(
+    user: CurrentUser,
+    service: Service,
+    filters: Annotated[CatalogFilters, Query()],
+) -> list[BookableTeacher]:
+    """Catálogo: só professores PUBLICADOS (aprovados). Filtros reais e paginação limit/offset.
+
+    Sem preço, avaliação ou certificado: o catálogo mostra apenas o que o professor cadastrou.
+    """
+    if filters.q is not None:
+        filters.q = filters.q.strip() or None
+    return service.teachers(user, filters)
+
+
+@router.get("/v1/teachers/{teacher_id}", response_model=TeacherPublicProfile, responses=_ERRORS)
+def teacher_profile(teacher_id: UUID, user: CurrentUser, service: Service) -> TeacherPublicProfile:
+    """Perfil público do professor publicado (o próprio professor também pode pré-visualizar)."""
+    return service.teacher_profile(user, teacher_id)
 
 
 @router.get("/v1/teachers/{teacher_id}/slots", response_model=SlotsOut, responses=_WRITE)

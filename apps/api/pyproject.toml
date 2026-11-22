@@ -1,6 +1,6 @@
 [project]
 name = "edusearch-api"
-version = "0.4.0"
+version = "0.5.0"
 description = "API do EduSearch (FastAPI)."
 readme = "README.md"
 license = "MIT"
@@ -50,5 +50,7 @@ select = ["E", "F", "I", "UP", "B", "S", "BLE"]
 "tests/**" = ["S101", "S105", "S106"]
 # SQL literal nos testes de banco: consultas legíveis numa linha valem mais que o limite de 100.
 "tests/db/**" = ["S101", "S105", "S106", "S608", "E501"]
+# Fixtures do pytest importadas de test_scheduling_db (o ruff as vê como redefinição).
+"tests/db/test_catalog_db.py" = ["S101", "S105", "S106", "S608", "E501", "F811"]
 # Script de e2e: imprime relatório; tokens fictícios no modo local.
 "worker/e2e.py" = ["S101", "S105", "S106", "E501"]

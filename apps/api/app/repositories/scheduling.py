@@ -132,25 +132,6 @@ class SchedulingRepository:
 
     # ------------------------------------------------------------------ professores reserváveis
 
-    def bookable_teachers(self, exclude: UUID) -> list[dict[str, Any]]:
-        # RLS: só professores PUBLICADOS (ou o próprio) aparecem; o próprio é excluído aqui.
-        return self._conn.execute(
-            """
-            select t.user_id as id, p.display_name, p.avatar_url, t.headline,
-                   t.lesson_durations_minutes::int[] as lesson_durations_minutes,
-                   t.modality::text as modality,
-                   coalesce(array(select s.slug from public.teacher_subjects ts
-                                    join public.subjects s on s.id = ts.subject_id
-                                   where ts.teacher_id = t.user_id order by s.slug),
-                            '{}') as subjects
-              from public.teacher_profiles t
-              join public.profiles p on p.id = t.user_id
-             where t.is_published and t.user_id <> %s
-             order by p.display_name
-            """,
-            (exclude,),
-        ).fetchall()
-
     def teacher_offer(self, teacher_id: UUID) -> dict[str, Any] | None:
         return self._conn.execute(
             """

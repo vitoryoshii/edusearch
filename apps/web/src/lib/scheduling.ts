@@ -61,6 +61,12 @@ export const dayLabelOf = (iso: string) => dayLabelFmt.format(new Date(iso));
 /** "quarta-feira, 2 de dezembro · 14:00–15:00". */
 export const lessonWhen = (startIso: string, endIso: string) => `${dayLabelOf(startIso)} · ${timeOf(startIso)}–${timeOf(endIso)}`;
 
+/** "quarta-feira, 2 de dezembro · 14:00" (fuso da plataforma); null sem horário. */
+export function nextSlotLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  return `${dayLabelOf(iso)} · ${timeOf(iso)}`;
+}
+
 export type SlotDay = { key: string; label: string; slots: { iso: string; time: string }[] };
 
 /** Agrupa inícios livres por dia (fuso da plataforma), em ordem. */

@@ -1,0 +1,27 @@
+/**
+ * Menu da conta REAL por papel (regra pura; testada em scripts/unit.test.mjs).
+ *
+ * - Aluno:     Início · Explorar · Aulas · Perfil
+ * - Professor: Painel · Agenda · Aulas · Perfil profissional
+ * - Os dois papéis: união, sem itens repetidos (Aulas aparece uma vez).
+ * Sem a agenda real ligada (VITE_STAGE_SCHEDULING=off), só Início/Perfil/Configurações.
+ */
+export type NavIconKey = "home" | "search" | "calendar" | "clock" | "user" | "graduation" | "settings";
+export type AccountNavItem = { to: string; label: string; short?: string; icon: NavIconKey; end?: boolean; mobile: boolean };
+
+export function accountNav(roles: readonly string[], schedulingOn: boolean): AccountNavItem[] {
+  const student = roles.includes("student");
+  const teacher = roles.includes("teacher");
+  const items: AccountNavItem[] = [
+    { to: "/conta", label: teacher && !student ? "Painel" : "Início", icon: "home", end: true, mobile: true },
+  ];
+  if (schedulingOn && student) items.push({ to: "/conta/explorar", label: "Explorar", icon: "search", mobile: true });
+  if (schedulingOn && teacher) items.push({ to: "/conta/agenda", label: "Agenda", icon: "clock", mobile: true });
+  if (schedulingOn && (student || teacher)) items.push({ to: "/conta/aulas", label: "Aulas", icon: "calendar", mobile: true });
+  if (teacher) items.push({ to: "/conta/perfil-profissional", label: "Perfil profissional", short: "Perfil", icon: "graduation", mobile: !student });
+  if (student || !teacher) items.push({ to: "/conta/perfil", label: "Meu perfil", short: "Perfil", icon: "user", mobile: true });
+  items.push({ to: "/conta/configuracoes", label: "Configurações", short: "Ajustes", icon: "settings", mobile: false });
+  // A barra inferior do celular comporta no máximo 5 atalhos; o resto fica no menu.
+  let mobile = 0;
+  return items.map((i) => (i.mobile && ++mobile > 5 ? { ...i, mobile: false } : i));
+}

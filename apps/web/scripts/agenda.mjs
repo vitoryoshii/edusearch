@@ -117,7 +117,16 @@ const lessonOut = (l, sub) => ({
   meet_url: l.status === "cancelled" ? null : "https://meet.google.com/abc-defg-hij",
   cancelled_at: l.status === "cancelled" ? NOW : null, cancelled_by_role: l.status === "cancelled" ? "student" : null, created_at: NOW,
 });
-function api(method, path, sub, body) {
+/* Catálogo falso: T (real, logável) + Física + 14 extras, todos PUBLICADOS (o RLS real é testado no backend). */
+const CATALOG = [
+  { id: USERS.T.id, display_name: USERS.T.name, avatar_url: null, headline: "Matemática para ENEM com listas comentadas", subjects: ["matematica"], lesson_durations_minutes: [60, 45], modality: "online", experience: "3-5" },
+  { id: "00000000-0000-4000-8000-0000000000f1", display_name: "Bruno Física", avatar_url: null, headline: "Física do básico ao vestibular", subjects: ["fisica"], lesson_durations_minutes: [60], modality: "presencial", experience: "1-3" },
+  ...Array.from({ length: 14 }, (_, n) => ({ id: "00000000-0000-4000-8000-0000000001" + String(n).padStart(2, "0"), display_name: "Professora Extra " + String(n).padStart(2, "0"), avatar_url: null, headline: null, subjects: ["matematica"], lesson_durations_minutes: [60], modality: "hibrido", experience: null })),
+].sort((a, b) => a.display_name.localeCompare(b.display_name));
+const profileOf = (t) => ({ ...t, bio: "Professora fictícia de teste com foco em ENEM e vestibulares.", specialties: "ENEM, cálculo I", academic_background: "Licenciatura em Matemática", teaching_methods: ["exercicios", "pratica"], methodology: "Aulas com listas comentadas.", is_published: true, timezone: "America/Sao_Paulo" });
+const catalogLog = [];
+
+function api(method, path, sub, body, query = new URLSearchParams()) {
   const user = Object.values(USERS).find((u) => u.id === sub);
   if (path === "/v1/subjects") return [200, SUBJECTS];
   if (!user) return err(401, "not_authenticated", "Faça login para continuar.");
@@ -151,8 +160,25 @@ function api(method, path, sub, body) {
     state.windows = body.windows;
     return [200, { timezone: "America/Sao_Paulo", windows: state.windows }];
   }
-  if (path === "/v1/teachers" && method === "GET")
-    return [200, [{ id: USERS.T.id, display_name: USERS.T.name, avatar_url: null, headline: null, subjects: ["matematica"], lesson_durations_minutes: [60, 45], modality: "online" }]];
+  if (path === "/v1/teachers" && method === "GET") {
+    if (!user.roles.includes("student")) return err(403, "role_required", "Disponível apenas para contas de aluno.");
+    catalogLog.push(Object.fromEntries(query));
+    const q = (query.get("q") ?? "").toLowerCase();
+    let list = CATALOG.filter((t) => t.id !== sub)
+      .filter((t) => !q || t.display_name.toLowerCase().includes(q) || t.subjects.some((x) => x.includes(q)))
+      .filter((t) => !query.get("subject") || t.subjects.includes(query.get("subject")))
+      .filter((t) => !query.get("modality") || t.modality === query.get("modality") || t.modality === "hibrido");
+    const limit = Number(query.get("limit") ?? 20);
+    const offset = Number(query.get("offset") ?? 0);
+    list = list.slice(offset, offset + limit).map((t) => ({ ...t, next_slot: t.id === USERS.T.id ? SLOTS[0] : null }));
+    return [200, list];
+  }
+  const prof = path.match(/^\/v1\/teachers\/([^/]+)$/);
+  if (prof && method === "GET") {
+    const t = CATALOG.find((x) => x.id === prof[1]);
+    if (!t) return err(404, "teacher_not_found", "Professor não encontrado.");
+    return [200, { ...profileOf(t), is_own_profile: t.id === sub }];
+  }
   if (path.startsWith("/v1/teachers/") && path.endsWith("/slots"))
     return [200, { timezone: "America/Sao_Paulo", duration_minutes: 60, slots: SLOTS.filter((s) => !state.lessons.some((l) => l.status === "scheduled" && l.starts_at === s)) }];
   if (path === "/v1/lessons" && method === "POST") {
@@ -228,7 +254,7 @@ b.on(async (m) => {
     } catch {
       body = null;
     }
-    const [status, payload] = api(request.method, url.pathname, claims?.sub ?? null, body);
+    const [status, payload] = api(request.method, url.pathname, claims?.sub ?? null, body, url.searchParams);
     apiLog.push({ method: request.method, path: url.pathname, sub: claims?.sub ?? null, body, status });
     return reply(status, payload);
   }
@@ -288,7 +314,7 @@ const calendarStatus = `document.querySelector('[data-testid=calendar-status]')?
  * rolagem": um campo pode vazar do cartão sem chegar à borda da tela). Com `stress`, simula o
  * controle nativo de horário largo do Chrome em inglês ("09:00 AM", CI Linux) em qualquer máquina.
  */
-const CARDS = ["calendar-card", "availability-card", "booking-card", "lesson-list"];
+const CARDS = ["calendar-card", "availability-card", "booking-card", "lesson-list", "teacher-profile", "catalog-filters", "catalog-results"];
 async function fitsInCards(label, { stress = false, widths = [320, 360, 390, 430, 768, 1440] } = {}) {
   if (stress) await b.evaluate(`(() => { const s = document.createElement('style'); s.id = 'stress-time'; s.textContent = 'input[type=time]{min-width:9.5rem}'; document.head.append(s); return true; })()`);
   const bad = [];
@@ -377,44 +403,91 @@ await clickButton("Desconectar", "[data-testid=calendar-card]");
 await clickButton("Confirmar desconexão", "[data-testid=calendar-card]");
 await check(await waitFor(`${calendarStatus} === 'not_connected'`) && apiLog.some((r) => r.method === "DELETE" && r.path === "/v1/me/google-calendar"), "desconectar: confirmação em dois passos e DELETE na API");
 
-/* ------------------------------ 2. Aluna: reserva ------------------------------ */
+/* Menu e perfil profissional do professor */
+await check(
+  await b.evaluate(`JSON.stringify([...document.querySelector('nav[aria-label="Navegação principal"]').querySelectorAll('a')].map((a) => a.getAttribute('href'))) === JSON.stringify(['/conta','/conta/agenda','/conta/aulas','/conta/perfil-profissional','/conta/configuracoes'])`),
+  "menu do professor: Painel, Agenda, Aulas, Perfil profissional, Configurações (sem Explorar)",
+);
+await b.go(base + "/conta/perfil-profissional", 1500);
+await check(await waitFor(`!!document.querySelector('[data-testid=own-preview]') && !document.querySelector('[data-testid=booking-card]')`), "perfil profissional: pré-visualização do próprio perfil, sem reserva");
+await b.go(base + "/conta/explorar", 1500);
+await check(await waitFor(`location.pathname === '/conta'`), "professor não acessa Explorar (volta ao painel)");
+
+/* ------------------------------ 2. Aluna: marketplace ------------------------------ */
 console.log("Aluna");
 await signOut();
 await signIn("S");
+await check(
+  await waitFor(`JSON.stringify([...document.querySelector('nav[aria-label="Navegação principal"]').querySelectorAll('a')].map((a) => a.getAttribute('href'))) === JSON.stringify(['/conta','/conta/explorar','/conta/aulas','/conta/perfil','/conta/configuracoes'])`),
+  "menu da aluna: Início, Explorar, Aulas, Perfil, Configurações (sem a Agenda do professor)",
+);
 await b.go(base + "/conta/agenda", 1500);
-await check(await waitFor(`!!document.querySelector('[data-testid=booking-card]')`) && !(await b.evaluate(`!!document.querySelector('[data-testid=calendar-card]')`)), "aluna vê reserva e não vê a conexão com o Google");
-await act("escolher professor", `(() => { const c = [...document.querySelectorAll('[data-testid=booking-card] [role=group] button')][0]; if (!c) return false; c.click(); return true; })()`);
-await check(await waitFor(`document.querySelectorAll('[data-testid=slot-list] button').length === 3`), "horários livres agrupados por dia");
-await check(await waitFor(text("09:00")) && (await b.evaluate(text("14:00"))), "horários exibidos no fuso de Brasília");
-await act("escolher 09:00", `(() => { const x = [...document.querySelectorAll('[data-testid=slot-list] button')].find((y) => y.textContent.trim() === '09:00'); x.click(); return true; })()`);
-// Clique duplo: duas requisições com a MESMA chave → uma aula só.
-await act("reservar (clique duplo)", `(() => { const x = document.querySelector('[data-testid=book-lesson]'); x.click(); x.click(); return true; })()`);
-await check(await waitFor(`document.querySelectorAll('[data-testid=lesson-row]').length === 1`), "reserva aparece em \"Minhas aulas\"");
+await check(await waitFor("location.pathname === '/conta/aulas'"), "URL antiga /conta/agenda leva a aluna para Minhas aulas");
+
+/* Explorar: catálogo real, filtros na URL, paginação */
+await b.go(base + "/conta/explorar", 1500);
+await check(await waitFor("document.querySelectorAll('[data-testid=teacher-result]').length === 12"), "catálogo: primeira página com 12 professores");
+await act("carregar mais", "(() => { document.querySelector('[data-testid=catalog-more]').click(); return true; })()");
+await check(await waitFor("document.querySelectorAll('[data-testid=teacher-result]').length === 16 && !document.querySelector('[data-testid=catalog-more]')"), "\"Carregar mais\" traz a página 2 (16 no total) e some no fim");
+await check(catalogLog.some((c) => c.offset === "12" && c.limit === "12"), "paginação por limit/offset na API");
+const demoWords = ["fictíci", "R$", "avalia", "★", "certificad", "Pix"];
+await check(!(await b.evaluate(`${JSON.stringify(demoWords)}.some((w) => document.querySelector('main').innerText.includes(w))`)), "jornada real sem dados de demonstração, preço, avaliação ou certificado");
+await act("filtrar Física", "(() => { const l = [...document.querySelectorAll('label')].find((x) => x.textContent.trim() === 'Disciplina'); const s = document.getElementById(l.htmlFor); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'fisica'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+await check(await waitFor("location.search.includes('materia=fisica') && document.querySelectorAll('[data-testid=teacher-result]').length === 1"), "filtro por disciplina reflete na URL e na lista");
+await b.go(base + "/conta/explorar?materia=quimica", 1500);
+await check(await waitFor("!!document.querySelector('[data-testid=catalog-empty]')"), "estado vazio quando nenhum professor atende");
+await b.go(base + "/conta/explorar", 1500);
+await waitFor("!!document.querySelector('[data-testid=catalog-filters] input')");
+await act("buscar por nome", "(() => { const i = document.querySelector('[data-testid=catalog-filters] input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Teste T'); i.dispatchEvent(new Event('input', { bubbles: true })); i.form.requestSubmit(); return true; })()");
+await check(await waitFor("document.querySelectorAll('[data-testid=teacher-result]').length === 1 && location.search.includes('q=Teste')"), "busca por nome");
+await check(await waitFor(text("Próximo horário:")), "card mostra o próximo horário livre");
+await axe("explorar");
+await shot("explorar", [320, 360, 390, 430, 768, 1440]);
+await fitsInCards("explorar");
+
+/* Perfil público + reserva */
+await act("abrir perfil", "(() => { document.querySelector('[data-testid=teacher-result] h2 a').click(); return true; })()");
+await check(await waitFor(`location.pathname === '/conta/professores/${USERS.T.id}' && !!document.querySelector('[data-testid=teacher-profile]')`), "perfil público do professor");
+await check((await waitFor(text("Licenciatura em Matemática"))) && (await b.evaluate(text("Aulas com listas comentadas."))), "perfil mostra formação e metodologia do cadastro real");
+await check(await waitFor("document.querySelectorAll('[data-testid=slot-list] button').length === 3"), "horários livres no perfil");
+await act("escolher 09:00", "(() => { const x = [...document.querySelectorAll('[data-testid=slot-list] button')].find((y) => y.textContent.trim() === '09:00'); x.click(); return true; })()");
+await act("reservar (clique duplo)", "(() => { const x = document.querySelector('[data-testid=book-lesson]'); x.click(); x.click(); return true; })()");
+await check(await waitFor("[...document.querySelectorAll('a')].some((a) => a.textContent.trim() === 'Ver em Minhas aulas')"), "reserva confirmada com atalho para Minhas aulas");
 const posts = apiLog.filter((r) => r.method === "POST" && r.path === "/v1/lessons");
 await check(posts.length >= 1 && new Set(posts.map((p) => p.body.idempotency_key)).size === 1 && state.lessons.length === 1, "clique duplo não duplica a aula (mesma chave de idempotência)");
 await check(posts[0]?.body?.subject === "matematica" && posts[0]?.body?.duration_minutes === 60 && posts[0]?.body?.starts_at === SLOTS[0] && !("price_cents" in posts[0].body), "reserva envia professor, disciplina, duração, horário e chave — sem preço");
-await check(await b.evaluate(`[...document.querySelectorAll('[data-testid=lesson-row] a')].some((a) => a.href.startsWith('https://meet.google.com/') && a.rel.includes('noopener'))`), "link do Google Meet seguro na aula");
-await check(await b.evaluate(text("Teste")), "aula identificada como teste");
-await check((await b.evaluate(`[...document.querySelectorAll('[role=status],[role=alert]')].filter((e) => e.innerText.includes('Aula de teste reservada')).length`)) === 1, "clique duplo: um único aviso de reserva");
-await check(!(await b.evaluate(text(" De "))), "datas em português sem maiúsculas em todas as palavras");
+await check((await b.evaluate("[...document.querySelectorAll('[role=status],[role=alert]')].filter((e) => e.innerText.includes('Aula reservada')).length")) === 1, "clique duplo: um único aviso de reserva");
 
 /* Conflito 409 */
-await act("escolher 10:00", `(() => { const x = [...document.querySelectorAll('[data-testid=slot-list] button')].find((y) => y.textContent.trim() === '10:00'); if (!x) return false; x.click(); return true; })()`);
+await act("escolher 10:00", "(() => { const x = [...document.querySelectorAll('[data-testid=slot-list] button')].find((y) => y.textContent.trim() === '10:00'); if (!x) return false; x.click(); return true; })()");
 state.forceConflict = true;
 const before = apiLog.filter((r) => r.path.endsWith("/slots")).length;
-await clickButton("Reservar aula de teste", "[data-testid=booking-card]");
+await act("reservar 10:00", "(() => { document.querySelector('[data-testid=book-lesson]').click(); return true; })()");
 await check(await waitFor(text("Este horário acabou de ser reservado.")), "409: mensagem de horário ocupado");
 await sleep(500);
 await check(apiLog.filter((r) => r.path.endsWith("/slots")).length > before, "409: horários recarregados");
-await axe("agenda da aluna");
-await shot("agenda-aluna");
-await fitsInCards("agenda da aluna");
+await axe("perfil do professor");
+await shot("perfil-professor", [320, 360, 390, 430, 768, 1440]);
+await fitsInCards("perfil do professor (reserva)");
 
-/* Cancelar */
+/* Minhas aulas */
+await act("ir para Minhas aulas", "(() => { [...document.querySelectorAll('a')].find((a) => a.textContent.trim() === 'Ver em Minhas aulas').click(); return true; })()");
+await check(await waitFor("location.pathname === '/conta/aulas' && document.querySelectorAll('[data-testid=lesson-row]').length === 1"), "Minhas aulas lista a reserva");
+await check(await b.evaluate("[...document.querySelectorAll('[data-testid=lesson-row] a')].some((a) => a.href.startsWith('https://meet.google.com/') && a.rel.includes('noopener') && a.textContent.includes('Entrar no Meet'))"), "\"Entrar no Meet\" com link seguro");
+await check(!(await b.evaluate(text(" De "))), "datas em português sem maiúsculas em todas as palavras");
+await axe("minhas aulas");
+await shot("minhas-aulas", [320, 360, 390, 430, 768, 1440]);
+await fitsInCards("minhas aulas");
 await clickButton("Cancelar", "[data-testid=lesson-list]");
 await clickButton("Confirmar cancelamento", "[data-testid=lesson-list]");
-await check(await waitFor(`document.querySelector('[data-testid=lesson-row]')?.dataset.status === 'cancelled'`), "cancelamento em dois passos marca a aula como cancelada");
-await check(!(await b.evaluate(`[...document.querySelectorAll('[data-testid=lesson-row] a')].some((a) => a.href.includes('meet.google.com'))`)), "aula cancelada sem link do Meet");
+await check(await waitFor("document.querySelector('[data-testid=lesson-row]')?.dataset.status === 'cancelled'"), "cancelamento em dois passos marca a aula como cancelada");
+await check(!(await b.evaluate("[...document.querySelectorAll('[data-testid=lesson-row] a')].some((a) => a.href.includes('meet.google.com'))")), "aula cancelada sem link do Meet");
+
+/* Persistência após novo login */
+await signOut();
+await signIn("S");
+await b.go(base + "/conta/aulas", 1500);
+await check(await waitFor("document.querySelector('[data-testid=lesson-row]')?.dataset.status === 'cancelled'"), "após novo login, Minhas aulas recupera o histórico");
 
 /* ------------------------------ Resultado ------------------------------ */
 const errs = b.errors.filter((e) => !/status of (401|403|404|409|422|503)|ERR_FAILED|supabase\.co|edusearch-ci\.test|googleusercontent/.test(e));

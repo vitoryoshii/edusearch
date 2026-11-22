@@ -22,6 +22,10 @@ const AccountWelcome = lazy(() => import("../pages/account/Welcome"));
 const StudentOnboarding = lazy(() => import("../pages/account/StudentOnboarding"));
 const TeacherOnboarding = lazy(() => import("../pages/account/TeacherOnboarding"));
 const AccountAgenda = lazy(() => import("../pages/account/Agenda"));
+const AccountExplore = lazy(() => import("../pages/account/Explore"));
+const AccountTeacherDetails = lazy(() => import("../pages/account/TeacherDetails"));
+const AccountProfessionalProfile = lazy(() => import("../pages/account/TeacherDetails").then((m) => ({ default: m.OwnProfessionalProfile })));
+const AccountLessons = lazy(() => import("../pages/account/Lessons"));
 const GoogleCalendarReturn = lazy(() => import("../pages/account/GoogleCalendarReturn"));
 
 const StudentHome = lazy(() => import("../pages/student/Home"));
@@ -145,6 +149,11 @@ const routes: RouteObject[] = [
           { path: "configuracoes", element: <AccountSettings /> },
           // Agenda real (Fase 3A): as páginas redirecionam para /conta se VITE_STAGE_SCHEDULING=off.
           { path: "agenda", element: <AccountAgenda /> },
+          // Marketplace real (Fase 4A): catálogo, perfil público + reserva e aulas.
+          { path: "explorar", element: <AccountExplore /> },
+          { path: "professores/:id", element: <AccountTeacherDetails /> },
+          { path: "aulas", element: <AccountLessons /> },
+          { path: "perfil-profissional", element: <AccountProfessionalProfile /> },
           { path: "agenda/google/retorno", element: <GoogleCalendarReturn /> },
         ],
       },

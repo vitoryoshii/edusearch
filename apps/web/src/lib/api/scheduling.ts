@@ -19,6 +19,7 @@ export type SchedulingStatus = {
 
 export type CalendarConnection = { status: CalendarStatus; connected_at: string | null; revoked_at: string | null };
 
+/** Item do catálogo: só dados do cadastro real (sem preço, avaliação ou certificado). */
 export type BookableTeacher = {
   id: string;
   display_name: string;
@@ -27,6 +28,38 @@ export type BookableTeacher = {
   subjects: string[];
   lesson_durations_minutes: number[];
   modality: string | null;
+  experience?: string | null;
+  /** Primeiro horário livre nos próximos 14 dias (ISO) ou null. */
+  next_slot?: string | null;
+};
+
+export type TeacherPublicProfile = {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  headline: string | null;
+  bio: string | null;
+  specialties: string | null;
+  academic_background: string | null;
+  experience: string | null;
+  teaching_methods: string[];
+  methodology: string | null;
+  modality: string | null;
+  lesson_durations_minutes: number[];
+  subjects: string[];
+  is_published: boolean;
+  is_own_profile: boolean;
+  timezone: string;
+};
+
+export type CatalogQuery = {
+  q?: string;
+  subject?: string;
+  modality?: "online" | "presencial" | "hibrido";
+  period?: "manha" | "tarde" | "noite";
+  available_only?: boolean;
+  limit?: number;
+  offset?: number;
 };
 
 export type Lesson = {
@@ -65,7 +98,10 @@ export const schedulingApi = {
     apiRequest<{ timezone: string; windows: AvailabilityWindow[] }>("/v1/me/availability", { signal }),
   saveAvailability: (windows: AvailabilityWindow[]) =>
     apiRequest<{ timezone: string; windows: AvailabilityWindow[] }>("/v1/me/availability", { method: "PUT", body: { windows } }),
-  teachers: (signal?: AbortSignal) => apiRequest<BookableTeacher[]>("/v1/teachers", { signal }),
+  teachers: (query: CatalogQuery = {}, signal?: AbortSignal) =>
+    apiRequest<BookableTeacher[]>("/v1/teachers", { query: { ...query, available_only: query.available_only || undefined }, signal }),
+  teacherProfile: (id: string, signal?: AbortSignal) =>
+    apiRequest<TeacherPublicProfile>(`/v1/teachers/${encodeURIComponent(id)}`, { signal }),
   slots: (teacherId: string, duration: number, signal?: AbortSignal) =>
     apiRequest<{ duration_minutes: number; slots: string[] }>(`/v1/teachers/${encodeURIComponent(teacherId)}/slots`, {
       query: { duration, days: 14 },
