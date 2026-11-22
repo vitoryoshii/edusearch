@@ -268,6 +268,7 @@ function api(method, path, sub, body, query = new URLSearchParams()) {
     }
     return [200, paymentOut(p, sub)];
   }
+  if (path === "/v1/me/payout-account" && method === "GET") return teacher ? [200, { status: "split_unavailable" }] : err(403, "role_required", "Disponível apenas para contas de professor.");
   if (path === "/v1/me/payments") return [200, state.payments.filter((p) => sub === USERS.T.id || p.sub === sub).map((p) => paymentOut(p, sub)).reverse()];
   return err(404, "not_found", "Recurso não encontrado.");
 }
@@ -545,6 +546,9 @@ await check(await waitFor(`${payStatus} === 'paid'`), "professor vê o pagamento
 await check(await waitFor(text("R$ 68,00") + " && " + text("R$ 12,00")), "professor vê comissão (15%) e a parte dele, calculadas pelo servidor");
 await check(!(await b.evaluate("!!document.querySelector('[data-testid=pix-code]') || !!document.querySelector('[data-testid=pix-simulate]')")), "professor não vê Pix nem simulação");
 await axe("pagamento (professor)");
+await b.go(base + "/conta/configuracoes", 1500);
+await check(await waitFor("!!document.querySelector('[data-testid=payout-unavailable]') && !document.querySelector('[data-testid=payout-form]')"), "recebimentos: split não habilitado é informado, sem formulário nem repasse simulado");
+await axe("configurações (recebimentos)");
 
 /* ------------------------------ Resultado ------------------------------ */
 const errs = b.errors.filter((e) => !/status of (401|403|404|409|422|503)|ERR_FAILED|supabase\.co|edusearch-ci\.test|googleusercontent/.test(e));

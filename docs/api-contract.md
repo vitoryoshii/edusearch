@@ -288,6 +288,24 @@ Aula (`LessonOut`):
 
 Busca de professores com filtros, matching (Gemini) e Pix continuam como necessidades em [frontend/api-integration.md](frontend/api-integration.md).
 
+## Implementado na Fase 5: pagamentos Pix (AbacatePay v2, sandbox)
+
+Detalhes, estados, casos difíceis e variáveis em [payments.md](payments.md). Interruptor próprio:
+`API_PAYMENTS_STAGE` (`off` padrão → 403 `payments_disabled`).
+
+| Método | Rota | Resumo |
+|---|---|---|
+| GET | `/v1/payments/status` | estágio, comissão (bps), split, minutos de reserva |
+| POST | `/v1/payments/checkout` | aluno: reserva + Pix; corpo sem valor/comissão/recebedor (extras → 422); 201/200 idempotente |
+| GET | `/v1/payments/{id}` | participantes; pendente → servidor recria/concilia |
+| POST | `/v1/payments/{id}/simulate` | só sandbox (Modo Teste) |
+| GET | `/v1/me/payments` | histórico |
+| GET/PUT | `/v1/me/payout-account` | professor: subconta para split (só os 4 últimos dígitos ficam salvos) |
+| POST | `/v1/payments/webhooks/abacatepay` | público; segredo + HMAC-SHA256 do corpo bruto |
+
+`GET /v1/me/lessons`: `status` agora inclui `awaiting_payment` e `expired`; `is_test` é `false`
+para aulas pagas, que trazem `payment {id, status, amount_cents}`.
+
 ## Histórico
 
 | Versão | Fase | Mudanças |

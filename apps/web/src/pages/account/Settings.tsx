@@ -15,7 +15,9 @@ import {
   useToast,
   type ThemePreference,
 } from "@edusearch/ui";
-import { useAccount, useDisplayProfile, useServerMe } from "../../app/account";
+import { hasRole, useAccount, useDisplayProfile, useServerMe } from "../../app/account";
+import { PayoutAccountCard } from "../../components/account/PayoutAccountCard";
+import { FEATURES } from "../../lib/features";
 import { useAuth } from "../../app/auth";
 import { accountApi, type Me } from "../../lib/api/account";
 import { describeError } from "../../lib/api/client";
@@ -54,6 +56,8 @@ export default function AccountSettings() {
 
       <div className="space-y-8">
         {account.mode === "server" && <NameAndPhoto />}
+
+        {account.mode === "server" && FEATURES.payments !== "off" && <PayoutSection />}
 
         <section aria-labelledby="aparencia">
           <SectionTitle id="aparencia">Aparência</SectionTitle>
@@ -178,6 +182,18 @@ function NameAndPhotoForm({ me }: { me: Me }) {
           </Button>
         </form>
       </Card>
+    </section>
+  );
+}
+
+/** Recebimentos (Fase 5): só para professores, só com pagamentos ligados. */
+function PayoutSection() {
+  const me = useServerMe();
+  if (!me || !hasRole(me, "teacher")) return null;
+  return (
+    <section aria-labelledby="recebimentos">
+      <SectionTitle id="recebimentos">Recebimentos</SectionTitle>
+      <PayoutAccountCard />
     </section>
   );
 }
