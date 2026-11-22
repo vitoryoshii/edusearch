@@ -3,6 +3,7 @@
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.auth.jwt import JwksKeyResolver, TokenVerifier
 from app.config import Settings, get_settings
+from app.crypto import TokenCipher
 from app.db import BaseDatabase, Database
 from app.errors import ApiError, install_error_handlers
-from app.routers import health, me, onboarding
+from app.google_calendar import GoogleCalendarClient
+from app.routers import health, me, onboarding, scheduling
+from app.services.scheduling import build_calendar_client
 
 logger = logging.getLogger("edusearch.api")
 
@@ -71,11 +75,16 @@ def create_app(
     token_verifier: TokenVerifier | None = None,
     database: BaseDatabase | None = None,
     check_connection_role: bool = True,
+    google_calendar: GoogleCalendarClient | None = None,
+    token_cipher: TokenCipher | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
-    """Monta a aplicação. Testes injetam ``token_verifier`` e ``database``."""
+    """Monta a aplicação. Testes injetam ``token_verifier``, ``database`` e o cliente do Google."""
     settings = settings or get_settings()
     verifier = token_verifier or build_token_verifier(settings)
     db = database if database is not None else build_database(settings)
+    if google_calendar is None and token_cipher is None:
+        google_calendar, token_cipher = build_calendar_client(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -92,6 +101,8 @@ def create_app(
         finally:
             if db is not None:
                 db.close()
+            if google_calendar is not None:
+                google_calendar.close()
 
     app = FastAPI(
         title="EduSearch API",
@@ -105,6 +116,10 @@ def create_app(
     app.state.settings = settings
     app.state.token_verifier = verifier
     app.state.database = db
+    app.state.google_calendar = google_calendar
+    app.state.token_cipher = token_cipher
+    if clock is not None:
+        app.state.clock = clock
 
     install_error_handlers(app)
 
@@ -114,7 +129,7 @@ def create_app(
         allow_origins=settings.cors_origin_list,
         allow_credentials=False,
         # Somente os métodos efetivamente implementados.
-        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
         max_age=600,
     )
@@ -133,6 +148,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(me.router)
     app.include_router(onboarding.router)
+    app.include_router(scheduling.router)
     return app
 
 

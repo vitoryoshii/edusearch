@@ -28,6 +28,9 @@ export async function launch() {
   const port = 9400 + Math.floor(Math.random() * 500);
   // Em CI (runners Linux), o sandbox do Chrome é bloqueado pelo AppArmor e /dev/shm é pequeno.
   const ciArgs = process.env.CI ? ["--no-sandbox", "--disable-dev-shm-usage"] : [];
+  // Idioma do navegador (controles nativos como input type=time seguem ele, não a página).
+  // Ex.: CHROME_LANG=en-US reproduz o CI ("09:00 AM") numa máquina em português.
+  if (process.env.CHROME_LANG) ciArgs.push(`--lang=${process.env.CHROME_LANG}`);
   const chrome = spawn(
     chromePath,
     ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--hide-scrollbars", ...ciArgs, "about:blank"],

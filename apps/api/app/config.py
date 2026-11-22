@@ -48,6 +48,52 @@ class Settings(BaseSettings):
 
     enable_docs: bool = True
 
+    # ------------------------------------------------------------------ agenda (Fase 3A)
+    # off (padrão): rotas de agenda/aulas respondem 403 "scheduling_disabled".
+    # testing: liberadas para as contas de teste (o controle de admissão já restringe quem entra).
+    # Não há "production": aulas comerciais e pagamentos seguem desabilitados nesta fase.
+    scheduling_stage: str = "off"
+
+    # Google Agenda/Meet: o MESMO cliente OAuth (Web) do login, com fluxo SEPARADO (código + PKCE)
+    # e escopo mínimo. O segredo só existe no servidor.
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: SecretStr | None = None
+    # URI de retorno EXATA cadastrada no Google Cloud (página do app que repassa o código à API).
+    google_oauth_redirect_uri: str | None = None
+    # Chave AES-256 (32 bytes em base64url) que cifra o refresh token. Fora do banco e do Git.
+    token_encryption_key: SecretStr | None = None
+    token_encryption_key_version: int = Field(default=1, ge=1, le=32767)
+    google_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+
+    @field_validator("scheduling_stage")
+    @classmethod
+    def _validate_stage(cls, value: str) -> str:
+        if value not in {"off", "testing"}:
+            raise ValueError("API_SCHEDULING_STAGE aceita apenas off ou testing")
+        return value
+
+    @field_validator("google_oauth_redirect_uri")
+    @classmethod
+    def _validate_redirect(cls, value: str | None) -> str | None:
+        if value is None or value.strip() == "":
+            return None
+        parts = urlsplit(value.strip())
+        local = parts.hostname in {"localhost", "127.0.0.1"}
+        if parts.scheme != "https" and not (local and parts.scheme == "http"):
+            raise ValueError("API_GOOGLE_OAUTH_REDIRECT_URI deve usar https")
+        if not parts.netloc or parts.query or parts.fragment:
+            raise ValueError("API_GOOGLE_OAUTH_REDIRECT_URI deve ser uma URL exata, sem query")
+        return value.strip()
+
+    @property
+    def calendar_configured(self) -> bool:
+        return bool(
+            self.google_oauth_client_id
+            and self.google_oauth_client_secret
+            and self.google_oauth_redirect_uri
+            and self.token_encryption_key
+        )
+
     @field_validator("cors_origins")
     @classmethod
     def _validate_origins(cls, value: str) -> str:

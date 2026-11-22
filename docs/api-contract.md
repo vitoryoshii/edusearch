@@ -238,16 +238,60 @@ Público, sem token. Devolve `[{ "slug": "matematica", "name": "Matemática" }, 
 | 404 | `student_profile_not_found` / `teacher_profile_not_found` | Papel escolhido, cadastro ainda não salvo |
 | 422 | `unknown_subject` | Slug inexistente ou inativo |
 
-CORS: `GET`, `POST`, `PUT` e `OPTIONS` (somente os métodos implementados).
+CORS: `GET`, `POST`, `PUT` e `OPTIONS` (somente os métodos implementados). A Fase 3A acrescenta `DELETE`.
+
+## Implementado na Fase 3A: agenda, Google Agenda/Meet e aulas de teste
+
+Arquitetura, segurança e operação: [google-calendar-integration.md](google-calendar-integration.md).
+
+Todas as rotas abaixo exigem o token e respondem `403 scheduling_disabled` enquanto `API_SCHEDULING_STAGE=off` (padrão). Aulas são **sempre de teste**: não há preço nem pagamento, e `is_test` é sempre `true`. Horários em ISO 8601 com fuso; janelas de disponibilidade em `HH:MM` de `America/Sao_Paulo`.
+
+| Método e rota | Papel | Descrição |
+| --- | --- | --- |
+| `GET /v1/scheduling/status` | qualquer | `{ stage, calendar_configured, payments_enabled: false, commercial_lessons_enabled: false }` |
+| `GET /v1/me/google-calendar` | professor | `{ status: not_configured | not_connected | connected | revoked, connected_at, revoked_at }`. Nunca devolve tokens |
+| `POST /v1/me/google-calendar/authorization` | professor | `{ authorization_url }`: consentimento do Google (escopo `calendar.events.owned`, PKCE, `state` cifrado de 10 min) |
+| `POST /v1/me/google-calendar/connection` | professor | Corpo `{ code, state }` vindo do retorno do Google. Troca o código e guarda o refresh token cifrado |
+| `DELETE /v1/me/google-calendar` | professor | Revoga no Google e apaga a credencial |
+| `GET` / `PUT /v1/me/availability` | professor | `{ timezone, windows: [{ weekday, start, end }] }`. O PUT substitui tudo; até 28 janelas de 15 em 15 min, sem sobreposição |
+| `GET /v1/teachers` | aluno | Professores **publicados**: `id`, `display_name`, `avatar_url`, `headline`, `subjects`, `lesson_durations_minutes`, `modality` |
+| `GET /v1/teachers/{id}/slots?duration=60&days=14` | aluno | `{ timezone, duration_minutes, slots: [ISO…] }`: inícios livres de 30 em 30 min, com antecedência mínima de 2 h e até 60 dias |
+| `POST /v1/lessons` | aluno | Corpo `{ teacher_id, subject, starts_at, duration_minutes, idempotency_key }`. `201` quando cria; `200` quando a mesma chave já existe (mesma aula) |
+| `GET /v1/me/lessons` | qualquer | Aulas em que a conta é professor ou aluno (até 100) |
+| `POST /v1/lessons/{id}/cancel` | participante | Cancelamento definitivo; remove o evento do Google |
+| `POST /v1/lessons/{id}/calendar-sync` | professor da aula | Tenta de novo criar o evento/Meet (`pending`, `failed` ou `not_connected`) |
+
+Aula (`LessonOut`):
+
+- `id`, `role` (`teacher`/`student`), `teacher` e `student` (`{ id, display_name }`), `subject`;
+- `starts_at`, `ends_at`, `status` (`scheduled`/`cancelled`), `is_test: true`;
+- `calendar_sync_status` (`not_connected`, `pending`, `synced`, `failed`, `removed`);
+- `meet_url` (só `https://meet.google.com/…`; `null` se cancelada);
+- `cancelled_at`, `cancelled_by_role`, `created_at`.
+
+| HTTP | `code` | Quando |
+| ---- | ------ | ------ |
+| 400 | `invalid_state` / `authorization_failed` | `state` adulterado ou expirado; Google recusou o código |
+| 403 | `scheduling_disabled` | Agenda desligada (`API_SCHEDULING_STAGE=off`) |
+| 403 | `state_mismatch` | Autorização iniciada por outra conta |
+| 403 | `teacher_only` | Sincronização pedida por quem não é o professor da aula |
+| 404 | `teacher_not_found` / `lesson_not_found` | Professor não publicado/inexistente; aula de outra pessoa |
+| 409 | `slot_unavailable` | Horário ocupado (professor ou aluno), inclusive em corrida |
+| 409 | `idempotency_conflict` | Mesma `idempotency_key` com outro professor ou horário |
+| 409 | `lesson_not_cancellable` / `teacher_profile_required` | Aula já cancelada ou encerrada; disponibilidade sem cadastro de professor |
+| 422 | `calendar_scope_denied` / `refresh_token_missing` | Permissão da agenda desmarcada no consentimento |
+| 422 | `slot_invalid` / `duration_not_offered` / `subject_not_offered` / `invalid_availability` | Regras de horário, oferta ou janela |
+| 503 | `calendar_not_configured` / `google_unavailable` | Integração sem configuração; Google fora do ar |
 
 ### Ainda sem contrato
 
-Busca de professores, matching (Gemini), horários, agendamento, Pix e Google Agenda/Meet continuam como necessidades em [frontend/api-integration.md](frontend/api-integration.md). Esta fase não os define.
+Busca de professores com filtros, matching (Gemini) e Pix continuam como necessidades em [frontend/api-integration.md](frontend/api-integration.md).
 
 ## Histórico
 
 | Versão | Fase | Mudanças |
 | ------ | ---- | -------- |
+| 0.4.0 | 3A | Agenda: Google Agenda/Meet do professor, disponibilidade, aulas de teste (reserva idempotente, conflitos, cancelamento), `DELETE` no CORS |
 | 0.3.0 | 2.6B | `POST /v1/me/roles`, cadastros de aluno e professor, `GET /v1/subjects`, `onboarding` em `/v1/me` |
 | 0.2.0 | 2.6A | `GET /v1/me`, `PUT /v1/me/profile`, formato de erro, autenticação JWT (JWKS/ES256) |
 | 0.1.0 | 1 | `GET /health` |

@@ -21,6 +21,8 @@ const AccountSettings = lazy(() => import("../pages/account/Settings"));
 const AccountWelcome = lazy(() => import("../pages/account/Welcome"));
 const StudentOnboarding = lazy(() => import("../pages/account/StudentOnboarding"));
 const TeacherOnboarding = lazy(() => import("../pages/account/TeacherOnboarding"));
+const AccountAgenda = lazy(() => import("../pages/account/Agenda"));
+const GoogleCalendarReturn = lazy(() => import("../pages/account/GoogleCalendarReturn"));
 
 const StudentHome = lazy(() => import("../pages/student/Home"));
 const Search = lazy(() => import("../pages/student/Search"));
@@ -141,6 +143,9 @@ const routes: RouteObject[] = [
           { index: true, element: <AccountDashboard /> },
           { path: "perfil", element: <AccountProfile /> },
           { path: "configuracoes", element: <AccountSettings /> },
+          // Agenda real (Fase 3A): as páginas redirecionam para /conta se VITE_STAGE_SCHEDULING=off.
+          { path: "agenda", element: <AccountAgenda /> },
+          { path: "agenda/google/retorno", element: <GoogleCalendarReturn /> },
         ],
       },
       {

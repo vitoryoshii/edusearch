@@ -487,7 +487,7 @@ import {
 describe("estágios por recurso", () => {
   const ready = { supabaseReady: true, googleReady: true, legalPublished: false };
   test("padrões: Google em testes, e-mail e cadastro por e-mail desligados, pagamentos demonstrativos", () => {
-    assert.deepEqual(resolveFeatures({}, ready), { googleAuth: "testing", emailAuth: "off", emailSignup: "off", profilePersistence: "off", payments: "demo", realAuth: true });
+    assert.deepEqual(resolveFeatures({}, ready), { googleAuth: "testing", emailAuth: "off", emailSignup: "off", profilePersistence: "off", scheduling: "off", payments: "demo", realAuth: true });
   });
   test("sem configuração técnica tudo fica desligado (versão pública)", () => {
     const f = resolveFeatures({ VITE_STAGE_GOOGLE_AUTH: "production", VITE_STAGE_EMAIL_AUTH: "production" }, { supabaseReady: false, googleReady: false, legalPublished: true });
@@ -518,6 +518,14 @@ describe("estágios por recurso", () => {
     const noAuth = resolveFeatures({ VITE_STAGE_PROFILE_PERSISTENCE: "testing" }, { supabaseReady: false, googleReady: false, legalPublished: true });
     assert.equal(noAuth.profilePersistence, "off");
     assert.equal(resolveFeatures({ VITE_STAGE_PROFILE_PERSISTENCE: "sim" }, ready).profilePersistence, "off");
+  });
+  test("agenda: desligada por padrão, exige persistência real e nunca passa de testes", () => {
+    assert.equal(resolveFeatures({ VITE_STAGE_SCHEDULING: "testing" }, ready).scheduling, "off");
+    const on = { VITE_STAGE_PROFILE_PERSISTENCE: "testing", VITE_STAGE_SCHEDULING: "testing" };
+    assert.equal(resolveFeatures(on, ready).scheduling, "testing");
+    const prod = { VITE_STAGE_PROFILE_PERSISTENCE: "production", VITE_STAGE_SCHEDULING: "production" };
+    assert.equal(resolveFeatures(prod, { ...ready, legalPublished: true }).scheduling, "testing");
+    assert.equal(resolveFeatures({ ...on, VITE_STAGE_SCHEDULING: "sim" }, ready).scheduling, "off");
   });
   test("valores inválidos caem no padrão", () => {
     assert.equal(parseStage("ligado", "off"), "off");
@@ -568,5 +576,48 @@ describe("acesso por e-mail: respostas sem enumeração de contas", () => {
     assert.deepEqual(parseEmailLink("", "#error=access_denied&error_code=otp_expired"), { kind: "error", failure: "link_invalid" });
     assert.deepEqual(parseEmailLink("?code=<script>", ""), { kind: "none" });
     assert.deepEqual(parseEmailLink("", ""), { kind: "none" });
+  });
+});
+
+import {
+  dayKeyOf,
+  groupSlotsByDay,
+  isGoogleAuthorizationUrl,
+  lessonWhen,
+  parseCalendarReturn,
+  timeOf,
+  windowsIssue,
+} from "../src/lib/scheduling.ts";
+
+describe("agenda real (Fase 3A)", () => {
+  test("janelas: mesmas regras da API", () => {
+    assert.equal(windowsIssue([{ weekday: "seg", start: "08:00", end: "12:00" }, { weekday: "seg", start: "12:00", end: "13:00" }]), null);
+    assert.match(windowsIssue([{ weekday: "seg", start: "08:00", end: "10:00" }, { weekday: "seg", start: "09:00", end: "11:00" }]), /sobrepostas/);
+    assert.match(windowsIssue([{ weekday: "ter", start: "10:00", end: "09:00" }]), /depois do início/);
+    assert.match(windowsIssue([{ weekday: "qua", start: "10:10", end: "11:00" }]), /15 em 15/);
+    assert.match(windowsIssue([{ weekday: "qui", start: "8h", end: "11:00" }]), /HH:MM/);
+    assert.equal(windowsIssue([{ weekday: "dom", start: "22:00", end: "24:00" }]), null);
+  });
+  test("horários sempre em America/Sao_Paulo, qualquer que seja o fuso do aparelho", () => {
+    const iso = "2026-12-02T17:00:00Z"; // 14:00 em São Paulo
+    assert.equal(timeOf(iso), "14:00");
+    assert.equal(dayKeyOf("2026-12-03T01:30:00Z"), "2026-12-02"); // ainda dia 2 em SP
+    assert.match(lessonWhen(iso, "2026-12-02T18:00:00Z"), /2 de dezembro · 14:00–15:00$/);
+  });
+  test("agrupa horários livres por dia, em ordem", () => {
+    const days = groupSlotsByDay(["2026-12-03T12:00:00Z", "2026-12-02T18:00:00Z", "2026-12-02T17:00:00Z"]);
+    assert.deepEqual(days.map((d) => [d.key, d.slots.map((s) => s.time)]), [["2026-12-02", ["14:00", "15:00"]], ["2026-12-03", ["09:00"]]]);
+  });
+  test("retorno do Google: código, recusa ou inválido", () => {
+    const state = "s".repeat(40);
+    assert.deepEqual(parseCalendarReturn(`?code=4/abcdefghij&state=${state}`), { kind: "code", code: "4/abcdefghij", state });
+    assert.deepEqual(parseCalendarReturn("?error=access_denied&state=x"), { kind: "denied" });
+    assert.deepEqual(parseCalendarReturn("?code=curto&state=x"), { kind: "invalid" });
+    assert.deepEqual(parseCalendarReturn(""), { kind: "invalid" });
+  });
+  test("só redireciona para o consentimento oficial do Google", () => {
+    assert.ok(isGoogleAuthorizationUrl("https://accounts.google.com/o/oauth2/v2/auth?client_id=x"));
+    assert.ok(!isGoogleAuthorizationUrl("https://accounts.google.com.evil.example/o/oauth2/v2/auth?x"));
+    assert.ok(!isGoogleAuthorizationUrl("javascript:alert(1)"));
   });
 });

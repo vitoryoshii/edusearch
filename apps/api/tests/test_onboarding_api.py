@@ -372,10 +372,27 @@ def test_cors_allows_implemented_methods(client, method) -> None:
     assert r.status_code == 200
 
 
-@pytest.mark.parametrize("method", ["DELETE", "PATCH"])
+@pytest.mark.parametrize("method", ["PATCH", "TRACE"])
 def test_cors_rejects_unimplemented_methods(client, method) -> None:
     r = client.options(
         "/v1/me/roles",
         headers={"Origin": "https://app.edusearch.com.br", "Access-Control-Request-Method": method},
+    )
+    assert r.status_code == 400
+
+
+def test_cors_allows_delete_for_calendar_disconnect(client) -> None:
+    # Fase 3A: DELETE /v1/me/google-calendar (desconectar a agenda) é o único DELETE da API.
+    r = client.options(
+        "/v1/me/google-calendar",
+        headers={
+            "Origin": "https://app.edusearch.com.br",
+            "Access-Control-Request-Method": "DELETE",
+        },
+    )
+    assert r.status_code == 200
+    r = client.options(
+        "/v1/me/google-calendar",
+        headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "DELETE"},
     )
     assert r.status_code == 400

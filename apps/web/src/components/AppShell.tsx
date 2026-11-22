@@ -29,6 +29,7 @@ import { useAuth } from "../app/auth";
 import { homeFor, studentSession, teacherSession, useSession } from "../app/session";
 import type { Role } from "../lib/api/types";
 import { dataSource } from "../lib/data/source";
+import { FEATURES } from "../lib/features";
 import { DemoBanner } from "./DemoNotice";
 
 type NavItem = { to: string; label: string; icon: IconComponent; end?: boolean; mobile?: boolean; short?: string };
@@ -39,6 +40,7 @@ export type ShellMode = Role | "account";
 const NAV: Record<ShellMode, NavItem[]> = {
   account: [
     { to: "/conta", label: "Início", icon: HomeIcon, end: true, mobile: true },
+    ...(FEATURES.scheduling !== "off" ? [{ to: "/conta/agenda", label: "Agenda", icon: CalendarIcon, mobile: true }] : []),
     { to: "/conta/perfil", label: "Meu perfil", short: "Perfil", icon: UserIcon, mobile: true },
     { to: "/conta/configuracoes", label: "Configurações", short: "Ajustes", icon: SettingsIcon, mobile: true },
   ],
