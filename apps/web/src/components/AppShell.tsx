@@ -97,7 +97,9 @@ export function AppShell({ role }: { role: ShellMode }) {
   const display = useDisplayProfile();
   const name = isAccount ? (display?.displayName ?? "Sua conta") : (session?.name ?? "Visitante");
   const avatarSrc = isAccount ? (display?.avatarUrl ?? undefined) : undefined;
-  const subtitle = isAccount ? "Conta Google · testes" : `${role === "student" ? "Aluno" : "Professor"} · demo`;
+  const me = useServerMe();
+  const accountRole = me?.roles.includes("student") && me?.roles.includes("teacher") ? "Aluno e professor" : me?.roles.includes("teacher") ? "Professor" : me?.roles.includes("student") ? "Aluno" : "Conta EduSearch";
+  const subtitle = isAccount ? accountRole : `${role === "student" ? "Aluno" : "Professor"} · demonstração`;
 
   // Ao trocar de tela: volta ao topo e move o foco para o conteúdo (leitores de tela).
   useEffect(() => {

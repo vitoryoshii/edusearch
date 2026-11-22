@@ -61,6 +61,15 @@ export const dayLabelOf = (iso: string) => dayLabelFmt.format(new Date(iso));
 /** "quarta-feira, 2 de dezembro · 14:00–15:00". */
 export const lessonWhen = (startIso: string, endIso: string) => `${dayLabelOf(startIso)} · ${timeOf(startIso)}–${timeOf(endIso)}`;
 
+const partsFmt = new Intl.DateTimeFormat("pt-BR", { timeZone: PLATFORM_TZ, weekday: "short", day: "numeric", month: "short" });
+
+/** Partes para o bloco de data ("qua", "2", "dez"), sempre no fuso da plataforma. */
+export function dateParts(iso: string): { weekday: string; day: string; month: string } {
+  const get = (type: string) =>
+    (partsFmt.formatToParts(new Date(iso)).find((p) => p.type === type)?.value ?? "").replace(".", "").toLowerCase();
+  return { weekday: get("weekday"), day: get("day"), month: get("month") };
+}
+
 /** "quarta-feira, 2 de dezembro · 14:00" (fuso da plataforma); null sem horário. */
 export function nextSlotLabel(iso: string | null | undefined): string | null {
   if (!iso) return null;

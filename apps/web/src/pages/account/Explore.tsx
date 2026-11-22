@@ -79,6 +79,8 @@ function ExplorePage() {
     apply({ q: draftQ });
   };
   const count = activeFilterCount(filters);
+  // Celular: filtros recolhidos atrás de um botão (a busca fica sempre visível). sm+: sempre abertos.
+  const [showFilters, setShowFilters] = useState(false);
 
   return (
     <>
@@ -98,6 +100,18 @@ function ExplorePage() {
             Buscar
           </Button>
         </form>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-3 sm:hidden"
+          aria-expanded={showFilters}
+          aria-controls="catalog-filter-fields"
+          onClick={() => setShowFilters((v) => !v)}
+          data-testid="toggle-filters"
+        >
+          {showFilters ? "Ocultar filtros" : `Filtros${count ? ` (${count})` : ""}`}
+        </Button>
+        <div id="catalog-filter-fields" className={`${showFilters ? "block" : "hidden"} sm:block`}>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Select
             label="Disciplina"
@@ -135,6 +149,7 @@ function ExplorePage() {
               Limpar filtros ({count})
             </Button>
           )}
+        </div>
         </div>
       </Card>
 

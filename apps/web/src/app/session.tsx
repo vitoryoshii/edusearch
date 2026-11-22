@@ -2,6 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Navigate, useLocation } from "react-router";
 import type { Role } from "../lib/api/types";
 import { DEMO_SESSION_KEY, DEMO_TEACHER_ID, DEMO_TEACHER_NAME, firstName } from "../lib/demo";
+import { legacyRealPath } from "../lib/navigation";
+import { persistenceEnabled } from "./account";
+import { useAuth } from "./auth";
 
 /**
  * Sessão de DEMONSTRAÇÃO (sem autenticação real).
@@ -108,15 +111,21 @@ export const homeFor = (role: Role) => (role === "student" ? "/aluno" : "/profes
 /** Protege as áreas logadas; sem sessão, leva à escolha de perfil. */
 export function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
   const { session, nextPath, clearNextPath } = useSession();
+  const { status } = useAuth();
   const location = useLocation();
   const allowed = session?.role === role;
+  const realAccount = status === "signedIn" && persistenceEnabled();
 
   // Chegou ao destino de uma troca de perfil: limpa o destino pendente.
   useEffect(() => {
     if (allowed && nextPath && location.pathname === nextPath) clearNextPath();
   }, [allowed, nextPath, location.pathname, clearNextPath]);
 
-  if (!session) return <Navigate to="/perfil-de-acesso" replace state={{ from: location.pathname }} />;
+  if (!session) {
+    // Conta real conectada, sem ter escolhido a demonstração: a URL antiga leva à tela real.
+    if (realAccount) return <Navigate to={legacyRealPath(location.pathname)} replace />;
+    return <Navigate to="/perfil-de-acesso" replace state={{ from: location.pathname }} />;
+  }
   if (!allowed) return <Navigate to={nextPath?.startsWith(homeFor(session.role)) ? nextPath : homeFor(session.role)} replace />;
   return <>{children}</>;
 }
