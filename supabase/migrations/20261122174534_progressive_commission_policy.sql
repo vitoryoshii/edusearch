@@ -120,6 +120,9 @@ insert into public.commission_policy_tiers (
 alter table public.payment_intents
   add column commission_policy_version text not null default 'v1';
 alter table public.payment_intents
+  drop constraint payment_commission_rule,
+  add constraint payment_commission_rule check (commission_bps between 1000 and 1500);
+alter table public.payment_intents
   add constraint payment_intents_commission_policy_fk
   foreign key (commission_policy_version, environment)
   references public.commission_policies (version, environment) on delete restrict;
