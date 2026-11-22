@@ -474,6 +474,7 @@ describe("onboarding do professor: exemplo da comissão padrão", () => {
 
 /* ------------------- Estágios por recurso e acesso por e-mail ------------------- */
 import { parseStage, resolveFeatures } from "../src/lib/stages.ts";
+import { FINAL_STATUSES, formatBRL, formatCountdown, pollDelay, secondsLeft } from "../src/lib/payments.ts";
 import {
   EMAIL_MESSAGES,
   GENERIC_SENT,
@@ -487,7 +488,7 @@ import {
 describe("estágios por recurso", () => {
   const ready = { supabaseReady: true, googleReady: true, legalPublished: false };
   test("padrões: Google em testes, e-mail e cadastro por e-mail desligados, pagamentos demonstrativos", () => {
-    assert.deepEqual(resolveFeatures({}, ready), { googleAuth: "testing", emailAuth: "off", emailSignup: "off", profilePersistence: "off", scheduling: "off", payments: "demo", realAuth: true });
+    assert.deepEqual(resolveFeatures({}, ready), { googleAuth: "testing", emailAuth: "off", emailSignup: "off", profilePersistence: "off", scheduling: "off", payments: "off", realAuth: true });
   });
   test("sem configuração técnica tudo fica desligado (versão pública)", () => {
     const f = resolveFeatures({ VITE_STAGE_GOOGLE_AUTH: "production", VITE_STAGE_EMAIL_AUTH: "production" }, { supabaseReady: false, googleReady: false, legalPublished: true });
@@ -693,6 +694,7 @@ describe("cache de consultas (Fase 4B)", () => {
     for (const v of Object.values(STALE_MS)) assert.ok(Number.isFinite(v) && v > 0 && v <= 30 * 60_000);
   });
   test("chaves privadas levam o id da conta; contas diferentes nunca colidem", () => {
+    for (const k of [queryKeys.payment("u", "p"), queryKeys.payments("u"), queryKeys.payoutAccount("u")]) assert.deepEqual(k.slice(0, 3), ["edusearch", "user", "u"]);
     const a = "00000000-0000-4000-8000-00000000000a", b = "00000000-0000-4000-8000-00000000000b";
     for (const k of [queryKeys.me(a), queryKeys.lessons(a), queryKeys.calendar(a), queryKeys.slots(a, "t", 60), queryKeys.catalog(a, { q: "x" }), queryKeys.teacherProfile(a, "t")]) {
       assert.deepEqual(k.slice(0, 3), ["edusearch", "user", a]);
@@ -705,5 +707,38 @@ describe("cache de consultas (Fase 4B)", () => {
     // Prefixos usados na invalidação cobrem as chaves específicas.
     assert.deepEqual(queryKeys.slots(a, "t", 60).slice(0, 5), [...queryKeys.slotsOf(a, "t")]);
     assert.deepEqual(queryKeys.catalog(a, {}).slice(0, 4), [...queryKeys.catalogAll(a)]);
+  });
+});
+
+describe("pagamentos Pix (Fase 5)", () => {
+  const ready = { supabaseReady: true, googleReady: true, legalPublished: false };
+  const on = { VITE_STAGE_PROFILE_PERSISTENCE: "testing", VITE_STAGE_SCHEDULING: "testing" };
+  test("VITE_STAGE_PAYMENTS: padrão off; exige a agenda; produção exige documentos publicados", () => {
+    assert.equal(resolveFeatures(on, ready).payments, "off");
+    assert.equal(resolveFeatures({ ...on, VITE_STAGE_PAYMENTS: "sandbox" }, ready).payments, "sandbox");
+    assert.equal(resolveFeatures({ ...on, VITE_STAGE_PAYMENTS: "qualquer" }, ready).payments, "off");
+    assert.equal(resolveFeatures({ VITE_STAGE_PAYMENTS: "sandbox" }, ready).payments, "off");
+    assert.equal(resolveFeatures({ ...on, VITE_STAGE_PAYMENTS: "production" }, ready).payments, "off");
+    assert.equal(resolveFeatures({ ...on, VITE_STAGE_PAYMENTS: "production" }, { ...ready, legalPublished: true }).payments, "production");
+  });
+  test("valores em centavos inteiros", () => {
+    assert.equal(formatBRL(8000), "R$ 80,00");
+    assert.equal(formatBRL(123456789), "R$ 1.234.567,89");
+    assert.equal(formatBRL(5), "R$ 0,05");
+    assert.throws(() => formatBRL(80.5));
+  });
+  test("contagem regressiva", () => {
+    assert.equal(formatCountdown(754), "12:34");
+    assert.equal(formatCountdown(3725), "1:02:05");
+    assert.equal(formatCountdown(-3), "0:00");
+    assert.equal(secondsLeft("2026-01-01T00:10:00Z", Date.parse("2026-01-01T00:00:00Z")), 600);
+    assert.equal(secondsLeft("2026-01-01T00:00:00Z", Date.parse("2026-01-01T00:10:00Z")), 0);
+  });
+  test("consulta em backoff e para em estado final", () => {
+    assert.deepEqual([0, 1, 2, 3, 4, 5, 40].map((n) => pollDelay("pending", n)), [3000, 3000, 5000, 8000, 13000, 20000, 20000]);
+    assert.equal(pollDelay("pending", 0, true), 30000);
+    assert.equal(pollDelay(undefined, 0), 3000);
+    for (const s of FINAL_STATUSES) assert.equal(pollDelay(s, 0), false);
+    assert.equal(pollDelay("under_dispute", 0), 3000);
   });
 });

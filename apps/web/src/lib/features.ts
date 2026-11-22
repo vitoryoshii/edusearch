@@ -10,7 +10,9 @@ import { resolveFeatures } from "./stages";
  *   VITE_STAGE_EMAIL_SIGNUP  off | testing | production   (padrão: off)
  *   VITE_STAGE_PROFILE_PERSISTENCE off | testing | production (padrão: off; exige login real)
  *
- * Demonstração: sempre disponível e identificada. Pagamentos: sempre simulados.
+ *   VITE_STAGE_PAYMENTS      off | sandbox | production   (padrão: off; exige a agenda real)
+ *
+ * Demonstração: sempre disponível e identificada (pagamentos dela são sempre simulados).
  */
 export const FEATURES = resolveFeatures(import.meta.env, {
   supabaseReady: AUTH_CONFIG.supabaseReady,

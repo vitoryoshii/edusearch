@@ -27,7 +27,14 @@ export type FeatureEnv = {
   VITE_STAGE_EMAIL_SIGNUP?: string;
   VITE_STAGE_PROFILE_PERSISTENCE?: string;
   VITE_STAGE_SCHEDULING?: string;
+  VITE_STAGE_PAYMENTS?: string;
 };
+
+export type PaymentsStage = "off" | "sandbox" | "production";
+
+export function parsePaymentsStage(value: unknown): PaymentsStage {
+  return value === "sandbox" || value === "production" ? value : "off";
+}
 
 export type FeatureInputs = {
   supabaseReady: boolean;
@@ -54,8 +61,13 @@ export type Features = {
    * (aulas comerciais e pagamentos seguem desligados). A API tem o próprio interruptor.
    */
   scheduling: "off" | "testing";
-  /** Pagamentos: sempre demonstrativos nesta fase (não há como ativá-los pelo frontend). */
-  payments: "demo";
+  /**
+   * Pagamentos Pix reais (Fase 5): "off" (padrão) | "sandbox" (Modo Teste da AbacatePay, sem
+   * dinheiro real) | "production". Exige a agenda real. "production" exige documentos publicados;
+   * sem eles cai para "off" (nunca cobra de verdade sem termos). A flag só mostra a interface: quem
+   * decide se cobra é o backend (API_PAYMENTS_STAGE + chave do ambiente correto).
+   */
+  payments: PaymentsStage;
   /** Há algum login real disponível neste build. */
   realAuth: boolean;
 };
@@ -73,13 +85,15 @@ export function resolveFeatures(env: FeatureEnv, inputs: FeatureInputs): Feature
   const profilePersistence = realAuth ? guard(parseStage(env.VITE_STAGE_PROFILE_PERSISTENCE, "off"), inputs.legalPublished) : "off";
   const schedulingStage = profilePersistence !== "off" ? parseStage(env.VITE_STAGE_SCHEDULING, "off") : "off";
   const scheduling = schedulingStage === "off" ? "off" : "testing";
+  const paymentsStage = scheduling === "off" ? "off" : parsePaymentsStage(env.VITE_STAGE_PAYMENTS);
+  const payments = paymentsStage === "production" && !inputs.legalPublished ? "off" : paymentsStage;
   return {
     googleAuth,
     emailAuth,
     emailSignup,
     profilePersistence,
     scheduling,
-    payments: "demo",
+    payments,
     realAuth,
   };
 }

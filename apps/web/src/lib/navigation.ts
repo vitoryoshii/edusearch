@@ -5,11 +5,12 @@
  * - Professor: Painel · Agenda · Aulas · Perfil profissional
  * - Os dois papéis: união, sem itens repetidos (Aulas aparece uma vez).
  * Sem a agenda real ligada (VITE_STAGE_SCHEDULING=off), só Início/Perfil/Configurações.
+ * Com pagamentos ligados (VITE_STAGE_PAYMENTS≠off), "Pagamentos" entra no menu (não na barra do celular).
  */
-export type NavIconKey = "home" | "search" | "calendar" | "clock" | "user" | "graduation" | "settings";
+export type NavIconKey = "home" | "search" | "calendar" | "clock" | "user" | "graduation" | "settings" | "wallet";
 export type AccountNavItem = { to: string; label: string; short?: string; icon: NavIconKey; end?: boolean; mobile: boolean };
 
-export function accountNav(roles: readonly string[], schedulingOn: boolean): AccountNavItem[] {
+export function accountNav(roles: readonly string[], schedulingOn: boolean, paymentsOn = false): AccountNavItem[] {
   const student = roles.includes("student");
   const teacher = roles.includes("teacher");
   const items: AccountNavItem[] = [
@@ -18,6 +19,7 @@ export function accountNav(roles: readonly string[], schedulingOn: boolean): Acc
   if (schedulingOn && student) items.push({ to: "/conta/explorar", label: "Explorar", icon: "search", mobile: true });
   if (schedulingOn && teacher) items.push({ to: "/conta/agenda", label: "Agenda", icon: "clock", mobile: true });
   if (schedulingOn && (student || teacher)) items.push({ to: "/conta/aulas", label: "Aulas", icon: "calendar", mobile: true });
+  if (schedulingOn && paymentsOn && (student || teacher)) items.push({ to: "/conta/pagamentos", label: "Pagamentos", icon: "wallet", mobile: false });
   if (teacher) items.push({ to: "/conta/perfil-profissional", label: "Perfil profissional", short: "Perfil", icon: "graduation", mobile: !student });
   if (student || !teacher) items.push({ to: "/conta/perfil", label: "Meu perfil", short: "Perfil", icon: "user", mobile: true });
   items.push({ to: "/conta/configuracoes", label: "Configurações", short: "Ajustes", icon: "settings", mobile: false });

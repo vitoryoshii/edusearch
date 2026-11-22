@@ -17,12 +17,15 @@ _LESSON_SELECT = """
 select l.id, l.teacher_id, l.student_id, sub.slug as subject, sub.name as subject_name,
        l.starts_at, l.ends_at, l.status::text as status,
        l.calendar_sync_status::text as calendar_sync_status, l.google_event_id, l.meet_url,
-       l.cancelled_at, l.cancelled_by_role::text as cancelled_by_role, l.created_at,
+       l.cancelled_at, l.cancelled_by_role::text as cancelled_by_role, l.created_at, l.is_test,
+       pi.id as payment_id, pi.status::text as payment_status,
+       pi.amount_cents as payment_amount_cents,
        pt.display_name as teacher_name, ps.display_name as student_name
   from public.lessons l
   join public.subjects sub on sub.id = l.subject_id
   left join public.profiles pt on pt.id = l.teacher_id
   left join public.profiles ps on ps.id = l.student_id
+  left join public.payment_intents pi on pi.lesson_id = l.id
 """
 
 
@@ -170,7 +173,7 @@ class SchedulingRepository:
     def own_busy(self, user_id: UUID, start: datetime, end: datetime) -> list[tuple]:
         rows = self._conn.execute(
             "select starts_at, ends_at from public.lessons "
-            "where %s in (teacher_id, student_id) and status = 'scheduled' "
+            "where %s in (teacher_id, student_id) and status in ('scheduled', 'awaiting_payment') "
             "and starts_at < %s and ends_at > %s",
             (user_id, end, start),
         ).fetchall()
@@ -231,7 +234,7 @@ class SchedulingRepository:
         return (
             self._conn.execute(
                 "update public.lessons set status = 'cancelled' "
-                "where id = %s and status = 'scheduled' and ends_at > now()",
+                "where id = %s and status in ('scheduled', 'awaiting_payment') and ends_at > now()",
                 (lesson_id,),
             ).rowcount
             == 1

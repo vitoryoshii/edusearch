@@ -23,6 +23,11 @@ export const STALE_MS = {
   calendar: 60_000,
   availability: 5 * 60_000,
   studentProfile: 5 * 60_000,
+  /** Pagamento: quase sempre consultado de novo (o estado muda pelo webhook, no servidor). */
+  payment: 1_000,
+  payments: 15_000,
+  paymentsStatus: 5 * 60_000,
+  payoutAccount: 60_000,
 } as const;
 
 /** Quanto tempo um dado sem uso fica em memória antes de ser descartado. */

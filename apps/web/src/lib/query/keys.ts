@@ -22,6 +22,10 @@ export const queryKeys = {
   lessons: (uid: string) => [ROOT, "user", uid, "lessons"] as const,
   calendar: (uid: string) => [ROOT, "user", uid, "calendar"] as const,
   availability: (uid: string) => [ROOT, "user", uid, "availability"] as const,
+  paymentsStatus: (uid: string) => [ROOT, "user", uid, "payments-status"] as const,
+  payments: (uid: string) => [ROOT, "user", uid, "payments"] as const,
+  payment: (uid: string, id: string) => [ROOT, "user", uid, "payments", id] as const,
+  payoutAccount: (uid: string) => [ROOT, "user", uid, "payout-account"] as const,
 
   catalogAll: (uid: string) => [ROOT, "user", uid, "catalog"] as const,
   /** Sem limit/offset: a paginação fica dentro da consulta infinita. */

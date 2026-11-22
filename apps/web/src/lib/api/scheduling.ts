@@ -70,8 +70,11 @@ export type Lesson = {
   subject: string;
   starts_at: string;
   ends_at: string;
-  status: "scheduled" | "cancelled";
-  is_test: true;
+  /** awaiting_payment/expired: aula paga (Fase 5) aguardando ou sem Pix. */
+  status: "scheduled" | "cancelled" | "awaiting_payment" | "expired";
+  /** true = aula do piloto sem cobrança; false = aula paga (ver payment). */
+  is_test: boolean;
+  payment?: { id: string; status: string; amount_cents: number } | null;
   calendar_sync_status: SyncStatus;
   meet_url: string | null;
   cancelled_at: string | null;

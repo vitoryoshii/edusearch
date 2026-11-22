@@ -55,6 +55,7 @@ from app.schemas.scheduling import (
     LessonCreate,
     LessonOut,
     LessonParty,
+    LessonPayment,
     SchedulingStatus,
     SlotsOut,
     TeacherPublicProfile,
@@ -356,6 +357,8 @@ class DbSchedulingService:
         start, end = now - timedelta(days=1), now + timedelta(days=61)
         repo = SchedulingRepository(conn)
         with as_connection_role(conn):
+            # Reservas pagas com Pix vencido liberam o horário antes do cálculo.
+            conn.execute("select private.payment_expire_holds()")
             busy = repo.teacher_busy(teacher_id, start, end)
         return busy + repo.own_busy(user.id, start, end)
 
@@ -395,6 +398,16 @@ class DbSchedulingService:
             cancelled_at=row["cancelled_at"],
             cancelled_by_role=row["cancelled_by_role"],
             created_at=row["created_at"],
+            is_test=row.get("is_test", True),
+            payment=(
+                LessonPayment(
+                    id=row["payment_id"],
+                    status=row["payment_status"],
+                    amount_cents=row["payment_amount_cents"],
+                )
+                if row.get("payment_id")
+                else None
+            ),
         )
 
     def _load(self, user: AuthenticatedUser, lesson_id: UUID) -> dict[str, Any]:
@@ -488,6 +501,12 @@ class DbSchedulingService:
         row = self._load(user, lesson_id)
         row = self._sync_delete(user, row)
         return self._lesson_out(row, user)
+
+    def sync_lesson_calendar(self, user: AuthenticatedUser, lesson_id: UUID) -> None:
+        """Evento com Meet de uma aula recém-confirmada (pagamento). Idempotente: ID = aula."""
+        row = self._load(user, lesson_id)
+        if row["status"] == "scheduled" and row["calendar_sync_status"] != "synced":
+            self._sync_create(user, row)
 
     def resync(self, user: AuthenticatedUser, lesson_id: UUID) -> LessonOut:
         self._enabled()

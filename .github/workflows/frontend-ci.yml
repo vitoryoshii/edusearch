@@ -189,6 +189,31 @@ jobs:
         timeout-minutes: 6
         run: node apps/web/scripts/agenda.mjs http://localhost:5193 "$RUNNER_TEMP/auth-screens/agenda" 2>&1 | tee "$RUNNER_TEMP/logs/agenda.log"
 
+      # Checkout Pix (Fase 5) com VITE_STAGE_PAYMENTS=sandbox SÓ neste servidor de testes. A API (e a
+      # AbacatePay por trás dela) é falsa e interceptada no navegador: nenhuma chave, nenhum dinheiro.
+      - name: Servidor com pagamentos sandbox (API falsa) na porta 5194
+        if: success() || failure()
+        env:
+          VITE_SUPABASE_URL: https://edusearch-ci-fake.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_fake_key
+          VITE_GOOGLE_CLIENT_ID: 1234567890-edusearchci.apps.googleusercontent.com
+          VITE_STAGE_PROFILE_PERSISTENCE: testing
+          VITE_STAGE_SCHEDULING: testing
+          VITE_STAGE_PAYMENTS: sandbox
+          VITE_API_BASE_URL: https://api.edusearch-ci.test
+          VITE_DATA_SOURCE: api
+        run: |
+          pnpm --filter @edusearch/web exec vite --port 5194 --strictPort > "$RUNNER_TEMP/logs/vite-payments.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5194 > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:5194 > /dev/null || { cat "$RUNNER_TEMP/logs/vite-payments.log"; exit 1; }
+          curl -sf http://localhost:5194/src/main.tsx > /dev/null
+          sleep 2
+
+      - name: Checkout Pix sandbox (reserva paga idempotente, QR/copia e cola, contagem, backoff, confirmação só pelo servidor, expiração, 409, histórico, axe, 320–1440 px)
+        if: success() || failure()
+        timeout-minutes: 6
+        run: node apps/web/scripts/payments.mjs http://localhost:5194 "$RUNNER_TEMP/auth-screens/pagamentos" 2>&1 | tee "$RUNNER_TEMP/logs/payments.log"
+
       - name: Website servido como estático (vite preview, sem fallback de SPA) na porta 4174
         if: success() || failure()
         run: |
@@ -206,7 +231,7 @@ jobs:
         run: |
           {
             echo "## Testes de navegador"
-            for t in smoke a11y auth persistence agenda legal-browser; do
+            for t in smoke a11y auth persistence agenda payments legal-browser; do
               f="$RUNNER_TEMP/logs/$t.log"
               [ -f "$f" ] || { echo "- **$t**: não executado"; continue; }
               ok=$(grep -c "  ✓ " "$f" || true)
@@ -215,7 +240,7 @@ jobs:
                 echo '```text'; { grep -A2 "✗" "$f" || true; } | head -n 40 || true; echo '```'
               fi
             done
-            for s in vite vite-auth vite-persistence vite-agenda website; do
+            for s in vite vite-auth vite-persistence vite-agenda vite-payments website; do
               f="$RUNNER_TEMP/logs/$s.log"
               if [ -f "$f" ] && grep -qiE "error|failed" "$f"; then
                 echo "### Log do servidor: $s"; echo '```text'; { grep -iE -B1 -A3 "error|failed" "$f" || true; } | head -n 30 || true; echo '```'

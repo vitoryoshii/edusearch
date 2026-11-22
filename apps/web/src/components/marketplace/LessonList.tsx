@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { Badge, Button, CalendarIcon, ExternalIcon, RefreshIcon, VideoIcon, buttonClasses, useToast } from "@edusearch/ui";
 import { QueryContent, RefreshButton } from "../QueryContent";
 import { describeError } from "../../lib/api/client";
@@ -26,6 +27,9 @@ const SYNC_LABEL: Record<Lesson["calendar_sync_status"], string> = {
 };
 
 export const isUpcoming = (l: Lesson, now = Date.now()) => l.status === "scheduled" && new Date(l.ends_at).getTime() > now;
+/** Aula paga reservada, aguardando o Pix (aparece entre as próximas, sem Meet). */
+export const isAwaitingPayment = (l: Lesson, now = Date.now()) => l.status === "awaiting_payment" && new Date(l.ends_at).getTime() > now;
+const isActive = (l: Lesson) => isUpcoming(l) || isAwaitingPayment(l);
 
 /** Aulas reais da conta (aluno e/ou professor), separadas em próximas e anteriores. */
 export function LessonList({ emptyAction }: { emptyAction?: ReactNode }) {
@@ -44,8 +48,8 @@ export function LessonList({ emptyAction }: { emptyAction?: ReactNode }) {
       empty={{ title: "Nenhuma aula ainda", description: "As aulas reservadas aparecem aqui.", icon: <CalendarIcon className="h-6 w-6" />, action: emptyAction }}
     >
       {(data) => {
-        const upcoming = data.filter((l) => isUpcoming(l)).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-        const past = data.filter((l) => !isUpcoming(l));
+        const upcoming = data.filter(isActive).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+        const past = data.filter((l) => !isActive(l));
         return (
           <div className="space-y-8" data-testid="lesson-list">
             <section aria-labelledby="aulas-proximas">
@@ -87,6 +91,7 @@ export function LessonRow({ lesson, subjectName }: { lesson: Lesson; subjectName
   const [confirming, setConfirming] = useState(false);
   const other = lesson.role === "teacher" ? lesson.student : lesson.teacher;
   const upcoming = isUpcoming(lesson);
+  const awaiting = isAwaitingPayment(lesson);
   const fail = (e: unknown) => toast({ tone: "error", title: "Não foi possível concluir", description: describeError(e) });
   // Mutações atualizam a lista em cache com a resposta da API e revalidam aulas/horários/catálogo.
   const cancelMutation = useCancelLessonMutation();
@@ -119,6 +124,10 @@ export function LessonRow({ lesson, subjectName }: { lesson: Lesson; subjectName
           {subjectName(lesson.subject)}
           {lesson.status === "cancelled" ? (
             <Badge tone="danger">Cancelada</Badge>
+          ) : awaiting ? (
+            <Badge tone="warning">Aguardando Pix</Badge>
+          ) : lesson.status === "expired" || lesson.status === "awaiting_payment" ? (
+            <Badge tone="neutral">Pix expirado</Badge>
           ) : upcoming ? (
             <Badge tone={lesson.calendar_sync_status === "synced" ? "success" : "neutral"}>{SYNC_LABEL[lesson.calendar_sync_status]}</Badge>
           ) : (
@@ -132,6 +141,15 @@ export function LessonRow({ lesson, subjectName }: { lesson: Lesson; subjectName
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+        {lesson.payment && (
+          <Link
+            to={`/conta/pagamentos/${lesson.payment.id}`}
+            className={buttonClasses({ variant: awaiting && lesson.role === "student" ? "primary" : "ghost", size: "sm" })}
+            data-testid="lesson-payment"
+          >
+            {awaiting && lesson.role === "student" ? "Pagar com Pix" : "Pagamento"}
+          </Link>
+        )}
         {upcoming && isTrustedMeetUrl(lesson.meet_url) && (
           <a href={lesson.meet_url} target="_blank" rel="noopener noreferrer" className={buttonClasses({ size: "sm" })}>
             <VideoIcon className="h-4 w-4" /> Entrar no Meet
@@ -144,7 +162,7 @@ export function LessonRow({ lesson, subjectName }: { lesson: Lesson; subjectName
             Sincronizar agenda
           </Button>
         )}
-        {upcoming &&
+        {(upcoming || awaiting) &&
           (confirming ? (
             <>
               <Button variant="danger" size="sm" loading={cancel.pending} onClick={() => void cancel.run().catch(fail)}>

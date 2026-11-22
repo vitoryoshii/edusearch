@@ -44,13 +44,14 @@ const NAV_ICONS: Record<NavIconKey, IconComponent> = {
   clock: ClockIcon,
   user: UserIcon,
   graduation: GraduationIcon,
+  wallet: WalletIcon,
   settings: SettingsIcon,
 };
 
 /** Menu da conta real: depende dos papéis PERSISTIDOS no servidor (lib/navigation.ts). */
 function useAccountNav(): NavItem[] {
   const me = useServerMe();
-  return accountNav(me?.roles ?? [], FEATURES.scheduling !== "off").map((i) => ({ ...i, icon: NAV_ICONS[i.icon] }));
+  return accountNav(me?.roles ?? [], FEATURES.scheduling !== "off", FEATURES.payments !== "off").map((i) => ({ ...i, icon: NAV_ICONS[i.icon] }));
 }
 
 const NAV: Record<Exclude<ShellMode, "account">, NavItem[]> = {
