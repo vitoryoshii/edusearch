@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button, Chip, Select, Card, buttonClasses, useToast } from "@edusearch/ui";
 import { QueryContent } from "../QueryContent";
@@ -24,6 +24,7 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
   const [duration, setDuration] = useState(teacher.lesson_durations_minutes[0] ?? 60);
   const [slot, setSlot] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [slotNotice, setSlotNotice] = useState<string | null>(null);
   const [booked, setBooked] = useState<Lesson | null>(null);
   // Uma chave por INTENÇÃO de reserva; envio em andamento ignora um segundo clique.
   const key = useRef<string>(crypto.randomUUID());
@@ -34,9 +35,17 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
   const checkoutMutation = useCheckoutMutation();
   const navigate = useNavigate();
   const paid = FEATURES.payments !== "off";
+  // A API é a fonte de verdade: se uma revalidação retirar o horário, não deixa o CTA usar cache antigo.
+  useEffect(() => {
+    if (slot && slots.data && !slots.data.slots.includes(slot)) {
+      setSlot(null);
+      setSlotNotice("Este horário acabou de ficar indisponível. Escolha outro horário para continuar.");
+    }
+  }, [slot, slots.data]);
   const renew = () => {
     setSlot(null);
     setSelectedDay(null);
+    setSlotNotice(null);
     key.current = crypto.randomUUID();
   };
   const book = {
@@ -72,7 +81,10 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
   };
   const fail = (e: unknown) => {
     // 409: o horário foi tomado (o cache de horários estava velho). A mutação já revalidou a lista.
-    if (e instanceof ApiError && e.status === 409) renew();
+    if (e instanceof ApiError && e.status === 409) {
+      renew();
+      setSlotNotice("Este horário acabou de ficar indisponível. Escolha outro horário para continuar.");
+    }
     toast({ tone: "error", title: "Não foi possível reservar", description: describeError(e) });
   };
 
@@ -97,7 +109,21 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
         isEmpty={(d) => d.slots.length === 0}
         empty={{ title: "Sem horários livres nos próximos 14 dias", description: "Tente outra duração ou volte mais tarde." }}
       >
-        {(d) => <SlotPicker slots={d.slots} selectedDay={selectedDay} setSelectedDay={setSelectedDay} slot={slot} setSlot={setSlot} />}
+        {(d) => (
+          <>
+            <SlotPicker
+              slots={d.slots}
+              selectedDay={selectedDay}
+              setSelectedDay={setSelectedDay}
+              slot={slot}
+              setSlot={(next) => {
+                setSlotNotice(null);
+                setSlot(next);
+              }}
+            />
+            {slotNotice && <p role="status" className="text-sm font-medium text-warning-text">{slotNotice}</p>}
+          </>
+        )}
       </QueryContent>
       <BookingSummary teacher={teacher} subjectName={subjectName} subject={subject} duration={duration} slot={slot} paid={paid} />
       <div className="flex flex-wrap items-center gap-3">
