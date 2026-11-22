@@ -558,7 +558,7 @@ def test_commission_progress_is_private_versioned_and_freezes_existing_charges(
             "simulation_commission_cents": 1400,
             "simulation_teacher_share_cents": 8600,
         }
-        new_response = checkout(client, people, slot(client, people, skip=1))
+        new_response = checkout(client, people, slot(client, people))
         assert new_response.status_code == 201, new_response.text
         new = new_response.json()
         assert (new["commission_policy_version"], new["commission_bps"]) == ("demo-v2", 1400)
