@@ -503,6 +503,7 @@ await fitsInCards("perfil do professor (reserva)");
 /* Minhas aulas */
 await act("ir para Minhas aulas", "(() => { [...document.querySelectorAll('a')].find((a) => a.textContent.trim() === 'Ver em Minhas aulas').click(); return true; })()");
 await check(await waitFor("location.pathname === '/conta/aulas' && document.querySelectorAll('[data-testid=lesson-row]').length === 1"), "Minhas aulas lista a reserva");
+await check(await b.evaluate(text("Aulas do piloto, sem cobrança.")) && !(await b.evaluate(text("Pix"))), "Minhas aulas sem pagamentos: aviso de aulas do piloto sem cobrança");
 await check(await b.evaluate("[...document.querySelectorAll('[data-testid=lesson-row] a')].some((a) => a.href.startsWith('https://meet.google.com/') && a.rel.includes('noopener') && a.textContent.includes('Entrar no Meet'))"), "\"Entrar no Meet\" com link seguro");
 await check(!(await b.evaluate(text(" De "))), "datas em português sem maiúsculas em todas as palavras");
 await axe("minhas aulas");

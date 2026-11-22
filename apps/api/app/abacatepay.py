@@ -250,6 +250,26 @@ class AbacatePayClient:
 # ---------------------------------------------------------------------- webhooks
 
 
+def webhook_paid_amount(transparent: dict[str, Any]) -> int | None:
+    """Valor pago (centavos) de um ``transparent.completed``; ``None`` se ausente ou inválido.
+
+    Na documentação v2, ``paidAmount`` aparece SEMPRE como ``null`` nos exemplos (inclusive Pix) e
+    não consta do schema da cobrança; ``amount`` é o "valor a ser pago em centavos". Um Pix
+    transparente tem valor fixo no QR e chega com ``status: PAID``, então, para esse evento,
+    ``amount`` é o valor pago. Regras:
+    * ``paidAmount`` presente e não nulo prevalece, mesmo inválido (nunca vira ``amount``);
+    * ``paidAmount`` ausente ou ``null`` → ``amount``;
+    * só vale inteiro positivo (nada de string, bool, float, zero ou negativo).
+    O valor ainda é comparado com o congelado na reserva (``amount_mismatch`` se divergir).
+    """
+    value = transparent.get("paidAmount")
+    if value is None:
+        value = transparent.get("amount")
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
 def verify_webhook(
     raw_body: bytes,
     *,
