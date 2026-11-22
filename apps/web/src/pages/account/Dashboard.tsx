@@ -1,10 +1,11 @@
 import { Link, Navigate } from "react-router";
-import { ArrowRightIcon, Badge, Card, CheckCircleIcon, ClockIcon, ShieldIcon, buttonClasses } from "@edusearch/ui";
+import { ArrowRightIcon, Badge, CalendarIcon, Card, CheckCircleIcon, ClockIcon, ShieldIcon, buttonClasses } from "@edusearch/ui";
 import { useAccount, useDisplayProfile, useServerMe } from "../../app/account";
 import { ProfileSummary, ProvisionalBadge, ROLE_LABEL, useRoleIntent } from "../../components/AccountProfile";
 import { PageHeader } from "../../components/PageHeader";
 import type { Me } from "../../lib/api/account";
 import { firstNameOf, type AuthenticatedProfile } from "../../lib/auth/profile";
+import { FEATURES } from "../../lib/features";
 import { ONBOARDING_PATH, WELCOME_PATH } from "../../lib/onboarding";
 
 /** Início da conta real: identidade, conclusão do cadastro e limites da fase de testes. */
@@ -32,6 +33,7 @@ function ServerDashboard({ profile }: { profile: AuthenticatedProfile }) {
         </Card>
         {me.onboarding.student && <StudentStatus status={me.onboarding.student.status} />}
         {me.onboarding.teacher && <TeacherStatus teacher={me.onboarding.teacher} />}
+        {FEATURES.scheduling !== "off" && <AgendaShortcut />}
         <CommercialNotice />
       </div>
     </>
@@ -95,6 +97,24 @@ function TeacherStatus({ teacher }: { teacher: NonNullable<Me["onboarding"]["tea
   );
 }
 
+function AgendaShortcut() {
+  return (
+    <Card className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-testid="agenda-shortcut">
+      <div className="flex items-start gap-3">
+        <CalendarIcon className="mt-0.5 h-5 w-5 shrink-0 text-link" />
+        <div>
+          <p className="font-semibold text-fg-strong">Agenda e aulas de teste</p>
+          <p className="mt-1 text-sm text-fg-muted">Google Agenda, disponibilidade e aulas de teste com Google Meet, sem cobrança.</p>
+        </div>
+      </div>
+      <Link to="/conta/agenda" className={buttonClasses({ variant: "secondary", className: "shrink-0" })}>
+        Abrir agenda
+        <ArrowRightIcon className="h-4 w-4" />
+      </Link>
+    </Card>
+  );
+}
+
 function CommercialNotice() {
   return (
     <Card tone="muted" className="flex items-start gap-3 text-sm">
@@ -102,8 +122,10 @@ function CommercialNotice() {
       <div>
         <p className="font-semibold text-fg-strong">Conta ainda não habilitada para uso comercial</p>
         <p className="mt-1 leading-relaxed text-fg">
-          Nesta fase de testes não é possível agendar aulas nem fazer pagamentos reais. A demonstração continua disponível com
-          dados fictícios, separados da sua conta — nada dela é copiado para cá.
+          {FEATURES.scheduling !== "off"
+            ? "Nesta fase de testes só há aulas de teste, sem cobrança, e nenhum pagamento real."
+            : "Nesta fase de testes não é possível agendar aulas nem fazer pagamentos reais."}{" "}
+          A demonstração continua disponível com dados fictícios, separados da sua conta — nada dela é copiado para cá.
         </p>
         <Link to="/perfil-de-acesso" className="mt-2 inline-flex min-h-11 items-center font-semibold text-link underline-offset-4 hover:underline">
           Explorar a demonstração

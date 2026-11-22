@@ -164,6 +164,29 @@ jobs:
         timeout-minutes: 8
         run: node apps/web/scripts/persistence.mjs http://localhost:5192 "$RUNNER_TEMP/auth-screens/persistencia" 2>&1 | tee "$RUNNER_TEMP/logs/persistence.log"
 
+      # Agenda real (Fase 3A) com a flag LIGADA só neste servidor de testes. Google (consentimento),
+      # Supabase e a API (host fictício) são interceptados no navegador. Nenhuma credencial real.
+      - name: Servidor com agenda real (API falsa) na porta 5193
+        if: success() || failure()
+        env:
+          VITE_SUPABASE_URL: https://edusearch-ci-fake.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_fake_key
+          VITE_GOOGLE_CLIENT_ID: 1234567890-edusearchci.apps.googleusercontent.com
+          VITE_STAGE_PROFILE_PERSISTENCE: testing
+          VITE_STAGE_SCHEDULING: testing
+          VITE_API_BASE_URL: https://api.edusearch-ci.test
+        run: |
+          pnpm --filter @edusearch/web exec vite --port 5193 --strictPort > "$RUNNER_TEMP/logs/vite-agenda.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5193 > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:5193 > /dev/null || { cat "$RUNNER_TEMP/logs/vite-agenda.log"; exit 1; }
+          curl -sf http://localhost:5193/src/main.tsx > /dev/null
+          sleep 2
+
+      - name: Agenda real (Google Agenda/Meet, disponibilidade, reserva idempotente, 409, cancelamento, axe, 320–1440 px)
+        if: success() || failure()
+        timeout-minutes: 6
+        run: node apps/web/scripts/agenda.mjs http://localhost:5193 "$RUNNER_TEMP/auth-screens/agenda" 2>&1 | tee "$RUNNER_TEMP/logs/agenda.log"
+
       - name: Website servido como estático (vite preview, sem fallback de SPA) na porta 4174
         if: success() || failure()
         run: |
@@ -181,7 +204,7 @@ jobs:
         run: |
           {
             echo "## Testes de navegador"
-            for t in smoke a11y auth persistence legal-browser; do
+            for t in smoke a11y auth persistence agenda legal-browser; do
               f="$RUNNER_TEMP/logs/$t.log"
               [ -f "$f" ] || { echo "- **$t**: não executado"; continue; }
               ok=$(grep -c "  ✓ " "$f" || true)
@@ -190,7 +213,7 @@ jobs:
                 echo '```text'; { grep -A2 "✗" "$f" || true; } | head -n 40 || true; echo '```'
               fi
             done
-            for s in vite vite-auth vite-persistence website; do
+            for s in vite vite-auth vite-persistence vite-agenda website; do
               f="$RUNNER_TEMP/logs/$s.log"
               if [ -f "$f" ] && grep -qiE "error|failed" "$f"; then
                 echo "### Log do servidor: $s"; echo '```text'; { grep -iE -B1 -A3 "error|failed" "$f" || true; } | head -n 30 || true; echo '```'

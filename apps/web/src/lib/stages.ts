@@ -26,6 +26,7 @@ export type FeatureEnv = {
   VITE_STAGE_EMAIL_AUTH?: string;
   VITE_STAGE_EMAIL_SIGNUP?: string;
   VITE_STAGE_PROFILE_PERSISTENCE?: string;
+  VITE_STAGE_SCHEDULING?: string;
 };
 
 export type FeatureInputs = {
@@ -47,6 +48,12 @@ export type Features = {
    * anterior); "testing"/"production" = papel e cadastro salvos e lidos do servidor.
    */
   profilePersistence: Stage;
+  /**
+   * Agenda real (Fase 3A): Google Agenda/Meet do professor, disponibilidade e aulas de TESTE.
+   * Padrão "off". Exige a persistência real do perfil. Nunca passa de "testing" nesta fase
+   * (aulas comerciais e pagamentos seguem desligados). A API tem o próprio interruptor.
+   */
+  scheduling: "off" | "testing";
   /** Pagamentos: sempre demonstrativos nesta fase (não há como ativá-los pelo frontend). */
   payments: "demo";
   /** Há algum login real disponível neste build. */
@@ -64,11 +71,14 @@ export function resolveFeatures(env: FeatureEnv, inputs: FeatureInputs): Feature
   const emailSignup = min(guard(parseStage(env.VITE_STAGE_EMAIL_SIGNUP, "off"), inputs.legalPublished), emailAuth);
   const realAuth = googleAuth !== "off" || emailAuth !== "off";
   const profilePersistence = realAuth ? guard(parseStage(env.VITE_STAGE_PROFILE_PERSISTENCE, "off"), inputs.legalPublished) : "off";
+  const schedulingStage = profilePersistence !== "off" ? parseStage(env.VITE_STAGE_SCHEDULING, "off") : "off";
+  const scheduling = schedulingStage === "off" ? "off" : "testing";
   return {
     googleAuth,
     emailAuth,
     emailSignup,
     profilePersistence,
+    scheduling,
     payments: "demo",
     realAuth,
   };
