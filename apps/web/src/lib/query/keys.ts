@@ -26,6 +26,7 @@ export const queryKeys = {
   payments: (uid: string) => [ROOT, "user", uid, "payments"] as const,
   payment: (uid: string, id: string) => [ROOT, "user", uid, "payments", id] as const,
   payoutAccount: (uid: string) => [ROOT, "user", uid, "payout-account"] as const,
+  teacherFinance: (uid: string, period: string) => [ROOT, "user", uid, "teacher-finance", period] as const,
 
   catalogAll: (uid: string) => [ROOT, "user", uid, "catalog"] as const,
   /** Sem limit/offset: a paginação fica dentro da consulta infinita. */

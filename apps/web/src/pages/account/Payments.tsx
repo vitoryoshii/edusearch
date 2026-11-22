@@ -1,6 +1,7 @@
 import { Link, Navigate } from "react-router";
 import { Badge, Card, WalletIcon, buttonClasses } from "@edusearch/ui";
-import { useServerMe } from "../../app/account";
+import { hasRole, useServerMe } from "../../app/account";
+import { TeacherFinancePanel } from "../../components/account/TeacherFinancePanel";
 import { PageHeader } from "../../components/PageHeader";
 import { QueryContent, RefreshButton } from "../../components/QueryContent";
 import { useSubjectNames } from "../../components/marketplace/LessonList";
@@ -15,14 +16,18 @@ export default function AccountPayments() {
   const payments = usePaymentsQuery(FEATURES.payments !== "off");
   const subjectName = useSubjectNames();
   if (FEATURES.payments === "off" || !me) return <Navigate to="/conta" replace />;
+  const teacher = hasRole(me, "teacher");
   return (
     <>
       <PageHeader
-        title="Meus pagamentos"
+        title={teacher ? "Financeiro" : "Meus pagamentos"}
         description={FEATURES.payments === "sandbox" ? "Ambiente de testes: Pix do Modo Teste da AbacatePay, sem dinheiro real." : "Pagamentos Pix das suas aulas."}
         actions={<RefreshButton query={payments} />}
       />
+      <div className="space-y-6">
+      {teacher && <TeacherFinancePanel />}
       <Card>
+        {teacher && <h2 className="mb-3 font-semibold text-fg-strong">Todos os pagamentos</h2>}
         <QueryContent
           query={payments}
           loading="spinner"
@@ -69,6 +74,7 @@ export default function AccountPayments() {
           )}
         </QueryContent>
       </Card>
+      </div>
     </>
   );
 }

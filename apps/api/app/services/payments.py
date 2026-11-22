@@ -45,12 +45,15 @@ from app.repositories.scheduling import SchedulingRepository
 from app.scheduling import booking_problem
 from app.schemas.payments import (
     CheckoutIn,
+    FinancePeriod,
     PaymentLesson,
     PaymentOut,
     PaymentsStatus,
     PayoutAccountIn,
     PayoutAccountOut,
     RefundOut,
+    TeacherFinanceOut,
+    TeacherFinanceSummary,
 )
 from app.services.profiles import account_suspended, load_profile
 
@@ -424,6 +427,27 @@ class PaymentsService:
         with self._db.user_transaction(user) as conn:
             rows = PaymentsRepository(conn).list_for(user.id)
         return [self._out(r, user) for r in rows]
+
+    def teacher_finance(self, user: AuthenticatedUser, period: FinancePeriod) -> TeacherFinanceOut:
+        """Painel exclusivamente do professor, agregado no backend e protegido pelo RLS."""
+        if self._settings.payments_stage == "off":
+            raise payments_disabled()
+        with self._db.user_transaction(user) as conn:
+            if "teacher" not in ProfileRepository(conn).list_roles(user.id):
+                raise forbidden("role_required", "Disponível apenas para contas de professor.")
+            days = {"7d": 7, "30d": 30, "90d": 90}[period]
+            since = self._now() - timedelta(days=days)
+            repo = PaymentsRepository(conn)
+            summary = repo.teacher_finance_summary(user.id, since)
+            rows = repo.list_for_teacher_since(user.id, since)
+        return TeacherFinanceOut(
+            period=period,
+            environment=self._env,  # o ambiente é decidido pelo servidor, nunca pela query.
+            commission_bps=COMMISSION_BPS,
+            summary=TeacherFinanceSummary(**summary),
+            payout_account=self.payout_account(user),
+            payments=[self._out(row, user) for row in rows],
+        )
 
     # ------------------------------------------------------------------ webhook
 

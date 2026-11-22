@@ -60,6 +60,15 @@ function ServerDashboard({ profile }: { profile: AuthenticatedProfile }) {
             <NextLessonCard lessons={lessonData} role={teacher && !student ? "teacher" : "student"} />
           ))}
         {scheduling && teacher && <TeacherOverview me={me} lessons={lessonData} />}
+        {scheduling && teacher && FEATURES.payments !== "off" && (
+          <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" data-testid="teacher-finance-shortcut">
+            <div>
+              <p className="font-semibold text-fg-strong">Acompanhe o financeiro das suas aulas</p>
+              <p className="mt-1 text-sm text-fg-muted">Veja valores simulados, comissão, situação do split e histórico sem tratar repasse como saldo disponível.</p>
+            </div>
+            <Link to="/conta/pagamentos" className={buttonClasses({ variant: "secondary", className: "shrink-0" })}>Ver financeiro <ArrowRightIcon className="h-4 w-4" /></Link>
+          </Card>
+        )}
         {scheduling && student && <StudentShortcuts />}
         {scheduling && <RegistrationSummary me={me} />}
         <PilotNote />

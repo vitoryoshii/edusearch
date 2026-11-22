@@ -131,3 +131,34 @@ class PayoutAccountOut(BaseModel):
     environment: Literal["sandbox", "production"] | None = None
     tax_id_last4: str | None = None
     created_at: datetime | None = None
+
+
+# ----------------------------------------------------------- painel financeiro do professor
+
+
+FinancePeriod = Literal["7d", "30d", "90d"]
+
+
+class TeacherFinanceSummary(BaseModel):
+    """Totais de leitura do professor; todos os valores são centavos inteiros.
+
+    ``teacher_share_cents`` é atribuído pela regra da aula paga, nunca saldo disponível ou saque.
+    """
+
+    gross_cents: int
+    commission_cents: int
+    teacher_share_cents: int
+    gateway_fee_cents: int
+    paid_lessons: int
+    pending_lessons: int
+    cancelled_lessons: int
+    refunded_lessons: int
+
+
+class TeacherFinanceOut(BaseModel):
+    period: FinancePeriod
+    environment: Literal["sandbox", "production"]
+    commission_bps: int
+    summary: TeacherFinanceSummary
+    payout_account: PayoutAccountOut
+    payments: list[PaymentOut]

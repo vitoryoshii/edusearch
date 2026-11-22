@@ -435,6 +435,38 @@ def test_forged_and_wrong_environment_webhooks(client, people, abacate) -> None:
     )
 
 
+def test_teacher_finance_is_aggregated_and_private(client, people, abacate) -> None:
+    """O painel deriva o professor do JWT; aluno não escolhe nem lê outro financeiro."""
+    p = checkout(client, people, slot(client, people)).json()
+    charge = charge_of(abacate, p)
+    abacate.pay(charge["id"])
+    assert post_webhook(client, webhook_body(charge)).json()["outcome"] == "confirmed"
+
+    teacher = client.get(
+        "/v1/me/teacher-finance?period=30d", headers=auth(people["tokens"][people["teacher"]])
+    )
+    assert teacher.status_code == 200
+    data = teacher.json()
+    assert data["environment"] == "sandbox"
+    assert data["commission_bps"] == 1500
+    assert data["summary"] == {
+        "gross_cents": 8000,
+        "commission_cents": 1200,
+        "teacher_share_cents": 6800,
+        "gateway_fee_cents": 80,
+        "paid_lessons": 1,
+        "pending_lessons": 0,
+        "cancelled_lessons": 0,
+        "refunded_lessons": 0,
+    }
+    assert len(data["payments"]) == 1 and data["payments"][0]["role"] == "teacher"
+    assert data["payout_account"]["status"] == "split_unavailable"
+    student = client.get(
+        "/v1/me/teacher-finance?period=30d", headers=auth(people["tokens"][people["s1"]])
+    )
+    assert student.status_code == 403 and student.json()["code"] == "role_required"
+
+
 def test_simultaneous_confirmations_are_serialized(
     client, people, abacate, api_database_url
 ) -> None:

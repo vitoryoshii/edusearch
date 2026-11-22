@@ -47,6 +47,40 @@ class PaymentsRepository:
             (user_id,),
         ).fetchall()
 
+    def list_for_teacher_since(self, teacher_id: UUID, since: datetime) -> list[dict[str, Any]]:
+        """Histórico do próprio professor; a transação ainda carrega as claims para o RLS."""
+        return self._conn.execute(
+            _SELECT
+            + " where p.teacher_id = %s and p.created_at >= %s"
+            + " order by p.created_at desc limit 100",
+            (teacher_id, since),
+        ).fetchall()
+
+    def teacher_finance_summary(self, teacher_id: UUID, since: datetime) -> dict[str, Any]:
+        """Agregação no banco, sem expor nem aceitar identificador de outro professor."""
+        row = self._conn.execute(
+            """
+            select
+              coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::integer as gross_cents,
+              coalesce(sum(commission_cents) filter (where status = 'paid'), 0)::integer
+                as commission_cents,
+              coalesce(sum(teacher_share_cents) filter (where status = 'paid'), 0)::integer
+                as teacher_share_cents,
+              coalesce(sum(gateway_fee_cents) filter (where status = 'paid'), 0)::integer
+                as gateway_fee_cents,
+              count(*) filter (where status = 'paid')::integer as paid_lessons,
+              count(*) filter (where status = 'pending')::integer as pending_lessons,
+              count(*) filter (where status in ('cancelled', 'failed', 'expired'))::integer
+                as cancelled_lessons,
+              count(*) filter (where status = 'refunded')::integer as refunded_lessons
+            from public.payment_intents
+            where teacher_id = %s and created_at >= %s
+            """,
+            (teacher_id, since),
+        ).fetchone()
+        assert row is not None  # noqa: S101 — agregação sempre retorna uma linha
+        return row
+
     def own_payout(self, teacher_id: UUID) -> dict[str, Any] | None:
         return self._conn.execute(
             "select environment::text as environment, tax_id_last4, created_at, status "

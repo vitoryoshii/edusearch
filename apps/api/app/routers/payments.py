@@ -8,10 +8,12 @@ from app.auth.dependencies import CurrentUser
 from app.schemas.common import ErrorResponse
 from app.schemas.payments import (
     CheckoutIn,
+    FinancePeriod,
     PaymentOut,
     PaymentsStatus,
     PayoutAccountIn,
     PayoutAccountOut,
+    TeacherFinanceOut,
 )
 from app.services.payments import PaymentsService, get_payments_service
 
@@ -68,6 +70,16 @@ def simulate_payment(payment_id: UUID, user: CurrentUser, service: Service) -> P
 @router.get("/v1/me/payments", response_model=list[PaymentOut], responses=_ERRORS)
 def my_payments(user: CurrentUser, service: Service) -> list[PaymentOut]:
     return service.history(user)
+
+
+@router.get("/v1/me/teacher-finance", response_model=TeacherFinanceOut, responses=_ERRORS)
+def teacher_finance(
+    user: CurrentUser,
+    service: Service,
+    period: Annotated[FinancePeriod, Query()] = "30d",
+) -> TeacherFinanceOut:
+    """Leitura financeira agregada do próprio professor; não representa saldo ou saque."""
+    return service.teacher_finance(user, period)
 
 
 @router.get("/v1/me/payout-account", response_model=PayoutAccountOut, responses=_ERRORS)
