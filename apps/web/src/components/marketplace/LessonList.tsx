@@ -7,6 +7,7 @@ import { schedulingApi, type Lesson } from "../../lib/api/scheduling";
 import { useAction, useAsync } from "../../lib/hooks/useAsync";
 import { isTrustedMeetUrl } from "../../lib/meeting";
 import { lessonWhen } from "../../lib/scheduling";
+import { DateBlock } from "../account/DateBlock";
 
 /** Nome oficial da disciplina (GET /v1/subjects), com o slug como reserva. */
 export function useSubjectNames() {
@@ -101,7 +102,9 @@ export function LessonRow({ lesson, subjectName, onChange }: { lesson: Lesson; s
 
   return (
     <li className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between" data-testid="lesson-row" data-status={lesson.status}>
-      <div className="min-w-0">
+      <div className="flex min-w-0 items-start gap-4">
+        <DateBlock iso={lesson.starts_at} tone={upcoming ? "default" : "muted"} />
+        <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2 font-semibold text-fg-strong">
           {subjectName(lesson.subject)}
           {lesson.status === "cancelled" ? (
@@ -116,8 +119,9 @@ export function LessonRow({ lesson, subjectName, onChange }: { lesson: Lesson; s
         <p className="text-sm text-fg-muted">
           {lesson.role === "teacher" ? "Aluno" : "Professor"}: {other.display_name ?? "—"}
         </p>
+        </div>
       </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
+      <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
         {upcoming && isTrustedMeetUrl(lesson.meet_url) && (
           <a href={lesson.meet_url} target="_blank" rel="noopener noreferrer" className={buttonClasses({ size: "sm" })}>
             <VideoIcon className="h-4 w-4" /> Entrar no Meet

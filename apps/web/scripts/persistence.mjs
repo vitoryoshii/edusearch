@@ -459,8 +459,10 @@ await clickButton("Salvar nome e foto");
 await check(await waitFor(text("Perfil atualizado")), "nome e foto salvos (PUT /v1/me/profile)");
 const pput = apiLog.filter((r) => r.path === "/v1/me/profile").at(-1);
 await check(pput?.body?.display_name === "Prof. B Atualizado" && pput.body.avatar_url === null && Object.keys(pput.body).length === 2, "PUT /v1/me/profile envia só nome e foto");
-await b.go(base + "/conta", 1500);
+// Fase 4B: o início ficou focado em aulas; o cartão de identidade mora em Meu perfil (e o nome, no menu).
+await b.go(base + "/conta/perfil", 1500);
 await check(await waitFor(`document.querySelector('[data-testid=profile-name]')?.textContent === 'Prof. B Atualizado'`), "nome salvo exibido após recarregar");
+await check(await b.evaluate(`[...document.querySelectorAll('aside, header')].some((e) => e.innerText.includes('Prof. B Atualizado'))`), "nome salvo também no menu da conta");
 await axe("configurações — nome e foto");
 await shot("persist-configuracoes", [320, 1440]);
 

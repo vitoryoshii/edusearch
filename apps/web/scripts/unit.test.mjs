@@ -623,7 +623,8 @@ describe("agenda real (Fase 3A)", () => {
 });
 
 import { EMPTY_FILTERS, activeFilterCount, filtersFromSearch, filtersToSearch, hasMorePages, toCatalogQuery } from "../src/lib/marketplace.ts";
-import { accountNav } from "../src/lib/navigation.ts";
+import { accountNav, legacyRealPath } from "../src/lib/navigation.ts";
+import { dateParts } from "../src/lib/scheduling.ts";
 
 describe("marketplace real (Fase 4A)", () => {
   test("filtros → query da API: vazios omitidos, busca aparada, paginação", () => {
@@ -653,5 +654,21 @@ describe("marketplace real (Fase 4A)", () => {
     assert.ok(both.filter((i) => i.mobile).length <= 5);
     assert.deepEqual(paths(["student"], false), ["/conta", "/conta/perfil", "/conta/configuracoes"]);
     assert.ok(!paths(["teacher"]).includes("/conta/explorar"));
+  });
+});
+
+describe("navegação unificada (Fase 4B)", () => {
+  test("URLs legadas da demonstração → telas reais, sem levar IDs fictícios", () => {
+    const cases = {
+      "/aluno": "/conta", "/aluno/buscar": "/conta/explorar", "/aluno/professores/demo-1": "/conta/explorar",
+      "/aluno/professores/demo-1/agendar": "/conta/explorar", "/aluno/aulas/abc": "/conta/aulas", "/aluno/perfil": "/conta/perfil",
+      "/aluno/pagamento/x": "/conta", "/professor": "/conta", "/professor/disponibilidade": "/conta/agenda",
+      "/professor/aulas": "/conta/aulas", "/professor/especialidades": "/conta/perfil-profissional",
+      "/professor/recebimentos": "/conta", "/professor/configuracoes/": "/conta/configuracoes",
+    };
+    for (const [from, to] of Object.entries(cases)) assert.equal(legacyRealPath(from), to, from);
+  });
+  test("bloco de data no fuso de Brasília", () => {
+    assert.deepEqual(dateParts("2026-12-03T01:30:00Z"), { weekday: "qua", day: "2", month: "dez" });
   });
 });

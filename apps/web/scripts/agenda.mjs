@@ -137,6 +137,8 @@ function api(method, path, sub, body, query = new URLSearchParams()) {
       onboarding: { student: user.roles.includes("student") ? { status: "completed" } : null, teacher: teacher ? { status: "completed", verification_status: "approved", is_published: true } : null },
       created_at: NOW, updated_at: NOW,
     }];
+  if (path === "/v1/me/student-profile" && method === "GET" && user.roles.includes("student"))
+    return [200, { learning_goal: "ENEM", education_level: "medio", subjects: ["fisica", "matematica"], difficulty_areas: [], preferred_weekdays: ["seg"], preferred_periods: ["noite"], preferred_modality: "online", budget_min_cents: 5000, budget_max_cents: 8000, created_at: NOW, updated_at: NOW }];
   if (path === "/v1/scheduling/status") return [200, { stage: "testing", calendar_configured: true, payments_enabled: false, commercial_lessons_enabled: false }];
   if (path.startsWith("/v1/me/google-calendar") || path === "/v1/me/availability") {
     if (!teacher) return err(403, "role_required", "Disponível apenas para contas de professor.");
@@ -352,7 +354,12 @@ async function fitsInCards(label, { stress = false, widths = [320, 360, 390, 430
 console.log("Professor");
 b.setStep?.("professor");
 await signIn("T");
-await check(await waitFor(`!!document.querySelector('[data-testid=agenda-shortcut]')`), "início da conta mostra o atalho da agenda");
+await waitFor("!!document.querySelector('main h1')");
+await shot("painel-professor", [320, 390, 768, 1440]);
+await check(await waitFor("!!document.querySelector('[data-testid=teacher-overview]') && document.querySelector('[data-testid=next-lesson]')?.dataset.state === 'empty'"), "painel do professor: indicadores e próxima aula (vazia)");
+await check(await waitFor("!!document.querySelector('[data-testid=teacher-checklist]')"), "painel do professor: o que falta para receber reservas");
+await check(!(await b.evaluate("!!document.querySelector('[data-testid=student-shortcuts]')")), "professor não vê atalhos de aluno");
+await axe("painel do professor");
 await check(await b.evaluate(`[...document.querySelectorAll('nav a')].some((a) => a.getAttribute('href') === '/conta/agenda')`), "menu da conta tem \"Agenda\"");
 await b.go(base + "/conta/agenda", 1500);
 await check(await waitFor(`${calendarStatus} === 'not_connected' && !!document.querySelector('[data-testid=scheduling-test-notice]')`), "agenda: aviso de aulas de teste e Google Agenda não conectada");
@@ -417,6 +424,20 @@ await check(await waitFor(`location.pathname === '/conta'`), "professor não ace
 console.log("Aluna");
 await signOut();
 await signIn("S");
+await waitFor("!!document.querySelector('main h1')");
+await shot("inicio-aluna", [320, 390, 768, 1440]);
+await check(await waitFor("!!document.querySelector('[data-testid=student-shortcuts]') && !document.querySelector('[data-testid=teacher-overview]')"), "início da aluna: busca e atalhos, sem blocos de professor");
+await check(await waitFor("[...document.querySelectorAll('[data-testid=student-shortcuts] a')].map((a) => a.getAttribute('href')).join(',') === '/conta/explorar?materia=fisica,/conta/explorar?materia=matematica'"), "atalhos com as disciplinas do PRÓPRIO cadastro do aluno");
+await axe("início da aluna");
+
+/* URLs legadas da demonstração → telas reais (sem levar IDs fictícios) */
+await b.go(base + "/aluno/buscar", 1500);
+await check(await waitFor("location.pathname === '/conta/explorar'"), "URL legada /aluno/buscar → /conta/explorar");
+await b.go(base + "/aluno/professores/demo-1", 1500);
+await check(await waitFor("location.pathname === '/conta/explorar'"), "URL legada de perfil da demo → Explorar (ID fictício descartado)");
+await b.go(base + "/aluno/aulas", 1500);
+await check(await waitFor("location.pathname === '/conta/aulas'"), "URL legada /aluno/aulas → /conta/aulas");
+await b.go(base + "/conta", 1500);
 await check(
   await waitFor(`JSON.stringify([...document.querySelector('nav[aria-label="Navegação principal"]').querySelectorAll('a')].map((a) => a.getAttribute('href'))) === JSON.stringify(['/conta','/conta/explorar','/conta/aulas','/conta/perfil','/conta/configuracoes'])`),
   "menu da aluna: Início, Explorar, Aulas, Perfil, Configurações (sem a Agenda do professor)",
@@ -478,16 +499,38 @@ await check(!(await b.evaluate(text(" De "))), "datas em português sem maiúscu
 await axe("minhas aulas");
 await shot("minhas-aulas", [320, 360, 390, 430, 768, 1440]);
 await fitsInCards("minhas aulas");
+await b.go(base + "/conta", 1500);
+await check(await waitFor("document.querySelector('[data-testid=next-lesson]')?.dataset.state === 'scheduled'"), "início: próxima aula em destaque");
+await check(await b.evaluate("[...document.querySelectorAll('[data-testid=next-lesson] a')].some((a) => a.href.startsWith('https://meet.google.com/'))"), "início: \"Entrar no Meet\" na próxima aula");
+await shot("inicio-aluna-com-aula", [320, 390, 768, 1440]);
+await fitsInCards("início com aula");
+await b.go(base + "/conta/aulas", 1500);
+await waitFor("document.querySelectorAll('[data-testid=lesson-row]').length === 1");
 await clickButton("Cancelar", "[data-testid=lesson-list]");
 await clickButton("Confirmar cancelamento", "[data-testid=lesson-list]");
 await check(await waitFor("document.querySelector('[data-testid=lesson-row]')?.dataset.status === 'cancelled'"), "cancelamento em dois passos marca a aula como cancelada");
 await check(!(await b.evaluate("[...document.querySelectorAll('[data-testid=lesson-row] a')].some((a) => a.href.includes('meet.google.com'))")), "aula cancelada sem link do Meet");
 
+/* Início da aluna com a aula reservada (antes do cancelamento acima, a aula existia) */
 /* Persistência após novo login */
 await signOut();
 await signIn("S");
 await b.go(base + "/conta/aulas", 1500);
 await check(await waitFor("document.querySelector('[data-testid=lesson-row]')?.dataset.status === 'cancelled'"), "após novo login, Minhas aulas recupera o histórico");
+
+/* ------------------------------ 3. Demonstração isolada ------------------------------ */
+console.log("Demonstração");
+await signOut();
+const apiBefore = apiLog.length;
+await b.go(base + "/perfil-de-acesso", 1500);
+await act("Quero aprender (demo)", "(() => { const l = [...document.querySelectorAll('label')].find((x) => x.textContent.includes('Quero aprender')); if (!l) return false; l.click(); return true; })()");
+await clickButton("Continuar como aluno");
+await check(await waitFor("location.pathname.startsWith('/aluno')"), "demonstração acessível sem conta");
+await check(await waitFor(text("Modo demonstração")), "demonstração SEMPRE identificada (aviso de dados fictícios)");
+await b.go(base + "/aluno/buscar", 1500);
+await check(await waitFor("document.querySelectorAll('main a[href^=\"/aluno/professores/\"]').length > 0"), "demonstração mostra professores FICTÍCIOS (não depende da API)");
+await check(!(await b.evaluate(text("ainda não está disponível na API"))), "demonstração não cai em \"recurso indisponível\"");
+await check(apiLog.length === apiBefore, "demonstração não chama a API real");
 
 /* ------------------------------ Resultado ------------------------------ */
 const errs = b.errors.filter((e) => !/status of (401|403|404|409|422|503)|ERR_FAILED|supabase\.co|edusearch-ci\.test|googleusercontent/.test(e));
