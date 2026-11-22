@@ -558,8 +558,19 @@ def test_commission_progress_is_private_versioned_and_freezes_existing_charges(
             "simulation_commission_cents": 1400,
             "simulation_teacher_share_cents": 8600,
         }
-        # A grade anda de 30 min; os dois primeiros inícios ainda colidem com a aula de 60 min acima.
-        new_response = checkout(client, people, slot(client, people, skip=2))
+        slots_response = client.get(
+            f"/v1/teachers/{people['teacher']}/slots?duration=60&days=3",
+            headers=auth(people["tokens"][people["s1"]]),
+        )
+        assert slots_response.status_code == 200, slots_response.text
+        old_starts = datetime.fromisoformat(old["lesson"]["starts_at"].replace("Z", "+00:00"))
+        next_starts = next(
+            candidate
+            for candidate in slots_response.json()["slots"]
+            if datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            >= old_starts + timedelta(minutes=60)
+        )
+        new_response = checkout(client, people, next_starts)
         assert new_response.status_code == 201, new_response.text
         new = new_response.json()
         assert (new["commission_policy_version"], new["commission_bps"]) == ("demo-v2", 1400)
