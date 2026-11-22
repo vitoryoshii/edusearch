@@ -1,9 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ErrorState, LoadingState } from "@edusearch/ui";
 import { accountApi, type AccountRole, type Me } from "../lib/api/account";
 import { ApiError, describeError } from "../lib/api/client";
 import type { AuthenticatedProfile } from "../lib/auth/profile";
 import { FEATURES } from "../lib/features";
+import { isForeignPrivateKey, queryKeys } from "../lib/query/keys";
+import { STALE_MS } from "../lib/query/policy";
 import { useAuth } from "./auth";
 
 /**
@@ -36,42 +39,44 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const { status: authStatus, profile } = useAuth();
   const userId = authStatus === "signedIn" ? (profile?.id ?? null) : null;
   const enabled = persistenceEnabled() && userId !== null;
+  const qc = useQueryClient();
 
-  const [state, setState] = useState<{ userId: string | null; status: "loading" | "error" | "ready"; me: Me | null; error: unknown }>({
-    userId: null,
-    status: "loading",
-    me: null,
-    error: null,
-  });
-  const [attempt, setAttempt] = useState(0);
-
+  /*
+   * Isolamento entre contas: toda chave privada leva o id da conta, então uma conta NUNCA lê o cache
+   * de outra. Ao sair ou trocar de conta, o que não é da conta atual também sai da memória.
+   */
   useEffect(() => {
-    if (!enabled) return;
-    const controller = new AbortController();
-    setState({ userId, status: "loading", me: null, error: null });
-    accountApi
-      .me(controller.signal)
-      .then((me) => {
-        // Defesa extra: a resposta precisa ser do usuário da sessão atual.
-        if (me.id !== userId) throw new ApiError("http", "Resposta de outra conta.", { status: 403 });
-        setState({ userId, status: "ready", me, error: null });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setState({ userId, status: "error", me: null, error });
-      });
-    return () => controller.abort();
-  }, [enabled, userId, attempt]);
+    qc.removeQueries({ predicate: (q) => isForeignPrivateKey(q.queryKey, userId) });
+  }, [qc, userId]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
-  const setMe = useCallback((me: Me) => setState((s) => (s.userId === me.id ? { ...s, status: "ready", me, error: null } : s)), []);
+  const me = useQuery({
+    queryKey: queryKeys.me(userId ?? ""),
+    queryFn: async ({ signal }) => {
+      const data = await accountApi.me(signal);
+      // Defesa extra: a resposta precisa ser do usuário da sessão atual.
+      if (data.id !== userId) throw new ApiError("http", "Resposta de outra conta.", { status: 403 });
+      return data;
+    },
+    enabled,
+    staleTime: STALE_MS.me,
+  });
+
+  const reload = useCallback(() => void me.refetch(), [me]);
+  const setMe = useCallback(
+    (next: Me) => {
+      if (next.id === userId) qc.setQueryData(queryKeys.me(next.id), next);
+    },
+    [qc, userId],
+  );
 
   const value = useMemo<AccountState>(() => {
     if (!enabled) return { mode: "preview" };
-    // Troca de usuário: nunca exibe o Me da conta anterior.
-    const current = state.userId === userId ? state : { status: "loading" as const, me: null, error: null };
-    return { mode: "server", status: current.status, me: current.me, error: current.error, reload, setMe };
-  }, [enabled, state, userId, reload, setMe]);
+    // Com dados em cache, a conta aparece na hora; erro só bloqueia sem dados — exceto 401 (sessão
+    // expirada), que sempre bloqueia para não mostrar dados de uma sessão que já não vale.
+    const expired = me.error instanceof ApiError && me.error.status === 401;
+    const status = expired ? "error" : me.data ? "ready" : me.isError ? "error" : "loading";
+    return { mode: "server", status, me: me.data ?? null, error: me.error, reload, setMe };
+  }, [enabled, me.data, me.isError, me.error, reload, setMe]);
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { accountApi, type CatalogSubject } from "../lib/api/account";
 import { ApiError } from "../lib/api/client";
 import { SUBJECTS } from "../lib/catalog";
+import { queryClient } from "../lib/query/client";
+import { queryKeys } from "../lib/query/keys";
+import { STALE_MS } from "../lib/query/policy";
 
 export type Option = { value: string; label: string };
 
@@ -34,7 +37,7 @@ export function useOnboardingLoad<D>(
     const controller = new AbortController();
     setState({ status: "loading" });
     Promise.all([
-      accountApi.subjects(controller.signal),
+      queryClient.ensureQueryData({ queryKey: queryKeys.subjects(), queryFn: ({ signal }) => accountApi.subjects(signal), staleTime: STALE_MS.subjects }),
       fetchSaved(controller.signal).catch((e: unknown) => {
         if (e instanceof ApiError && e.status === 404 && e.serverCode?.endsWith("_profile_not_found")) return null;
         throw e;

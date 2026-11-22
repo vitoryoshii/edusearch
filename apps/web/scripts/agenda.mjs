@@ -29,6 +29,7 @@ const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.mi
 const USERS = {
   T: { id: "00000000-0000-4000-8000-0000000000c3", email: "prof.t@example.com", name: "Professora Teste T", roles: ["teacher"] },
   S: { id: "00000000-0000-4000-8000-0000000000d4", email: "aluna.s@example.com", name: "Aluna Teste S", roles: ["student"] },
+  U: { id: "00000000-0000-4000-8000-0000000000e5", email: "aluna.u@example.com", name: "Aluna Teste U", roles: ["student"] },
 };
 let currentUser = "T";
 
@@ -108,6 +109,8 @@ const state = {
   windows: [{ weekday: "seg", start: "09:00", end: "12:00" }],
   lessons: [], // { id, key, sub, starts_at, status }
   forceConflict: false,
+  delay: {}, // caminho → ms
+  fail: {}, // caminho → status
 };
 const err = (status, code, detail) => [status, { detail, code }];
 const lessonOut = (l, sub) => ({
@@ -256,6 +259,11 @@ b.on(async (m) => {
       body = request.postData ? JSON.parse(request.postData) : null;
     } catch {
       body = null;
+    }
+    if (state.delay[url.pathname]) await sleep(state.delay[url.pathname]);
+    if (state.fail[url.pathname] && request.method === "GET") {
+      apiLog.push({ method: request.method, path: url.pathname, sub: claims?.sub ?? null, body, status: state.fail[url.pathname] });
+      return reply(state.fail[url.pathname], { detail: "Serviço temporariamente indisponível. Tente novamente.", code: "database_unavailable" });
     }
     const [status, payload] = api(request.method, url.pathname, claims?.sub ?? null, body, url.searchParams);
     apiLog.push({ method: request.method, path: url.pathname, sub: claims?.sub ?? null, body, status });
@@ -528,6 +536,123 @@ await axe("início sem foto (390 px)");
 await check(await b.evaluate("new Set([...document.querySelectorAll('nav')].map((n) => n.getAttribute('aria-label'))).size === document.querySelectorAll('nav').length"), "landmarks de navegação com nomes únicos");
 await b.viewport(1280);
 state.noPhoto = false;
+
+/* ------------------------------ Cache de consultas (Fase 4B) ------------------------------ */
+console.log("Cache");
+// Navegação SPA (cliques no menu): recarregar a página zera a memória e não provaria nada.
+const navClick = (href) =>
+  act(`menu ${href}`, `(() => { const a = document.querySelector('nav[aria-label="Navegação principal"] a[href="${href}"]'); if (!a) return false; a.click(); return true; })()`);
+const gets = (path, since) => apiLog.slice(since).filter((r) => r.method === "GET" && r.path === path).length;
+/** Clica no menu e mede: ms até o conteúdo aparecer e se o carregamento BLOQUEANTE apareceu. */
+async function visit(href, readySel, loadingText) {
+  await b.evaluate(`(() => { window.__t0 = performance.now(); window.__sawLoading = false; window.__readyAt = null; window.__obs?.disconnect();
+    // Momento EXATO em que o conteúdo aparece (independe das pausas do teste).
+    window.__obs = new MutationObserver(() => {
+      if (document.body.innerText.includes(${JSON.stringify(loadingText)})) window.__sawLoading = true;
+      if (window.__readyAt === null && document.querySelector(${JSON.stringify(readySel)})) window.__readyAt = performance.now();
+    });
+    window.__obs.observe(document.body, { childList: true, subtree: true, characterData: true }); return true; })()`);
+  await navClick(href);
+  const ok = await waitFor(`!!document.querySelector(${JSON.stringify(readySel)})`, 15000);
+  const r = await b.evaluate("({ ms: Math.round((window.__readyAt ?? performance.now()) - window.__t0), sawLoading: window.__sawLoading })");
+  return { ok, ...r };
+}
+
+await b.viewport(1280);
+await b.go(base + "/conta", 1500); // estado inicial frio (memória vazia), como ao abrir o app
+await waitFor("!!document.querySelector('main h1')");
+// Aula agendada da aluna S no "servidor" (para as telas terem conteúdo).
+state.lessons.push({ id: crypto.randomUUID(), key: crypto.randomUUID(), sub: USERS.S.id, subject: "matematica", starts_at: SLOTS[1], duration: 60, status: "scheduled" });
+await act("atualizar início", "(() => true)()");
+
+// 1) Deduplicação: o início usa aulas e disciplinas em vários componentes → uma requisição de cada.
+const homeStart = apiLog.length;
+await b.go(base + "/conta", 1500);
+await waitFor("document.querySelector('[data-testid=next-lesson]')?.dataset.state === 'scheduled'");
+await sleep(800);
+const dedup = { lessons: gets("/v1/me/lessons", homeStart), subjects: gets("/v1/subjects", homeStart), me: gets("/v1/me", homeStart) };
+await check(dedup.lessons === 1 && dedup.subjects === 1, `consultas iguais e simultâneas deduplicadas no início (${JSON.stringify(dedup)})`);
+
+// 2) Navegação repetida: Aulas → Explorar → Aulas → Início → Aulas (dentro da validade).
+const navStart = apiLog.length;
+const first = await visit("/conta/aulas", "[data-testid=lesson-row]", "Carregando aulas");
+await visit("/conta/explorar", "[data-testid=teacher-result]", "Buscando professores");
+const back = await visit("/conta/aulas", "[data-testid=lesson-row]", "Carregando aulas");
+await visit("/conta", "[data-testid=next-lesson]", "Carregando");
+const again = await visit("/conta/aulas", "[data-testid=lesson-row]", "Carregando aulas");
+// Rede lenta (800 ms por resposta da API): voltar a Minhas aulas.
+for (const p of ["/v1/me/lessons", "/v1/subjects", "/v1/teachers", "/v1/me"]) state.delay[p] = 800;
+await visit("/conta/explorar", "[data-testid=teacher-result]", "Buscando professores");
+const slowBack = await visit("/conta/aulas", "[data-testid=lesson-row]", "Carregando aulas");
+state.delay = {};
+await sleep(1200);
+const navGets = apiLog.slice(navStart).filter((r) => r.method === "GET").length;
+const lessonGets = gets("/v1/me/lessons", navStart);
+console.log("  MÉTRICAS " + JSON.stringify({ dedup, navegacao: { primeiraVisitaMs: first.ms, retornoMs: back.ms, retorno2Ms: again.ms, retornoComRedeLentaMs: slowBack.ms, carregamentoBloqueanteNoRetorno: back.sawLoading || again.sawLoading, getsTotais: navGets, getsAulas: lessonGets } }));
+await check(!back.sawLoading && !again.sawLoading && !slowBack.sawLoading, "reabrir Minhas aulas com cache recente não mostra carregamento bloqueante (inclusive com rede lenta)");
+await check(slowBack.ms < 400, `com rede lenta (800 ms), a lista em cache aparece em ${slowBack.ms} ms`);
+await check(lessonGets === 0, `aulas em cache (válidas por 30 s) não são buscadas de novo ao voltar à tela (${lessonGets} GET)`);
+
+// 3) Rede lenta: "Atualizar" mantém a lista na tela e mostra só o aviso discreto.
+state.delay["/v1/me/lessons"] = 1500;
+await clickButton("Atualizar", "main");
+await check(await waitFor("!!document.querySelector('[data-testid=query-refreshing]') && document.querySelectorAll('[data-testid=lesson-row]').length > 0", 3000), "rede lenta: \"Atualizando…\" discreto, com a lista visível");
+if (shots) await b.screenshot(join(shots, "cache-atualizando-1280-claro.png"), { full: false });
+await check(await waitFor("!document.querySelector('[data-testid=query-refreshing]')", 6000), "atualização termina sem trocar a tela por um carregamento");
+delete state.delay["/v1/me/lessons"];
+
+// 4) Falha na revalidação: dados continuam, com aviso de desatualização e "Tentar novamente".
+state.fail["/v1/me/lessons"] = 503;
+await clickButton("Atualizar", "main");
+await check(await waitFor("!!document.querySelector('[data-testid=query-stale]') && document.querySelectorAll('[data-testid=lesson-row]').length > 0", 15000), "falha ao atualizar: dados mantidos com aviso de desatualizados");
+if (shots) await b.screenshot(join(shots, "cache-desatualizado-1280-claro.png"), { full: false });
+await axe("minhas aulas com aviso de desatualização");
+delete state.fail["/v1/me/lessons"];
+await clickButton("Tentar novamente", "[data-testid=query-stale]");
+await check(await waitFor("!document.querySelector('[data-testid=query-stale]')", 8000), "\"Tentar novamente\" recupera e remove o aviso");
+await fitsInCards("minhas aulas com cache");
+
+// 5) Cancelamento invalida as consultas relacionadas: início e catálogo corrigidos sem recarregar.
+const beforeCancel = apiLog.length;
+await clickButton("Cancelar", "[data-testid=lesson-list]");
+await clickButton("Confirmar cancelamento", "[data-testid=lesson-list]");
+await check(await waitFor("[...document.querySelectorAll('[data-testid=lesson-row]')].every((r) => r.dataset.status === 'cancelled')"), "cancelamento reflete na lista na hora (resposta da API no cache)");
+await sleep(600);
+await check(gets("/v1/me/lessons", beforeCancel) >= 1, "cancelamento revalida a lista de aulas");
+const homeAfter = await visit("/conta", "[data-testid=next-lesson]", "Carregando");
+await check(homeAfter.ok && (await waitFor("document.querySelector('[data-testid=next-lesson]')?.dataset.state === 'empty'")), "início sem a aula cancelada, sem recarregar a página");
+const catBefore = gets("/v1/teachers", beforeCancel);
+await visit("/conta/explorar", "[data-testid=teacher-result]", "Buscando professores");
+await sleep(500);
+await check(gets("/v1/teachers", beforeCancel) > catBefore || catBefore > 0, "catálogo (próximo horário) revalidado após o cancelamento");
+
+// 6) Horário em cache que outra pessoa já reservou: o servidor recusa (409) e a lista se corrige.
+await act("abrir perfil", "(() => { document.querySelector('[data-testid=teacher-result] h2 a').click(); return true; })()");
+await waitFor("[...document.querySelectorAll('[data-testid=slot-list] button')].some((y) => y.textContent.trim() === '14:00')");
+state.lessons.push({ id: crypto.randomUUID(), key: crypto.randomUUID(), sub: "00000000-0000-4000-8000-0000000000ff", subject: "matematica", starts_at: SLOTS[2], duration: 60, status: "scheduled" });
+await act("escolher 14:00 (já tomado no servidor)", "(() => { const x = [...document.querySelectorAll('[data-testid=slot-list] button')].find((y) => y.textContent.trim() === '14:00'); if (!x) return false; x.click(); return true; })()");
+const lessonsBefore = state.lessons.length;
+await act("reservar", "(() => { document.querySelector('[data-testid=book-lesson]').click(); return true; })()");
+await check(await waitFor(text("Este horário acabou de ser reservado.")), "horário ocupado em cache: o servidor recusa (409)");
+await check(state.lessons.length === lessonsBefore, "nenhuma reserva duplicada criada");
+await check(await waitFor("![...document.querySelectorAll('[data-testid=slot-list] button')].some((y) => y.textContent.trim() === '14:00')", 8000), "lista de horários revalidada: o horário tomado some");
+
+// 7) Isolamento entre contas: saída e entrada SEM recarregar a página (o cache em memória persiste).
+await b.go(base + "/conta/aulas", 1500); // S com aulas em cache
+await waitFor("document.querySelectorAll('[data-testid=lesson-row]').length > 0");
+await act("abrir menu da conta", "(() => { const x = [...document.querySelectorAll('aside button')].find((y) => y.textContent.includes('Aluna Teste S')); if (!x) return false; x.click(); return true; })()");
+await act("sair (SPA)", "(() => { const x = [...document.querySelectorAll('[role=menuitem]')].find((y) => y.textContent.trim() === 'Sair da conta'); if (!x) return false; x.click(); return true; })()");
+await waitFor("location.pathname === '/' && !!document.querySelector('[data-fake-gis]')", 10000);
+currentUser = "U";
+await act("entrar como U", "(() => { document.querySelector('[data-fake-gis]').click(); return true; })()");
+await waitFor("location.pathname.startsWith('/conta') && !!document.querySelector('nav[aria-label=\"Navegação principal\"]')", 10000);
+await b.evaluate("(() => { window.__leak = false; window.__leakObs = new MutationObserver(() => { if (document.body.innerText.includes('Professora Teste T') && document.querySelector('[data-testid=lesson-row]')) window.__leak = true; }); window.__leakObs.observe(document.body, { childList: true, subtree: true }); return true; })()");
+await navClick("/conta/aulas");
+await waitFor(text("Nenhuma aula ainda"), 8000);
+await sleep(600);
+await check(!(await b.evaluate("window.__leak")) && (await b.evaluate(text("Nenhuma aula ainda"))), "dados privados de uma conta não aparecem em outra (troca de conta sem recarregar)");
+await check(apiLog.filter((r) => r.path === "/v1/me/lessons").at(-1)?.sub === USERS.U.id, "a nova conta busca as próprias aulas com o próprio token");
+await check(!(await b.evaluate(`[localStorage, sessionStorage].some((st) => Object.keys(st).some((k) => /query|lesson|aula|meet/i.test(k) || /meet\\.google\\.com|"lessons"/.test(st.getItem(k) || '')))`)), "nada do cache privado em localStorage/sessionStorage");
 
 /* ------------------------------ 3. Demonstração isolada ------------------------------ */
 console.log("Demonstração");

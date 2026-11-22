@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router";
 import { Button, Chip, Select, buttonClasses, useToast } from "@edusearch/ui";
-import { AsyncContent } from "../AsyncContent";
+import { QueryContent } from "../QueryContent";
 import { ApiError, describeError } from "../../lib/api/client";
-import { schedulingApi, type Lesson } from "../../lib/api/scheduling";
-import { useAction, useAsync } from "../../lib/hooks/useAsync";
+import type { Lesson } from "../../lib/api/scheduling";
+import { useBookLessonMutation, useSlotsQuery } from "../../lib/query/hooks";
 import { groupSlotsByDay } from "../../lib/scheduling";
 
 type Offer = { id: string; subjects: string[]; lesson_durations_minutes: number[] };
@@ -23,17 +23,21 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
   // Uma chave por INTENÇÃO de reserva; envio em andamento ignora um segundo clique.
   const key = useRef<string>(crypto.randomUUID());
   const inFlight = useRef(false);
-  const slots = useAsync(() => schedulingApi.slots(teacher.id, duration), [teacher.id, duration]);
+  // Horários em cache aparecem na hora e são revalidados; quem garante o horário é o servidor (409).
+  const slots = useSlotsQuery(teacher.id, duration);
+  const bookMutation = useBookLessonMutation();
   const renew = () => {
     setSlot(null);
     key.current = crypto.randomUUID();
   };
-  const book = useAction(async () => {
+  const book = {
+    pending: bookMutation.isPending,
+    run: async () => {
     if (!slot || !subject || inFlight.current) return;
     inFlight.current = true;
     let lesson: Lesson;
     try {
-      lesson = await schedulingApi.book({ teacher_id: teacher.id, subject, starts_at: slot, duration_minutes: duration, idempotency_key: key.current });
+      lesson = await bookMutation.mutateAsync({ teacher_id: teacher.id, subject, starts_at: slot, duration_minutes: duration, idempotency_key: key.current });
     } finally {
       inFlight.current = false;
     }
@@ -44,14 +48,12 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
     });
     setBooked(lesson);
     renew();
-    slots.reload();
     onBooked?.(lesson);
-  });
+    },
+  };
   const fail = (e: unknown) => {
-    if (e instanceof ApiError && e.status === 409) {
-      renew();
-      slots.reload();
-    }
+    // 409: o horário foi tomado (o cache de horários estava velho). A mutação já revalidou a lista.
+    if (e instanceof ApiError && e.status === 409) renew();
     toast({ tone: "error", title: "Não foi possível reservar", description: describeError(e) });
   };
 
@@ -69,9 +71,8 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
           options={teacher.lesson_durations_minutes.map((d) => ({ value: String(d), label: `${d} minutos` }))}
         />
       </div>
-      <AsyncContent
-        state={slots}
-        reload={slots.reload}
+      <QueryContent
+        query={slots}
         loading="spinner"
         loadingLabel="Buscando horários livres…"
         isEmpty={(d) => d.slots.length === 0}
@@ -93,7 +94,7 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
             ))}
           </div>
         )}
-      </AsyncContent>
+      </QueryContent>
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={!slot || !subject} loading={book.pending} onClick={() => void book.run().catch(fail)} data-testid="book-lesson">
           Reservar aula

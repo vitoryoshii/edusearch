@@ -10,6 +10,8 @@ import { describeError } from "../../lib/api/client";
 import type { DayPeriod, Methodology } from "../../lib/api/types";
 import { STANDARD_COMMISSION_BPS, formatBps, splitLessonAmount } from "../../lib/commission";
 import { METHODOLOGY_LABELS, PERIOD_LABELS, formatMoney } from "../../lib/format";
+import { queryClient } from "../../lib/query/client";
+import { invalidateTeacherProfile } from "../../lib/query/hooks";
 import {
   EXPERIENCE_LABELS,
   LESSON_DURATIONS,
@@ -99,6 +101,7 @@ function TeacherForm({
     if (account.mode === "server") {
       try {
         account.setMe(await accountApi.me());
+        if (account.me) invalidateTeacherProfile(queryClient, account.me.id);
       } catch {
         account.reload();
       }

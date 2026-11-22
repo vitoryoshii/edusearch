@@ -1,17 +1,16 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Badge, Button, CalendarIcon, ExternalIcon, RefreshIcon, VideoIcon, buttonClasses, useToast } from "@edusearch/ui";
-import { AsyncContent } from "../AsyncContent";
-import { accountApi } from "../../lib/api/account";
+import { QueryContent, RefreshButton } from "../QueryContent";
 import { describeError } from "../../lib/api/client";
-import { schedulingApi, type Lesson } from "../../lib/api/scheduling";
-import { useAction, useAsync } from "../../lib/hooks/useAsync";
+import type { Lesson } from "../../lib/api/scheduling";
+import { useCancelLessonMutation, useLessonsQuery, useResyncLessonMutation, useSubjectsQuery } from "../../lib/query/hooks";
 import { isTrustedMeetUrl } from "../../lib/meeting";
 import { lessonWhen } from "../../lib/scheduling";
 import { DateBlock } from "../account/DateBlock";
 
-/** Nome oficial da disciplina (GET /v1/subjects), com o slug como reserva. */
+/** Nome oficial da disciplina (GET /v1/subjects, em cache compartilhado), com o slug como reserva. */
 export function useSubjectNames() {
-  const subjects = useAsync(() => accountApi.subjects(), []);
+  const subjects = useSubjectsQuery();
   return useMemo(() => {
     const map = new Map((subjects.data ?? []).map((s) => [s.slug, s.name] as const));
     return (slug: string) => map.get(slug) ?? slug;
@@ -30,12 +29,15 @@ export const isUpcoming = (l: Lesson, now = Date.now()) => l.status === "schedul
 
 /** Aulas reais da conta (aluno e/ou professor), separadas em próximas e anteriores. */
 export function LessonList({ emptyAction }: { emptyAction?: ReactNode }) {
-  const lessons = useAsync(() => schedulingApi.lessons(), []);
+  const lessons = useLessonsQuery();
   const subjectName = useSubjectNames();
   return (
-    <AsyncContent
-      state={lessons}
-      reload={lessons.reload}
+    <>
+    <div className="-mt-2 mb-2 flex justify-end">
+      <RefreshButton query={lessons} />
+    </div>
+    <QueryContent
+      query={lessons}
       loading="spinner"
       loadingLabel="Carregando aulas…"
       isEmpty={(d) => d.length === 0}
@@ -53,7 +55,7 @@ export function LessonList({ emptyAction }: { emptyAction?: ReactNode }) {
               {upcoming.length ? (
                 <ul className="mt-3 divide-y divide-line">
                   {upcoming.map((l) => (
-                    <LessonRow key={l.id} lesson={l} subjectName={subjectName} onChange={lessons.reload} />
+                    <LessonRow key={l.id} lesson={l} subjectName={subjectName} />
                   ))}
                 </ul>
               ) : (
@@ -67,7 +69,7 @@ export function LessonList({ emptyAction }: { emptyAction?: ReactNode }) {
                 </h2>
                 <ul className="mt-3 divide-y divide-line">
                   {past.map((l) => (
-                    <LessonRow key={l.id} lesson={l} subjectName={subjectName} onChange={lessons.reload} />
+                    <LessonRow key={l.id} lesson={l} subjectName={subjectName} />
                   ))}
                 </ul>
               </section>
@@ -75,30 +77,38 @@ export function LessonList({ emptyAction }: { emptyAction?: ReactNode }) {
           </div>
         );
       }}
-    </AsyncContent>
+    </QueryContent>
+    </>
   );
 }
 
-export function LessonRow({ lesson, subjectName, onChange }: { lesson: Lesson; subjectName: (slug: string) => string; onChange: () => void }) {
+export function LessonRow({ lesson, subjectName }: { lesson: Lesson; subjectName: (slug: string) => string }) {
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const other = lesson.role === "teacher" ? lesson.student : lesson.teacher;
   const upcoming = isUpcoming(lesson);
   const fail = (e: unknown) => toast({ tone: "error", title: "Não foi possível concluir", description: describeError(e) });
-  const cancel = useAction(async () => {
-    await schedulingApi.cancel(lesson.id);
-    toast({ tone: "success", title: "Aula cancelada" });
-    onChange();
-  });
-  const resync = useAction(async () => {
-    const l = await schedulingApi.resync(lesson.id);
-    toast(
-      l.calendar_sync_status === "synced"
-        ? { tone: "success", title: "Evento criado na Google Agenda" }
-        : { tone: "info", title: "Ainda não foi possível sincronizar", description: "Confira a conexão com a Google Agenda." },
-    );
-    onChange();
-  });
+  // Mutações atualizam a lista em cache com a resposta da API e revalidam aulas/horários/catálogo.
+  const cancelMutation = useCancelLessonMutation();
+  const resyncMutation = useResyncLessonMutation();
+  const cancel = {
+    pending: cancelMutation.isPending,
+    run: async () => {
+      await cancelMutation.mutateAsync(lesson.id);
+      toast({ tone: "success", title: "Aula cancelada" });
+    },
+  };
+  const resync = {
+    pending: resyncMutation.isPending,
+    run: async () => {
+      const l = await resyncMutation.mutateAsync(lesson.id);
+      toast(
+        l.calendar_sync_status === "synced"
+          ? { tone: "success", title: "Evento criado na Google Agenda" }
+          : { tone: "info", title: "Ainda não foi possível sincronizar", description: "Confira a conexão com a Google Agenda." },
+      );
+    },
+  };
 
   return (
     <li className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between" data-testid="lesson-row" data-status={lesson.status}>

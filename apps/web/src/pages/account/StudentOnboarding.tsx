@@ -9,6 +9,8 @@ import { accountApi } from "../../lib/api/account";
 import { describeError } from "../../lib/api/client";
 import type { DayPeriod, Difficulty, Level } from "../../lib/api/types";
 import { DIFFICULTY_LABELS, LEVEL_LABELS, PERIOD_LABELS } from "../../lib/format";
+import { queryClient } from "../../lib/query/client";
+import { invalidateStudentProfile } from "../../lib/query/hooks";
 import {
   BUDGET_LABELS,
   LIMITS,
@@ -83,6 +85,7 @@ function StudentForm({ server, subjects, initial }: { server: boolean; subjects:
     if (account.mode === "server") {
       try {
         account.setMe(await accountApi.me());
+        if (account.me) invalidateStudentProfile(queryClient, account.me.id);
       } catch {
         account.reload();
       }
