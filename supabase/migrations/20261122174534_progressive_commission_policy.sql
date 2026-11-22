@@ -129,26 +129,23 @@ comment on column public.payment_intents.commission_policy_version is
 create index payment_intents_teacher_environment_paid_idx
   on public.payment_intents (teacher_id, environment, created_at desc)
   where status = 'paid';
+create index payment_intents_commission_policy_idx
+  on public.payment_intents (commission_policy_version, environment);
 
 -- Só funções privadas escolhem a política. A elegibilidade é composta por pagamentos efetivamente
 -- pagos, no mesmo professor/ambiente, dentro da janela configurada. Cancelados e reembolsados não
 -- contam. Cada cobrança é única por reserva, logo uma reserva não pode contar duas vezes.
-create function private.commission_for_teacher(
+create function private.active_commission_for_teacher(
   p_teacher uuid, p_environment public.payment_environment
 )
 returns table (policy_version text, current_tier smallint, commission_bps smallint, eligible_paid_lessons integer,
                next_min_eligible_paid_lessons integer, next_commission_bps smallint,
                evaluation_days smallint)
-language plpgsql
+language sql
 security definer
 stable
 set search_path = ''
 as $$
-begin
-  if p_teacher is distinct from private.claims_sub() then
-    raise exception using errcode = 'insufficient_privilege', message = 'commission_progress_forbidden';
-  end if;
-  return query
   with policy as (
     select p.version, p.evaluation_days
       from public.commission_policies p
@@ -178,6 +175,28 @@ begin
   select p.version, c.tier, c.commission_bps, e.paid_lessons,
          n.min_eligible_paid_lessons, n.commission_bps, p.evaluation_days
     from policy p cross join eligible e cross join current_tier c left join next_tier n on true;
+$$;
+-- Esta função é usada somente por rotinas privadas (checkout e wrapper autenticado).
+-- O professor nunca recebe EXECUTE direto, portanto não pode escolher outra identidade.
+revoke all on function private.active_commission_for_teacher(uuid, public.payment_environment)
+  from public, anon, authenticated;
+
+create function private.commission_for_teacher(
+  p_teacher uuid, p_environment public.payment_environment
+)
+returns table (policy_version text, current_tier smallint, commission_bps smallint, eligible_paid_lessons integer,
+               next_min_eligible_paid_lessons integer, next_commission_bps smallint,
+               evaluation_days smallint)
+language plpgsql
+security definer
+stable
+set search_path = ''
+as $$
+begin
+  if p_teacher is distinct from private.claims_sub() then
+    raise exception using errcode = 'insufficient_privilege', message = 'commission_progress_forbidden';
+  end if;
+  return query select * from private.active_commission_for_teacher(p_teacher, p_environment);
 end;
 $$;
 revoke all on function private.commission_for_teacher(uuid, public.payment_environment)
@@ -238,7 +257,7 @@ begin
     raise exception using errcode = 'P0001', message = 'price_not_set';
   end if;
   select policy_version, commission_bps into v_policy_version, v_commission_bps
-    from private.commission_for_teacher(p_teacher, p_env);
+    from private.active_commission_for_teacher(p_teacher, p_env);
   if v_policy_version is null or v_commission_bps is null then
     raise exception using errcode = 'P0001', message = 'commission_policy_not_configured';
   end if;
