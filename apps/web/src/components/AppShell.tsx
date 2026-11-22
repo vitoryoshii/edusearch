@@ -1,4 +1,4 @@
-import { useDisplayProfile } from "../app/account";
+import { useDisplayProfile, useServerMe } from "../app/account";
 import { Suspense, useEffect, useRef } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import {
@@ -30,6 +30,7 @@ import { homeFor, studentSession, teacherSession, useSession } from "../app/sess
 import type { Role } from "../lib/api/types";
 import { dataSource } from "../lib/data/source";
 import { FEATURES } from "../lib/features";
+import { accountNav, type NavIconKey } from "../lib/navigation";
 import { DemoBanner } from "./DemoNotice";
 
 type NavItem = { to: string; label: string; icon: IconComponent; end?: boolean; mobile?: boolean; short?: string };
@@ -37,13 +38,23 @@ type NavItem = { to: string; label: string; icon: IconComponent; end?: boolean; 
 /** "account" = conta REAL (Supabase); "student"/"teacher" = demonstração. */
 export type ShellMode = Role | "account";
 
-const NAV: Record<ShellMode, NavItem[]> = {
-  account: [
-    { to: "/conta", label: "Início", icon: HomeIcon, end: true, mobile: true },
-    ...(FEATURES.scheduling !== "off" ? [{ to: "/conta/agenda", label: "Agenda", icon: CalendarIcon, mobile: true }] : []),
-    { to: "/conta/perfil", label: "Meu perfil", short: "Perfil", icon: UserIcon, mobile: true },
-    { to: "/conta/configuracoes", label: "Configurações", short: "Ajustes", icon: SettingsIcon, mobile: true },
-  ],
+const NAV_ICONS: Record<NavIconKey, IconComponent> = {
+  home: HomeIcon,
+  search: SearchIcon,
+  calendar: CalendarIcon,
+  clock: ClockIcon,
+  user: UserIcon,
+  graduation: GraduationIcon,
+  settings: SettingsIcon,
+};
+
+/** Menu da conta real: depende dos papéis PERSISTIDOS no servidor (lib/navigation.ts). */
+function useAccountNav(): NavItem[] {
+  const me = useServerMe();
+  return accountNav(me?.roles ?? [], FEATURES.scheduling !== "off").map((i) => ({ ...i, icon: NAV_ICONS[i.icon] }));
+}
+
+const NAV: Record<Exclude<ShellMode, "account">, NavItem[]> = {
   student: [
     { to: "/aluno", label: "Início", icon: HomeIcon, end: true, mobile: true },
     { to: "/aluno/buscar", label: "Buscar", icon: SearchIcon, mobile: true },
@@ -79,7 +90,8 @@ export function AppShell({ role }: { role: ShellMode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
-  const items = NAV[role];
+  const accountItems = useAccountNav();
+  const items = role === "account" ? accountItems : NAV[role];
   const mobileItems = items.filter((i) => i.mobile);
   const overflow = items.filter((i) => !i.mobile);
   const display = useDisplayProfile();

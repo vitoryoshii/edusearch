@@ -1,39 +1,30 @@
-import { useMemo, useRef, useState } from "react";
-import { Navigate } from "react-router";
+import { useState } from "react";
+import { Link, Navigate } from "react-router";
 import {
   AlertIcon,
-  Avatar,
   Badge,
   Button,
   CalendarIcon,
   Card,
-  Chip,
-  ExternalIcon,
   InfoIcon,
   Input,
   PlusIcon,
-  RefreshIcon,
   Select,
   TrashIcon,
-  VideoIcon,
   buttonClasses,
   useToast,
 } from "@edusearch/ui";
 import { hasRole, useServerMe } from "../../app/account";
 import { AsyncContent } from "../../components/AsyncContent";
 import { PageHeader } from "../../components/PageHeader";
-import { accountApi } from "../../lib/api/account";
-import { ApiError, describeError } from "../../lib/api/client";
-import { schedulingApi, type BookableTeacher, type CalendarConnection, type Lesson } from "../../lib/api/scheduling";
+import { describeError } from "../../lib/api/client";
+import { schedulingApi, type CalendarConnection } from "../../lib/api/scheduling";
 import { FEATURES } from "../../lib/features";
 import { useAction, useAsync } from "../../lib/hooks/useAsync";
-import { isTrustedMeetUrl } from "../../lib/meeting";
 import {
   WEEKDAY_LABEL,
   WEEKDAY_ORDER,
-  groupSlotsByDay,
   isGoogleAuthorizationUrl,
-  lessonWhen,
   windowsIssue,
   type AvailabilityWindow,
   type Weekday,
@@ -47,47 +38,25 @@ import {
 export default function AccountAgenda() {
   const me = useServerMe();
   if (FEATURES.scheduling === "off" || !me) return <Navigate to="/conta" replace />;
-  const teacher = hasRole(me, "teacher");
-  const student = hasRole(me, "student");
-  return <AgendaPage teacher={teacher} student={student} />;
+  // URL antiga da reserva do aluno: hoje a reserva fica no perfil do professor (Explorar).
+  if (!hasRole(me, "teacher")) return <Navigate to={hasRole(me, "student") ? "/conta/aulas" : "/conta"} replace />;
+  return <AgendaPage />;
 }
 
-function AgendaPage({ teacher, student }: { teacher: boolean; student: boolean }) {
-  const lessons = useAsync(() => schedulingApi.lessons(), []);
-  const subjects = useAsync(() => accountApi.subjects(), []);
-  const subjectName = useMemo(() => {
-    const map = new Map((subjects.data ?? []).map((s) => [s.slug, s.name] as const));
-    return (slug: string) => map.get(slug) ?? slug;
-  }, [subjects.data]);
-
-  if (!teacher && !student) return <Navigate to="/conta" replace />;
+/** Agenda do PROFESSOR: Google Agenda/Meet e disponibilidade semanal. Aulas ficam em /conta/aulas. */
+function AgendaPage() {
   return (
     <>
-      <PageHeader title="Agenda" description="Aulas de teste com link do Google Meet. Horários de Brasília." />
+      <PageHeader title="Agenda" description="Conecte a Google Agenda e defina quando você pode dar aulas. Horários de Brasília." />
       <div className="space-y-5">
         <TestPhaseNotice />
-        {teacher && <CalendarConnectionCard />}
-        {teacher && <AvailabilityEditor />}
-        {student && <BookLesson subjectName={subjectName} onBooked={lessons.reload} />}
-        <Card>
-          <h2 className="text-lg font-semibold text-fg-strong">Minhas aulas</h2>
-          <div className="mt-4">
-            <AsyncContent
-              state={lessons}
-              reload={lessons.reload}
-              loading="spinner"
-              isEmpty={(d) => d.length === 0}
-              empty={{ title: "Nenhuma aula ainda", description: "As aulas de teste reservadas aparecem aqui.", icon: <CalendarIcon className="h-6 w-6" /> }}
-            >
-              {(data) => (
-                <ul className="divide-y divide-line" data-testid="lesson-list">
-                  {data.map((l) => (
-                    <LessonRow key={l.id} lesson={l} subjectName={subjectName} onChange={lessons.reload} />
-                  ))}
-                </ul>
-              )}
-            </AsyncContent>
-          </div>
+        <CalendarConnectionCard />
+        <AvailabilityEditor />
+        <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-fg">As aulas reservadas pelos alunos, com o link do Meet, ficam em Minhas aulas.</p>
+          <Link to="/conta/aulas" className={buttonClasses({ variant: "secondary", size: "sm", className: "shrink-0" })}>
+            Ver minhas aulas
+          </Link>
         </Card>
       </div>
     </>
@@ -262,205 +231,5 @@ function AvailabilityEditor() {
         </AsyncContent>
       </div>
     </Card>
-  );
-}
-
-/* ------------------------------- Reserva (aluno) ------------------------------- */
-
-function BookLesson({ subjectName, onBooked }: { subjectName: (slug: string) => string; onBooked: () => void }) {
-  const toast = useToast();
-  const teachers = useAsync(() => schedulingApi.teachers(), []);
-  const [teacher, setTeacher] = useState<BookableTeacher | null>(null);
-  const [subject, setSubject] = useState("");
-  const [duration, setDuration] = useState(0);
-  const [slot, setSlot] = useState<string | null>(null);
-  // Uma chave por INTENÇÃO de reserva: clique duplo ou nova tentativa não criam outra aula.
-  const key = useRef<string>(crypto.randomUUID());
-  // Envio em andamento: um segundo clique antes de o botão desabilitar não gera outro POST/aviso.
-  const inFlight = useRef(false);
-  const choose = (t: BookableTeacher) => {
-    setTeacher(t);
-    setSubject(t.subjects[0] ?? "");
-    setDuration(t.lesson_durations_minutes[0] ?? 60);
-    setSlot(null);
-    key.current = crypto.randomUUID();
-  };
-  const slots = useAsync(
-    () => (teacher && duration ? schedulingApi.slots(teacher.id, duration) : Promise.resolve({ duration_minutes: 0, slots: [] })),
-    [teacher?.id, duration],
-  );
-  const book = useAction(async () => {
-    if (!teacher || !slot || !subject || inFlight.current) return;
-    inFlight.current = true;
-    let lesson;
-    try {
-      lesson = await schedulingApi.book({ teacher_id: teacher.id, subject, starts_at: slot, duration_minutes: duration, idempotency_key: key.current });
-    } finally {
-      inFlight.current = false;
-    }
-    toast({
-      tone: "success",
-      title: "Aula de teste reservada",
-      description: lesson.meet_url ? "O link do Google Meet já está na sua lista de aulas." : "O link do Meet aparece quando o professor sincronizar a agenda.",
-    });
-    setSlot(null);
-    key.current = crypto.randomUUID();
-    slots.reload();
-    onBooked();
-  });
-  const fail = (e: unknown) => {
-    if (e instanceof ApiError && e.status === 409) {
-      setSlot(null);
-      key.current = crypto.randomUUID();
-      slots.reload();
-    }
-    toast({ tone: "error", title: "Não foi possível reservar", description: describeError(e) });
-  };
-
-  return (
-    <Card data-testid="booking-card">
-      <h2 className="text-lg font-semibold text-fg-strong">Reservar aula de teste</h2>
-      <p className="mt-1 text-sm text-fg-muted">Escolha um professor aprovado, a disciplina, a duração e um horário livre.</p>
-      <div className="mt-4">
-        <AsyncContent
-          state={teachers}
-          reload={teachers.reload}
-          loading="spinner"
-          isEmpty={(d) => d.length === 0}
-          empty={{ title: "Nenhum professor disponível ainda", description: "Professores aparecem aqui depois de aprovados." }}
-        >
-          {(list) => (
-            <div className="space-y-5">
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Professores">
-                {list.map((t) => (
-                  <Chip key={t.id} selected={teacher?.id === t.id} onClick={() => choose(t)} aria-pressed={teacher?.id === t.id}>
-                    <span className="flex items-center gap-2">
-                      <Avatar name={t.display_name} src={t.avatar_url ?? undefined} size="sm" />
-                      {t.display_name}
-                    </span>
-                  </Chip>
-                ))}
-              </div>
-              {teacher && (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Select label="Disciplina" value={subject} onChange={(e) => setSubject(e.target.value)} options={teacher.subjects.map((s) => ({ value: s, label: subjectName(s) }))} />
-                    <Select
-                      label="Duração"
-                      value={String(duration)}
-                      onChange={(e) => {
-                        setDuration(Number(e.target.value));
-                        setSlot(null);
-                      }}
-                      options={teacher.lesson_durations_minutes.map((d) => ({ value: String(d), label: `${d} minutos` }))}
-                    />
-                  </div>
-                  <AsyncContent
-                    state={slots}
-                    reload={slots.reload}
-                    loading="spinner"
-                    isEmpty={(d) => d.slots.length === 0}
-                    empty={{ title: "Sem horários livres nos próximos 14 dias" }}
-                  >
-                    {(d) => (
-                      <div className="space-y-4" data-testid="slot-list">
-                        {groupSlotsByDay(d.slots).map((day) => (
-                          <div key={day.key}>
-                            <p className="text-sm font-medium text-fg-strong first-letter:uppercase">{day.label}</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {day.slots.map((s) => (
-                                <Chip key={s.iso} selected={slot === s.iso} onClick={() => setSlot(s.iso)} aria-pressed={slot === s.iso}>
-                                  {s.time}
-                                </Chip>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </AsyncContent>
-                  <Button disabled={!slot || !subject} loading={book.pending} onClick={() => void book.run().catch(fail)} data-testid="book-lesson">
-                    Reservar aula de teste
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-        </AsyncContent>
-      </div>
-    </Card>
-  );
-}
-
-/* ------------------------------- Lista de aulas ------------------------------- */
-
-const SYNC_LABEL: Record<Lesson["calendar_sync_status"], string> = {
-  synced: "Na Google Agenda",
-  pending: "Sincronizando",
-  failed: "Falha na agenda",
-  not_connected: "Sem Google Agenda",
-  removed: "Removida da agenda",
-};
-
-function LessonRow({ lesson, subjectName, onChange }: { lesson: Lesson; subjectName: (slug: string) => string; onChange: () => void }) {
-  const toast = useToast();
-  const [confirming, setConfirming] = useState(false);
-  const other = lesson.role === "teacher" ? lesson.student : lesson.teacher;
-  const upcoming = lesson.status === "scheduled" && new Date(lesson.ends_at).getTime() > Date.now();
-  const fail = (e: unknown) => toast({ tone: "error", title: "Não foi possível concluir", description: describeError(e) });
-  const cancel = useAction(async () => {
-    await schedulingApi.cancel(lesson.id);
-    toast({ tone: "success", title: "Aula cancelada" });
-    onChange();
-  });
-  const resync = useAction(async () => {
-    const l = await schedulingApi.resync(lesson.id);
-    toast(l.calendar_sync_status === "synced" ? { tone: "success", title: "Evento criado na Google Agenda" } : { tone: "info", title: "Ainda não foi possível sincronizar", description: "Confira a conexão com a Google Agenda." });
-    onChange();
-  });
-
-  return (
-    <li className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between" data-testid="lesson-row" data-status={lesson.status}>
-      <div className="min-w-0">
-        <p className="flex flex-wrap items-center gap-2 font-semibold text-fg-strong">
-          {subjectName(lesson.subject)}
-          <Badge tone="demo">Teste</Badge>
-          {lesson.status === "cancelled" ? <Badge tone="danger">Cancelada</Badge> : <Badge tone="neutral">{SYNC_LABEL[lesson.calendar_sync_status]}</Badge>}
-        </p>
-        <p className="mt-1 text-sm text-fg first-letter:uppercase">{lessonWhen(lesson.starts_at, lesson.ends_at)}</p>
-        <p className="text-sm text-fg-muted">
-          {lesson.role === "teacher" ? "Aluno" : "Professor"}: {other.display_name ?? "—"}
-        </p>
-      </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
-        {upcoming && isTrustedMeetUrl(lesson.meet_url) && (
-          <a href={lesson.meet_url} target="_blank" rel="noopener noreferrer" className={buttonClasses({ size: "sm" })}>
-            <VideoIcon className="h-4 w-4" /> Google Meet
-            <ExternalIcon className="h-3.5 w-3.5" />
-            <span className="sr-only"> (abre em nova aba)</span>
-          </a>
-        )}
-        {upcoming && lesson.role === "teacher" && lesson.calendar_sync_status !== "synced" && (
-          <Button variant="secondary" size="sm" leftIcon={<RefreshIcon className="h-4 w-4" />} loading={resync.pending} onClick={() => void resync.run().catch(fail)}>
-            Sincronizar agenda
-          </Button>
-        )}
-        {upcoming &&
-          (confirming ? (
-            <>
-              <Button variant="danger" size="sm" loading={cancel.pending} onClick={() => void cancel.run().catch(fail)}>
-                Confirmar cancelamento
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Manter
-              </Button>
-            </>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
-              Cancelar
-            </Button>
-          ))}
-      </div>
-    </li>
   );
 }
