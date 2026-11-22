@@ -31,6 +31,7 @@ from app.abacatepay import (
     InvalidGatewayResponseError,
     SplitNotEnabledError,
     verify_webhook,
+    webhook_paid_amount,
 )
 from app.auth.dependencies import get_database
 from app.auth.jwt import AuthenticatedUser
@@ -471,11 +472,12 @@ class PaymentsService:
             and event_type == "transparent.completed"
             and transparent.get("status") == "PAID"
         ):
-            paid = transparent.get("paidAmount", transparent.get("amount"))
-            if isinstance(paid, int) and not isinstance(paid, bool):
-                outcome = self._confirm(charge_id, paid, "webhook", None)
-            else:
-                outcome = "invalid_amount"
+            paid = webhook_paid_amount(transparent)
+            outcome = (
+                "invalid_amount"
+                if paid is None
+                else self._confirm(charge_id, paid, "webhook", None)
+            )
         elif charge_id and event_type == "transparent.refunded":
             with self._db.service_transaction() as conn:
                 outcome = PaymentsRepository(conn).mark_after_paid(charge_id, "refunded", "webhook")

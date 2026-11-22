@@ -501,6 +501,7 @@ await fitsPayment("pagamento-confirmado", [320, 768, 1440]);
 /* Minhas aulas: aula paga confirmada */
 await b.go(base + "/conta/aulas", 1500);
 await check(await waitFor("[...document.querySelectorAll('[data-testid=lesson-row]')].some((r) => r.dataset.status === 'scheduled' && r.querySelector('[data-testid=lesson-payment]'))"), "Minhas aulas: aula paga confirmada com atalho para o pagamento");
+await check(await b.evaluate(text("Aulas do piloto são gratuitas; aulas reservadas com Pix usam o ambiente de testes, sem dinheiro real.")) && !(await b.evaluate(text("Aulas do piloto, sem cobrança."))), "Minhas aulas: aviso diferencia aulas gratuitas do piloto e Pix de teste");
 
 /* ------------------------------ 2. Simulação (sandbox) e expiração ------------------------------ */
 await b.go(base + `/conta/professores/${USERS.T.id}`, 1500);

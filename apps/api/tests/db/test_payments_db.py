@@ -129,24 +129,42 @@ class FakeAbacate:
         self.charges[charge_id]["status"] = "PAID"
 
 
+_OMIT = object()
+
+
 def webhook_body(
-    charge: dict, *, event="transparent.completed", event_id=None, paid=None, dev=True
+    charge: dict,
+    *,
+    event="transparent.completed",
+    event_id=None,
+    paid=None,
+    amount=_OMIT,
+    omit_paid=False,
+    dev=True,
 ) -> bytes:
+    """Formato OFICIAL da v2: nos exemplos da documentação, ``paidAmount`` vem sempre ``null``."""
+    transparent = {
+        "id": charge["id"],
+        "externalId": None,
+        "amount": charge["amount"] if amount is _OMIT else amount,
+        "customerFee": None,
+        "paidAmount": paid,
+        "platformFee": 80,
+        "status": "PAID",
+        "devMode": dev,
+        "metadata": {},
+    }
+    if amount is None:
+        del transparent["amount"]
+    if omit_paid:
+        del transparent["paidAmount"]
     return json.dumps(
         {
             "id": event_id or f"evt_{uuid.uuid4().hex}",
             "event": event,
             "apiVersion": 2,
             "devMode": dev,
-            "data": {
-                "transparent": {
-                    "id": charge["id"],
-                    "amount": charge["amount"],
-                    "status": "PAID",
-                    "paidAmount": charge["amount"] if paid is None else paid,
-                    "externalId": None,
-                }
-            },
+            "data": {"transparent": transparent, "customer": None, "payerInformation": None},
         }
     ).encode()
 
@@ -723,3 +741,110 @@ def test_test_lessons_unchanged_and_immutable(client, people, admin) -> None:
     assert r.status_code == 201 and r.json()["is_test"] is True and r.json()["payment"] is None
     with pytest.raises(psycopg.errors.CheckViolation):
         admin.execute("update public.lessons set is_test = false where id = %s", (r.json()["id"],))
+
+
+# --------------------------------------------------------------------------- valor pago no webhook
+
+
+def audit_actors(admin, payment_id) -> list[tuple[str, str]]:
+    rows = admin.execute(
+        "select actor, to_status from private.payment_audit_log where intent_id = %s "
+        "order by created_at",
+        (payment_id,),
+    ).fetchall()
+    return [(r["actor"], r["to_status"]) for r in rows]
+
+
+def webhook_outcome(admin, event_id: str) -> str:
+    row = admin.execute(
+        "select outcome from private.payment_webhook_events where event_id = %s", (event_id,)
+    ).fetchone()
+    return row["outcome"]
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        {"paid": None},  # formato real do sandbox: paidAmount null + amount
+        {"omit_paid": True},  # paidAmount ausente + amount
+        {"paid": "charge"},  # paidAmount preenchido
+    ],
+    ids=["paidAmount-null", "paidAmount-ausente", "paidAmount-valor"],
+)
+def test_webhook_confirms_directly_with_actor_webhook(
+    client, people, abacate, google, admin, variant
+) -> None:
+    connect(client, google, people["tokens"][people["teacher"]])
+    p = checkout(client, people, slot(client, people)).json()
+    charge = charge_of(abacate, p)
+    abacate.pay(charge["id"])
+    kwargs = dict(variant)
+    if kwargs.get("paid") == "charge":
+        kwargs["paid"] = charge["amount"]
+    event_id = f"evt_{uuid.uuid4().hex}"
+    # Nenhuma consulta ao pagamento entre a criação e o webhook: a confirmação NÃO vem da conciliação.
+    assert post_webhook(client, webhook_body(charge, event_id=event_id, **kwargs)).json() == {
+        "received": True,
+        "outcome": "confirmed",
+    }
+    assert webhook_outcome(admin, event_id) == "confirmed"
+    actors = audit_actors(admin, p["id"])
+    assert ("webhook", "paid") in actors and all(a != "reconcile" for a, _ in actors)
+    row = admin.execute(
+        "select p.status::text as status, l.status::text as lesson, "
+        "l.calendar_sync_status::text as sync from public.payment_intents p "
+        "join public.lessons l on l.id = p.lesson_id where p.id = %s",
+        (p["id"],),
+    ).fetchone()
+    assert row == {"status": "paid", "lesson": "scheduled", "sync": "synced"}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"paid": "8000"}, "invalid_amount"),  # string não é trocada por amount
+        ({"paid": True}, "invalid_amount"),
+        ({"paid": 0}, "invalid_amount"),
+        ({"paid": -8000}, "invalid_amount"),
+        ({"paid": 8000.0}, "invalid_amount"),
+        ({"paid": None, "amount": None}, "invalid_amount"),  # nenhum valor
+        ({"paid": None, "amount": "8000"}, "invalid_amount"),
+        ({"paid": None, "amount": 0}, "invalid_amount"),
+        ({"paid": 7999}, "amount_mismatch"),
+        ({"paid": None, "amount": 8001}, "amount_mismatch"),
+    ],
+)
+def test_webhook_rejects_missing_invalid_or_divergent_amount(
+    client, people, abacate, admin, kwargs, expected
+) -> None:
+    p = checkout(client, people, slot(client, people)).json()
+    charge = charge_of(abacate, p)
+    assert charge["amount"] == 8000
+    assert post_webhook(client, webhook_body(charge, **kwargs)).json()["outcome"] == expected
+    status = admin.execute(
+        "select status::text as s from public.payment_intents where id = %s", (p["id"],)
+    ).fetchone()["s"]
+    assert status == "pending"  # nada confirmado
+    # Uma entrega válida posterior (outro evento) ainda confirma.
+    assert post_webhook(client, webhook_body(charge)).json()["outcome"] == "confirmed"
+
+
+def test_concurrent_webhook_deliveries(client, people, abacate) -> None:
+    p = checkout(client, people, slot(client, people)).json()
+    charge = charge_of(abacate, p)
+    abacate.pay(charge["id"])
+    same = webhook_body(charge)
+    bodies = [same, same, webhook_body(charge), webhook_body(charge)]
+    outcomes: list[str] = []
+
+    def deliver(body: bytes) -> None:
+        outcomes.append(post_webhook(client, body).json()["outcome"])
+
+    threads = [threading.Thread(target=deliver, args=(b,)) for b in bodies]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert outcomes.count("confirmed") == 1
+    assert outcomes.count("duplicate") == 1  # o mesmo evento entregue duas vezes
+    assert outcomes.count("already_processed") == 2

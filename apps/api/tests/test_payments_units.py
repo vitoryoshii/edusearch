@@ -215,3 +215,32 @@ def test_tax_id_validation() -> None:
     for bad in ("111.111.111-11", "529.982.247-24", "123"):
         with pytest.raises(ValueError):
             PayoutAccountIn(legal_name="Prof Teste", tax_id=bad)
+
+
+# ------------------------------------------------------------------------------- valor pago
+
+
+@pytest.mark.parametrize(
+    ("transparent", "expected"),
+    [
+        ({"paidAmount": None, "amount": 9000}, 9000),  # formato documentado (Pix)
+        ({"amount": 9000}, 9000),  # paidAmount ausente
+        ({"paidAmount": 9000, "amount": 9000}, 9000),
+        ({"paidAmount": 8999, "amount": 9000}, 8999),  # presente prevalece (divergência no banco)
+        ({"paidAmount": "9000", "amount": 9000}, None),  # inválido NÃO cai para amount
+        ({"paidAmount": True, "amount": 9000}, None),
+        ({"paidAmount": 0, "amount": 9000}, None),
+        ({"paidAmount": -9000, "amount": 9000}, None),
+        ({"paidAmount": 90.0, "amount": 9000}, None),
+        ({"paidAmount": None, "amount": None}, None),
+        ({"paidAmount": None}, None),
+        ({}, None),
+        ({"paidAmount": None, "amount": "9000"}, None),
+        ({"paidAmount": None, "amount": False}, None),
+        ({"paidAmount": None, "amount": -1}, None),
+    ],
+)
+def test_webhook_paid_amount(transparent, expected) -> None:
+    from app.abacatepay import webhook_paid_amount
+
+    assert webhook_paid_amount(transparent) == expected

@@ -89,6 +89,9 @@ O horário fica bloqueado (EXCLUDE) em `scheduled` e `awaiting_payment`.
 | Webhook repetido (mesmo id) | `duplicate`, nada repetido |
 | Evento novo para cobrança já paga | `already_processed` |
 | Confirmações simultâneas | serializadas por `FOR UPDATE`: uma confirma, as outras são `already_processed` |
+| `transparent.completed` Pix com `paidAmount: null` | a AbacatePay v2 envia `amount` em centavos; ele é validado como inteiro positivo e comparado ao valor congelado antes de confirmar |
+| `paidAmount` presente, mas inválido | `invalid_amount`; nunca há fallback para `amount` quando o campo preenchido é string, booleano, zero, negativo ou decimal |
+| Valor ausente ou inválido | `invalid_amount`, não confirma |
 | Valor pago ≠ valor congelado | `amount_mismatch`, **não confirma**, fica na auditoria |
 | Pix pago depois de expirar | horário livre → `confirmed_late` (aula volta); ocupado → `paid_slot_lost` + reembolso solicitado |
 | Pago depois de cancelar | `paid_after_cancel` + reembolso solicitado |
@@ -187,7 +190,7 @@ Rollback: `supabase/rollback/20261122_fase_5_down.sql` (testado: o catálogo vol
 | Suíte | O quê |
 |---|---|
 | `apps/api/tests/test_payments_units.py` | comissão (0–20 000 centavos = frontend), HMAC/segredo, cliente v2 (contrato, erros tipados, timeout, resposta inválida), salvaguardas de chave/estágio, CPF/CNPJ |
-| `apps/api/tests/db/test_payments_db.py` | banco real + AbacatePay falsa: checkout, idempotência, conflito, webhook (forjado, duplicado, outro ambiente, valor divergente, simultâneo), expiração e atraso, cancelamentos, Google fora, rede instável, simulação, conciliação, split habilitado e indisponível, RLS |
+| `apps/api/tests/db/test_payments_db.py` | banco real + AbacatePay falsa: checkout, idempotência, conflito, webhook (HMAC, ambiente, `paidAmount=null`/ausente/preenchido, valores inválidos e divergentes, duplicado e simultâneo), expiração e atraso, cancelamentos, Google fora, rede instável, simulação, conciliação, split habilitado e indisponível, RLS |
 | `apps/api/tests/db/test_security.py` | inventário de grants/políticas atualizado |
 | `apps/web/scripts/unit.test.mjs` | flag `VITE_STAGE_PAYMENTS`, BRL, contagem, backoff |
 | `apps/web/scripts/payments.mjs` | navegador: checkout, clique duplo, QR/copia e cola, contagem, URL forjada, confirmação por consulta, simulação, gateway lento, expiração, 409, histórico, visão do professor, axe, 320–1440 px claro/escuro |
