@@ -14,12 +14,13 @@ import {
   useToast,
 } from "@edusearch/ui";
 import { hasRole, useServerMe } from "../../app/account";
-import { AsyncContent } from "../../components/AsyncContent";
+import { QueryContent } from "../../components/QueryContent";
 import { PageHeader } from "../../components/PageHeader";
 import { describeError } from "../../lib/api/client";
 import { schedulingApi, type CalendarConnection } from "../../lib/api/scheduling";
 import { FEATURES } from "../../lib/features";
-import { useAction, useAsync } from "../../lib/hooks/useAsync";
+import { useAction } from "../../lib/hooks/useAsync";
+import { toAsyncState, useAvailabilityQuery, useCalendarQuery, useDisconnectCalendarMutation, useSaveAvailabilityMutation } from "../../lib/query/hooks";
 import {
   WEEKDAY_LABEL,
   WEEKDAY_ORDER,
@@ -80,7 +81,9 @@ const CALENDAR_LABEL: Record<CalendarConnection["status"], { text: string; tone:
 
 function CalendarConnectionCard() {
   const toast = useToast();
-  const state = useAsync(() => schedulingApi.calendar(), []);
+  const calendar = useCalendarQuery();
+  const state = toAsyncState(calendar);
+  const disconnectMutation = useDisconnectCalendarMutation();
   const [confirming, setConfirming] = useState(false);
   const connect = useAction(async () => {
     const { authorization_url } = await schedulingApi.startAuthorization();
@@ -88,7 +91,7 @@ function CalendarConnectionCard() {
     window.location.assign(authorization_url);
   });
   const disconnect = useAction(async () => {
-    state.setData(await schedulingApi.disconnect());
+    await disconnectMutation.mutateAsync(); // grava o novo estado no cache (painel e agenda)
     setConfirming(false);
     toast({ tone: "success", title: "Google Agenda desconectada", description: "O EduSearch não cria mais eventos na sua agenda." });
   });
@@ -154,13 +157,13 @@ function CalendarConnectionCard() {
 
 function AvailabilityEditor() {
   const toast = useToast();
-  const state = useAsync(() => schedulingApi.availability(), []);
+  const state = useAvailabilityQuery();
+  const saveMutation = useSaveAvailabilityMutation();
   const [draft, setDraft] = useState<AvailabilityWindow[] | null>(null);
   const windows = draft ?? state.data?.windows ?? [];
   const issue = windowsIssue(windows);
   const save = useAction(async () => {
-    const saved = await schedulingApi.saveAvailability(windows);
-    state.setData(saved);
+    await saveMutation.mutateAsync(windows); // resposta da API vai para o cache (painel incluso)
     setDraft(null);
     toast({ tone: "success", title: "Disponibilidade salva" });
   });
@@ -171,7 +174,7 @@ function AvailabilityEditor() {
       <h2 className="text-lg font-semibold text-fg-strong">Disponibilidade semanal</h2>
       <p className="mt-1 text-sm text-fg-muted">Horários de Brasília, de 15 em 15 minutos. Alunos só podem reservar dentro destas janelas.</p>
       <div className="mt-4">
-        <AsyncContent state={state} reload={state.reload} loading="spinner">
+        <QueryContent query={state} loading="spinner">
           {() => (
             <div className="space-y-3">
               {windows.length === 0 && <p className="text-sm text-fg-muted">Nenhuma janela cadastrada.</p>}
@@ -222,7 +225,7 @@ function AvailabilityEditor() {
               )}
             </div>
           )}
-        </AsyncContent>
+        </QueryContent>
       </div>
     </Card>
   );

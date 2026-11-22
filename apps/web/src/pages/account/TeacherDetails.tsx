@@ -2,13 +2,12 @@ import type { ReactNode } from "react";
 import { Link, Navigate, useParams } from "react-router";
 import { ArrowLeftIcon, Avatar, Badge, Card, InfoIcon, buttonClasses } from "@edusearch/ui";
 import { hasRole, useServerMe } from "../../app/account";
-import { AsyncContent } from "../../components/AsyncContent";
+import { QueryContent } from "../../components/QueryContent";
 import { BookingPanel } from "../../components/marketplace/BookingPanel";
 import { useSubjectNames } from "../../components/marketplace/LessonList";
-import { schedulingApi } from "../../lib/api/scheduling";
 import { FEATURES } from "../../lib/features";
 import { METHODOLOGY_LABELS } from "../../lib/format";
-import { useAsync } from "../../lib/hooks/useAsync";
+import { useTeacherProfileQuery } from "../../lib/query/hooks";
 import { EXPERIENCE_LABELS, MODALITY_LABELS, ONBOARDING_PATH, type ExperienceRange, type Modality } from "../../lib/onboarding";
 import type { Methodology } from "../../lib/api/types";
 
@@ -52,7 +51,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function TeacherDetailsPage({ id, canBook }: { id: string; canBook: boolean }) {
-  const profile = useAsync(() => schedulingApi.teacherProfile(id), [id]);
+  const profile = useTeacherProfileQuery(id);
   const subjectName = useSubjectNames();
 
   return (
@@ -62,7 +61,7 @@ function TeacherDetailsPage({ id, canBook }: { id: string; canBook: boolean }) {
           <ArrowLeftIcon className="h-4 w-4" /> Voltar para a busca
         </Link>
       )}
-      <AsyncContent state={profile} reload={profile.reload} loading="spinner" loadingLabel="Carregando perfil…">
+      <QueryContent query={profile} loading="spinner" loadingLabel="Carregando perfil…">
         {(t) => (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start" data-testid="teacher-profile">
             <div className="space-y-6">
@@ -131,7 +130,7 @@ function TeacherDetailsPage({ id, canBook }: { id: string; canBook: boolean }) {
             ) : null}
           </div>
         )}
-      </AsyncContent>
+      </QueryContent>
     </>
   );
 }

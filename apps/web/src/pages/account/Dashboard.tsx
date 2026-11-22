@@ -6,8 +6,7 @@ import { ProfileSummary, ProvisionalBadge, ROLE_LABEL, useRoleIntent } from "../
 import { PageHeader } from "../../components/PageHeader";
 import type { Me } from "../../lib/api/account";
 import { describeError } from "../../lib/api/client";
-import { schedulingApi, type Lesson } from "../../lib/api/scheduling";
-import { useAsync } from "../../lib/hooks/useAsync";
+import { useLessonsQuery } from "../../lib/query/hooks";
 import { firstNameOf, type AuthenticatedProfile } from "../../lib/auth/profile";
 import { FEATURES } from "../../lib/features";
 import { ONBOARDING_PATH, WELCOME_PATH } from "../../lib/onboarding";
@@ -25,7 +24,8 @@ export default function AccountDashboard() {
 function ServerDashboard({ profile }: { profile: AuthenticatedProfile }) {
   const me = useServerMe();
   const scheduling = FEATURES.scheduling !== "off";
-  const lessons = useAsync(() => (scheduling ? schedulingApi.lessons() : Promise.resolve([] as Lesson[])), [scheduling]);
+  // Mesma chave de "Minhas aulas": as duas telas compartilham uma requisição e o cache.
+  const lessons = useLessonsQuery(scheduling);
   if (!me) return null; // RequireAccount garante o carregamento.
   // Primeiro acesso: nenhum papel PERSISTIDO no servidor → boas-vindas.
   if (me.roles.length === 0) return <Navigate to={WELCOME_PATH} replace />;
@@ -33,7 +33,7 @@ function ServerDashboard({ profile }: { profile: AuthenticatedProfile }) {
   const student = hasRole(me, "student");
   const teacher = hasRole(me, "teacher");
   const roleLabel = student && teacher ? "Aluno e professor" : student ? "Aluno" : "Professor";
-  const lessonData = lessons.status === "success" ? lessons.data : undefined;
+  const lessonData = lessons.data;
   const pendingStudent = me.onboarding.student?.status === "pending";
   const pendingTeacher = me.onboarding.teacher?.status === "pending";
 
@@ -54,8 +54,8 @@ function ServerDashboard({ profile }: { profile: AuthenticatedProfile }) {
         {(pendingStudent || (!scheduling && me.onboarding.student)) && <StudentStatus status={me.onboarding.student!.status} />}
         {(pendingTeacher || (!scheduling && me.onboarding.teacher)) && <TeacherStatus teacher={me.onboarding.teacher!} />}
         {scheduling &&
-          (lessons.status === "error" ? (
-            <ErrorState description={describeError(lessons.error)} onRetry={lessons.reload} />
+          (lessons.isError && !lessons.data ? (
+            <ErrorState description={describeError(lessons.error)} onRetry={() => void lessons.refetch()} />
           ) : (
             <NextLessonCard lessons={lessonData} role={teacher && !student ? "teacher" : "student"} />
           ))}

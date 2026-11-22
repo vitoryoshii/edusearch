@@ -672,3 +672,38 @@ describe("navegação unificada (Fase 4B)", () => {
     assert.deepEqual(dateParts("2026-12-03T01:30:00Z"), { weekday: "qua", day: "2", month: "dez" });
   });
 });
+
+import { STALE_MS, retryDelay, shouldRetry } from "../src/lib/query/policy.ts";
+import { isForeignPrivateKey, queryKeys } from "../src/lib/query/keys.ts";
+
+describe("cache de consultas (Fase 4B)", () => {
+  test("sem retry para sessão, permissão, conflito e validação; com retry limitado para falhas transitórias", () => {
+    for (const status of [400, 401, 403, 404, 409, 422]) assert.equal(shouldRetry(0, { status }), false, String(status));
+    assert.equal(shouldRetry(0, { code: "aborted" }), false);
+    for (const e of [{ code: "network" }, { code: "timeout" }, { status: 500 }, { status: 503 }, { status: 429 }, { status: 408 }]) {
+      assert.equal(shouldRetry(0, e), true, JSON.stringify(e));
+      assert.equal(shouldRetry(1, e), true);
+      assert.equal(shouldRetry(2, e), false); // no máximo 2 novas tentativas
+    }
+    assert.deepEqual([0, 1, 2, 5].map(retryDelay), [1000, 2000, 4000, 8000]);
+  });
+  test("validade por recurso: horários são os mais curtos; nada fica válido para sempre", () => {
+    assert.ok(STALE_MS.slots <= 15_000);
+    assert.ok(STALE_MS.slots < STALE_MS.lessons && STALE_MS.lessons <= 60_000);
+    for (const v of Object.values(STALE_MS)) assert.ok(Number.isFinite(v) && v > 0 && v <= 30 * 60_000);
+  });
+  test("chaves privadas levam o id da conta; contas diferentes nunca colidem", () => {
+    const a = "00000000-0000-4000-8000-00000000000a", b = "00000000-0000-4000-8000-00000000000b";
+    for (const k of [queryKeys.me(a), queryKeys.lessons(a), queryKeys.calendar(a), queryKeys.slots(a, "t", 60), queryKeys.catalog(a, { q: "x" }), queryKeys.teacherProfile(a, "t")]) {
+      assert.deepEqual(k.slice(0, 3), ["edusearch", "user", a]);
+    }
+    assert.notDeepEqual(queryKeys.lessons(a), queryKeys.lessons(b));
+    assert.equal(isForeignPrivateKey(queryKeys.lessons(a), b), true);
+    assert.equal(isForeignPrivateKey(queryKeys.lessons(a), a), false);
+    assert.equal(isForeignPrivateKey(queryKeys.lessons(a), null), true); // logout: tudo privado sai
+    assert.equal(isForeignPrivateKey(queryKeys.subjects(), null), false); // catálogo público fica
+    // Prefixos usados na invalidação cobrem as chaves específicas.
+    assert.deepEqual(queryKeys.slots(a, "t", 60).slice(0, 5), [...queryKeys.slotsOf(a, "t")]);
+    assert.deepEqual(queryKeys.catalog(a, {}).slice(0, 4), [...queryKeys.catalogAll(a)]);
+  });
+});

@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { LoadingState, useToast } from "@edusearch/ui";
 import { describeError } from "../../lib/api/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { schedulingApi } from "../../lib/api/scheduling";
+import { setCalendarConnection, useAccountUid } from "../../lib/query/hooks";
 import { FEATURES } from "../../lib/features";
 import { parseCalendarReturn } from "../../lib/scheduling";
 
@@ -23,6 +25,8 @@ export default function GoogleCalendarReturn() {
   const location = useLocation();
   const navigate = useNavigate();
   const toast = useToast();
+  const qc = useQueryClient();
+  const uid = useAccountUid();
 
   useEffect(() => {
     if (FEATURES.scheduling === "off") return;
@@ -44,6 +48,9 @@ export default function GoogleCalendarReturn() {
     }
     schedulingApi
       .completeAuthorization({ code: result.code, state: result.state })
+      .then((connection) => {
+        if (uid) setCalendarConnection(qc, uid, connection); // painel/agenda já mostram "Conectada"
+      })
       .then(() => toast({ tone: "success", title: "Google Agenda conectada", description: "As próximas aulas terão link do Google Meet." }))
       .catch((e: unknown) => toast({ tone: "error", title: "Não foi possível conectar", description: describeError(e) }))
       .finally(done);

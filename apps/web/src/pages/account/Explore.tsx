@@ -1,22 +1,21 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 import { Avatar, Badge, Button, Card, Checkbox, ClockIcon, ErrorState, Input, LoadingState, SearchIcon, Select, buttonClasses } from "@edusearch/ui";
 import { hasRole, useServerMe } from "../../app/account";
 import { PageHeader } from "../../components/PageHeader";
+import { RefreshStatus } from "../../components/QueryContent";
 import { useSubjectNames } from "../../components/marketplace/LessonList";
-import { accountApi } from "../../lib/api/account";
 import { describeError } from "../../lib/api/client";
-import { schedulingApi, type BookableTeacher } from "../../lib/api/scheduling";
+import type { BookableTeacher } from "../../lib/api/scheduling";
 import { FEATURES } from "../../lib/features";
 import { PERIOD_LABELS } from "../../lib/format";
-import { useAsync } from "../../lib/hooks/useAsync";
+import { useCatalogQuery, useSubjectsQuery } from "../../lib/query/hooks";
 import {
   CATALOG_PAGE_SIZE,
   EMPTY_FILTERS,
   activeFilterCount,
   filtersFromSearch,
   filtersToSearch,
-  hasMorePages,
   toCatalogQuery,
   type CatalogFilters,
 } from "../../lib/marketplace";
@@ -34,44 +33,20 @@ export default function Explore() {
 function ExplorePage() {
   const [params, setParams] = useSearchParams();
   const filters = filtersFromSearch(`?${params.toString()}`);
-  const key = filtersToSearch(filters);
   const subjectName = useSubjectNames();
-  const subjects = useAsync(() => accountApi.subjects(), []);
-
+  const subjects = useSubjectsQuery();
   const [draftQ, setDraftQ] = useState(filters.q);
-  const [items, setItems] = useState<BookableTeacher[]>([]);
-  const [page, setPage] = useState(0);
-  const [state, setState] = useState<{ status: "loading" | "ready" | "error"; error?: unknown; more: boolean; loadingMore: boolean }>({ status: "loading", more: false, loadingMore: false });
 
-  // Nova busca (filtros mudaram): recomeça da primeira página. Respostas antigas são descartadas.
-  useEffect(() => {
-    const controller = new AbortController();
-    setState({ status: "loading", more: false, loadingMore: false });
-    setPage(0);
-    schedulingApi
-      .teachers(toCatalogQuery(filters, 0), controller.signal)
-      .then((list) => {
-        setItems(list);
-        setState({ status: "ready", more: hasMorePages(list.length), loadingMore: false });
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setState({ status: "error", error, more: false, loadingMore: false });
-      });
-    return () => controller.abort();
-  }, [key]);
-
-  const loadMore = () => {
-    const next = page + 1;
-    setState((s) => ({ ...s, loadingMore: true }));
-    schedulingApi
-      .teachers(toCatalogQuery(filters, next))
-      .then((list) => {
-        setItems((prev) => [...prev, ...list.filter((t) => !prev.some((p) => p.id === t.id))]);
-        setPage(next);
-        setState({ status: "ready", more: hasMorePages(list.length), loadingMore: false });
-      })
-      .catch((error: unknown) => setState((s) => ({ ...s, loadingMore: false, error })));
-  };
+  // Cada combinação de filtros tem sua entrada no cache (com o id da conta). Voltar à mesma busca
+  // mostra o resultado na hora e revalida em segundo plano; "Carregar mais" só busca a próxima página.
+  const { limit: _l, offset: _o, ...catalogQuery } = toCatalogQuery(filters, 0);
+  const catalog = useCatalogQuery(catalogQuery, CATALOG_PAGE_SIZE);
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    return (catalog.data?.pages.flat() ?? []).filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+  }, [catalog.data]);
+  const more = Boolean(catalog.hasNextPage);
+  const loadMore = () => void catalog.fetchNextPage();
 
   const apply = (patch: Partial<CatalogFilters>) => setParams(new URLSearchParams(filtersToSearch({ ...filters, ...patch }).slice(1)));
   const submit = (e: FormEvent) => {
@@ -153,19 +128,20 @@ function ExplorePage() {
         </div>
       </Card>
 
-      {state.status === "loading" && <LoadingState variant="spinner" label="Buscando professores…" />}
-      {state.status === "error" && <ErrorState description={describeError(state.error)} onRetry={() => apply({})} />}
-      {state.status === "ready" && items.length === 0 && (
+      {catalog.isPending && <LoadingState variant="spinner" label="Buscando professores…" />}
+      {catalog.isError && !catalog.data && <ErrorState description={describeError(catalog.error)} onRetry={() => void catalog.refetch()} />}
+      {catalog.data && !catalog.isFetchingNextPage && <RefreshStatus query={catalog} />}
+      {catalog.data && items.length === 0 && (
         <Card tone="muted" className="text-center" data-testid="catalog-empty">
           <p className="font-semibold text-fg-strong">Nenhum professor encontrado</p>
           <p className="mt-1 text-sm text-fg-muted">{count ? "Tente remover algum filtro." : "Ainda não há professores aprovados no piloto."}</p>
         </Card>
       )}
-      {state.status === "ready" && items.length > 0 && (
+      {catalog.data && items.length > 0 && (
         <>
           <p className="mb-3 text-sm text-fg-muted" aria-live="polite">
             {items.length} {items.length === 1 ? "professor" : "professores"}
-            {state.more ? " até agora" : ""}
+            {more ? " até agora" : ""}
           </p>
           <ul className="grid gap-4 md:grid-cols-2" data-testid="catalog-results">
             {items.map((t) => (
@@ -174,9 +150,9 @@ function ExplorePage() {
               </li>
             ))}
           </ul>
-          {state.more && (
+          {more && (
             <div className="mt-6 flex justify-center">
-              <Button variant="secondary" loading={state.loadingMore} onClick={loadMore} data-testid="catalog-more">
+              <Button variant="secondary" loading={catalog.isFetchingNextPage} onClick={loadMore} data-testid="catalog-more">
                 Carregar mais
               </Button>
             </div>

@@ -17,9 +17,9 @@ import {
   buttonClasses,
 } from "@edusearch/ui";
 import { isUpcoming, useSubjectNames } from "../marketplace/LessonList";
-import { accountApi, type Me } from "../../lib/api/account";
-import { schedulingApi, type Lesson } from "../../lib/api/scheduling";
-import { useAsync } from "../../lib/hooks/useAsync";
+import type { Me } from "../../lib/api/account";
+import type { Lesson } from "../../lib/api/scheduling";
+import { useAvailabilityQuery, useCalendarQuery, useStudentProfileQuery } from "../../lib/query/hooks";
 import { isTrustedMeetUrl } from "../../lib/meeting";
 import { lessonWhen, timeOf } from "../../lib/scheduling";
 import { DateBlock } from "./DateBlock";
@@ -101,7 +101,7 @@ export function NextLessonCard({ lessons, role }: { lessons: Lesson[] | undefine
 export function StudentShortcuts() {
   const navigate = useNavigate();
   const subjectName = useSubjectNames();
-  const profile = useAsync(() => accountApi.getStudentProfile().catch(() => null), []);
+  const profile = useStudentProfileQuery();
   const [q, setQ] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -156,8 +156,8 @@ function Stat({ label, value, icon: Icon }: { label: string; value: string; icon
 
 /** Painel do professor: indicadores reais e o que falta para receber reservas. */
 export function TeacherOverview({ me, lessons }: { me: Me; lessons: Lesson[] | undefined }) {
-  const calendar = useAsync(() => schedulingApi.calendar(), []);
-  const availability = useAsync(() => schedulingApi.availability(), []);
+  const calendar = useCalendarQuery();
+  const availability = useAvailabilityQuery();
   const teacher = me.onboarding.teacher;
   const published = Boolean(teacher?.is_published);
   const upcoming = lessons?.filter((l) => l.role === "teacher" && isUpcoming(l)) ?? [];
