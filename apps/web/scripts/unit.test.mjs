@@ -583,6 +583,7 @@ describe("acesso por e-mail: respostas sem enumeração de contas", () => {
 import {
   dayKeyOf,
   groupSlotsByDay,
+  groupSlotsByPeriod,
   isGoogleAuthorizationUrl,
   lessonWhen,
   parseCalendarReturn,
@@ -608,6 +609,18 @@ describe("agenda real (Fase 3A)", () => {
   test("agrupa horários livres por dia, em ordem", () => {
     const days = groupSlotsByDay(["2026-12-03T12:00:00Z", "2026-12-02T18:00:00Z", "2026-12-02T17:00:00Z"]);
     assert.deepEqual(days.map((d) => [d.key, d.slots.map((s) => s.time)]), [["2026-12-02", ["14:00", "15:00"]], ["2026-12-03", ["09:00"]]]);
+  });
+  test("agrupa horários de um dia por manhã, tarde e noite", () => {
+    const groups = groupSlotsByPeriod([
+      { iso: "a", time: "19:00" },
+      { iso: "b", time: "08:00" },
+      { iso: "c", time: "14:00" },
+    ]);
+    assert.deepEqual(groups.map((group) => [group.period, group.slots.map((slot) => slot.time)]), [
+      ["manha", ["08:00"]],
+      ["tarde", ["14:00"]],
+      ["noite", ["19:00"]],
+    ]);
   });
   test("retorno do Google: código, recusa ou inválido", () => {
     const state = "s".repeat(40);

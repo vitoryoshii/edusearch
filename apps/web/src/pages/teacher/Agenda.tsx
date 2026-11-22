@@ -93,6 +93,7 @@ export default function Agenda() {
           <SegmentedControl
             label="Período da agenda"
             options={[
+              { value: "day", label: "Dia" },
               { value: "week", label: "Semana" },
               { value: "month", label: "Mês" },
             ]}
