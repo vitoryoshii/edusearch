@@ -208,9 +208,9 @@ def test_withdrawal_history_is_private_and_not_writable(admin, users, as_user, a
         (withdrawal_id, owner, uuid.uuid4()),
     )
 
-    assert [row["id"] for row in as_user(owner).rows("select id from public.withdrawal_requests")] == [
-        withdrawal_id
-    ]
+    assert [
+        row["id"] for row in as_user(owner).rows("select id from public.withdrawal_requests")
+    ] == [withdrawal_id]
     assert as_user(other).rows("select id from public.withdrawal_requests") == []
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         anon.rows("select id from public.withdrawal_requests")

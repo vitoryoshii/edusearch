@@ -154,16 +154,23 @@ class FakeAbacate:
             body = json.loads(request.content)
             account = self.sub_accounts.get(body["id"])
             if account is None or account["devMode"] != dev_mode:
-                return httpx.Response(400, json={"data": None, "success": False, "error": "Subconta não encontrada"})
+                return httpx.Response(
+                    400, json={"data": None, "success": False, "error": "Subconta não encontrada"}
+                )
             if self.withdraw_rejected:
-                return httpx.Response(400, json={"data": None, "success": False, "error": "Saldo insuficiente"})
+                return httpx.Response(
+                    400, json={"data": None, "success": False, "error": "Saldo insuficiente"}
+                )
             ext = body["externalId"]
             transfer = self.transfers.get(ext)
             if transfer is None:
                 self.withdraw_calls += 1
                 transfer = {
-                    "id": f"tran_{uuid.uuid4().hex[:16]}", "externalId": ext,
-                    "amount": body["amount"], "status": "PENDING", "platformFee": 80,
+                    "id": f"tran_{uuid.uuid4().hex[:16]}",
+                    "externalId": ext,
+                    "amount": body["amount"],
+                    "status": "PENDING",
+                    "platformFee": 80,
                 }
                 self.transfers[ext] = transfer
             if self.withdraw_timeout:
@@ -1037,51 +1044,71 @@ def configure_production_payout(client, people, abacate) -> str:
 def test_withdrawals_are_gated_by_stage_and_operational_flag(make_client, people, abacate) -> None:
     payload = {"amount_cents": 100, "idempotency_key": str(uuid.uuid4())}
     sandbox = make_client("sandbox", split=True, withdrawals=True)
-    assert sandbox.post(
-        "/v1/me/withdrawals", json=payload, headers=auth(people["tokens"][people["teacher"]])
-    ).json()["code"] == "withdrawals_disabled"
+    assert (
+        sandbox.post(
+            "/v1/me/withdrawals", json=payload, headers=auth(people["tokens"][people["teacher"]])
+        ).json()["code"]
+        == "withdrawals_disabled"
+    )
     production = make_client("production", split=True, withdrawals=False)
-    assert production.post(
-        "/v1/me/withdrawals", json=payload, headers=auth(people["tokens"][people["teacher"]])
-    ).json()["code"] == "withdrawals_disabled"
+    assert (
+        production.post(
+            "/v1/me/withdrawals", json=payload, headers=auth(people["tokens"][people["teacher"]])
+        ).json()["code"]
+        == "withdrawals_disabled"
+    )
     assert not abacate.transfers
 
 
-def test_withdrawal_idempotency_balance_and_transfer_webhooks(
-    make_client, people, abacate
-) -> None:
+def test_withdrawal_idempotency_balance_and_transfer_webhooks(make_client, people, abacate) -> None:
     client = make_client("production", split=True, withdrawals=True)
     token = configure_production_payout(client, people, abacate)
     assert client.get("/v1/me/payout-balance", headers=token).json() == {
-        "environment": "production", "available_cents": 5_000, "blocked_cents": 300,
+        "environment": "production",
+        "available_cents": 5_000,
+        "blocked_cents": 300,
         "withdrawals_enabled": True,
     }
     too_much = client.post(
         "/v1/me/withdrawals",
-        json={"amount_cents": 5_001, "idempotency_key": str(uuid.uuid4())}, headers=token,
+        json={"amount_cents": 5_001, "idempotency_key": str(uuid.uuid4())},
+        headers=token,
     )
     assert too_much.status_code == 409 and too_much.json()["code"] == "insufficient_balance"
 
     key = uuid.uuid4()
     first = client.post(
-        "/v1/me/withdrawals", json={"amount_cents": 1_000, "idempotency_key": str(key)}, headers=token
+        "/v1/me/withdrawals",
+        json={"amount_cents": 1_000, "idempotency_key": str(key)},
+        headers=token,
     )
     assert first.status_code == 200 and first.json()["status"] == "pending"
     again = client.post(
-        "/v1/me/withdrawals", json={"amount_cents": 1_000, "idempotency_key": str(key)}, headers=token
+        "/v1/me/withdrawals",
+        json={"amount_cents": 1_000, "idempotency_key": str(key)},
+        headers=token,
     )
     assert again.status_code == 200 and abacate.withdraw_calls == 1
     conflict = client.post(
-        "/v1/me/withdrawals", json={"amount_cents": 1_001, "idempotency_key": str(key)}, headers=token
+        "/v1/me/withdrawals",
+        json={"amount_cents": 1_001, "idempotency_key": str(key)},
+        headers=token,
     )
-    assert conflict.status_code == 409 and conflict.json()["code"] == "withdrawal_idempotency_conflict"
+    assert (
+        conflict.status_code == 409 and conflict.json()["code"] == "withdrawal_idempotency_conflict"
+    )
 
     transfer = next(iter(abacate.transfers.values()))
     body = transfer_webhook_body(transfer)
     assert post_webhook(client, body).json()["outcome"] == "completed"
     assert post_webhook(client, body).json()["outcome"] == "duplicate"
     # Um evento posterior não regride uma transferência já concluída.
-    assert post_webhook(client, transfer_webhook_body(transfer, event="transfer.failed")).json()["outcome"] == "already_processed"
+    assert (
+        post_webhook(client, transfer_webhook_body(transfer, event="transfer.failed")).json()[
+            "outcome"
+        ]
+        == "already_processed"
+    )
     history = client.get("/v1/me/withdrawals", headers=token).json()
     assert len(history) == 1 and history[0]["status"] == "completed"
 
@@ -1111,7 +1138,8 @@ def test_withdrawal_timeout_and_concurrent_retries_keep_one_order(
     assert abacate.withdraw_calls == 1  # externalId persistido, nunca uma segunda ordem
     rows = admin.execute(
         "select id, external_id, gateway_transfer_id from public.withdrawal_requests "
-        "where teacher_id=%s and environment='production'", (people["teacher"],)
+        "where teacher_id=%s and environment='production'",
+        (people["teacher"],),
     ).fetchall()
     assert len(rows) == 1 and rows[0]["gateway_transfer_id"] is not None
 
