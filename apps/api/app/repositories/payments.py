@@ -104,6 +104,15 @@ class PaymentsRepository:
             (teacher_id, environment),
         ).fetchone()
 
+    def withdrawals(self, teacher_id: UUID, environment: str) -> list[dict[str, Any]]:
+        return self._conn.execute(
+            "select id, amount_cents, status::text as status, gateway_fee_cents, "
+            "created_at, updated_at from public.withdrawal_requests "
+            "where teacher_id=%s and environment=%s::public.payment_environment "
+            "order by created_at desc limit 100",
+            (teacher_id, environment),
+        ).fetchall()
+
     # ------------------------------------------------------------------ escrita (papel de conexão)
 
     def expire_holds(self) -> int:
@@ -168,6 +177,30 @@ class PaymentsRepository:
             "select private.payout_account_upsert(%s, %s, %s::public.payment_environment)",
             (sacc, last4, environment),
         )
+
+    def withdrawal_create(
+        self, amount: int, key: UUID, external: str, env: str, sacc: str
+    ) -> dict[str, Any]:
+        row = self._conn.execute(
+            "select * from private.withdrawal_create(%s,%s,%s,%s::public.payment_environment,%s)",
+            (amount, key, external, env, sacc),
+        ).fetchone()
+        assert row is not None  # noqa: S101
+        return row
+
+    def withdrawal_attach(self, withdrawal_id: UUID, transfer_id: str, fee: int | None) -> None:
+        self._conn.execute(
+            "select private.withdrawal_attach(%s,%s,%s)", (withdrawal_id, transfer_id, fee)
+        )
+
+    def withdrawal_finish(
+        self, external: str, transfer: str, amount: int, fee: int | None, status: str
+    ) -> str:
+        row = self._conn.execute(
+            "select private.withdrawal_finish(%s,%s,%s,%s,%s::public.withdrawal_status) as outcome",
+            (external, transfer, amount, fee, status),
+        ).fetchone()
+        return str(row["outcome"]) if row else "unknown_withdrawal"
 
     # ------------------------------------------------------------------ webhook / conciliação
 

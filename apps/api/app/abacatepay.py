@@ -33,6 +33,7 @@ logger = logging.getLogger("edusearch.api.abacatepay")
 BASE_URL = "https://api.abacatepay.com/v2"
 _CHARGE_ID = re.compile(r"^[A-Za-z0-9_-]{4,128}$")
 _SACC_ID = re.compile(r"^sacc_[A-Za-z0-9]{4,64}$")
+_TRANSFER_ID = re.compile(r"^tran_[A-Za-z0-9]{4,128}$")
 _PNG_DATA_URI = "data:image/png;base64,"
 PIX_STATUSES = {
     "PENDING",
@@ -93,6 +94,17 @@ class SubAccount:
     # A documentação atual não garante ``devMode`` na subconta. Quando vier, ele é conferido;
     # quando não vier, o ambiente é atestado pela chave usada na consulta autenticada.
     dev_mode: bool | None
+    available_cents: int
+    blocked_cents: int
+
+
+@dataclass(frozen=True)
+class Transfer:
+    id: str
+    external_id: str
+    amount: int
+    status: str
+    platform_fee: int | None
 
 
 def _iso(value: Any) -> datetime | None:
@@ -146,11 +158,17 @@ def _parse_sub_account(data: Any) -> SubAccount:
     dev_mode = data.get("devMode")
     if dev_mode is not None and not isinstance(dev_mode, bool):
         raise InvalidGatewayResponseError("devMode da subconta inválido")
+    balance = data.get("balance") if isinstance(data.get("balance"), dict) else {}
+    available, blocked = balance.get("available", 0), balance.get("blocked", 0)
+    if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in (available, blocked)):
+        raise InvalidGatewayResponseError("saldo da subconta inválido")
     return SubAccount(
         id=sub_account_id,
         tax_id_last4=digits[-4:],
         external_id=external_id,
         dev_mode=dev_mode,
+        available_cents=available,
+        blocked_cents=blocked,
     )
 
 
@@ -272,6 +290,38 @@ class AbacatePayClient:
         return _parse_sub_account(
             self._request("GET", "/sub-accounts/get", params={"id": sub_account_id})
         )
+
+    def withdraw_sub_account(
+        self, *, sub_account_id: str, amount: int, external_id: str
+    ) -> Transfer:
+        if self.dev_mode:
+            raise GatewayRejectedError(400, "saque de subconta só existe em produção")
+        if not _SACC_ID.match(sub_account_id) or amount < 100:
+            raise ValueError("saque inválido")
+        data = self._request(
+            "POST",
+            "/sub-accounts/withdraw",
+            json={"id": sub_account_id, "amount": amount, "externalId": external_id},
+        )
+        if not isinstance(data, dict):
+            raise InvalidGatewayResponseError("saque ausente")
+        transfer_id, returned_external, status = (
+            data.get("id"),
+            data.get("externalId"),
+            data.get("status"),
+        )
+        fee = data.get("platformFee")
+        if (
+            not isinstance(transfer_id, str)
+            or not _TRANSFER_ID.match(transfer_id)
+            or returned_external != external_id
+            or not isinstance(status, str)
+            or isinstance(data.get("amount"), bool)
+            or data.get("amount") != amount
+            or (fee is not None and (isinstance(fee, bool) or not isinstance(fee, int) or fee < 0))
+        ):
+            raise InvalidGatewayResponseError("resposta de saque inválida")
+        return Transfer(transfer_id, external_id, amount, status, fee)
 
 
 # ---------------------------------------------------------------------- webhooks

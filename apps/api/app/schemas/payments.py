@@ -134,6 +134,31 @@ class PayoutAccountOut(BaseModel):
     created_at: datetime | None = None
 
 
+WithdrawalStatus = Literal["pending", "completed", "failed"]
+
+
+class PayoutBalanceOut(BaseModel):
+    environment: Literal["sandbox", "production"]
+    available_cents: int
+    blocked_cents: int
+    withdrawals_enabled: bool
+
+
+class WithdrawalIn(BaseModel):
+    model_config = _STRICT
+    amount_cents: Annotated[int, Field(ge=100, le=10_000_000)]
+    idempotency_key: UUID
+
+
+class WithdrawalOut(BaseModel):
+    id: UUID
+    amount_cents: int
+    status: WithdrawalStatus
+    gateway_fee_cents: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
 # ----------------------------------------------------------- painel financeiro do professor
 
 

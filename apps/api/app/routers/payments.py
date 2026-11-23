@@ -14,7 +14,10 @@ from app.schemas.payments import (
     PaymentsStatus,
     PayoutAccountIn,
     PayoutAccountOut,
+    PayoutBalanceOut,
     TeacherFinanceOut,
+    WithdrawalIn,
+    WithdrawalOut,
 )
 from app.services.payments import PaymentsService, get_payments_service
 
@@ -100,6 +103,22 @@ def put_payout_account(
 ) -> PayoutAccountOut:
     """Cria a subconta do professor no gateway. Só os 4 últimos dígitos ficam salvos."""
     return service.save_payout_account(user, payload)
+
+
+@router.get("/v1/me/payout-balance", response_model=PayoutBalanceOut, responses=_ERRORS)
+def payout_balance(user: CurrentUser, service: Service) -> PayoutBalanceOut:
+    """Saldo autenticado da subconta; não é calculado a partir das aulas."""
+    return service.payout_balance(user)
+
+
+@router.get("/v1/me/withdrawals", response_model=list[WithdrawalOut], responses=_ERRORS)
+def withdrawals(user: CurrentUser, service: Service) -> list[WithdrawalOut]:
+    return service.withdrawals(user)
+
+
+@router.post("/v1/me/withdrawals", response_model=WithdrawalOut, responses=_ERRORS)
+def request_withdrawal(payload: WithdrawalIn, user: CurrentUser, service: Service) -> WithdrawalOut:
+    return service.request_withdrawal(user, payload)
 
 
 @router.post("/v1/payments/webhooks/abacatepay", responses=_ERRORS)

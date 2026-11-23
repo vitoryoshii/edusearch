@@ -52,9 +52,12 @@ from app.schemas.payments import (
     PaymentsStatus,
     PayoutAccountIn,
     PayoutAccountOut,
+    PayoutBalanceOut,
     RefundOut,
     TeacherFinanceOut,
     TeacherFinanceSummary,
+    WithdrawalIn,
+    WithdrawalOut,
 )
 from app.services.profiles import account_suspended, load_profile
 
@@ -596,6 +599,37 @@ class PaymentsService:
                 outcome = PaymentsRepository(conn).mark_after_paid(
                     charge_id, "under_dispute", "webhook"
                 )
+        elif event_type in {"transfer.completed", "transfer.failed"}:
+            transfer = data.get("transfer") if isinstance(data.get("transfer"), dict) else {}
+            transfer_id, external_id, amount = (
+                transfer.get("id"),
+                transfer.get("externalId"),
+                transfer.get("amount"),
+            )
+            fee = transfer.get("platformFee")
+            expected_status = "COMPLETE" if event_type == "transfer.completed" else "FAILED"
+            valid = (
+                isinstance(transfer_id, str)
+                and isinstance(external_id, str)
+                and isinstance(amount, int)
+                and not isinstance(amount, bool)
+                and amount >= 100
+                and transfer.get("status") == expected_status
+                and (
+                    fee is None or (isinstance(fee, int) and not isinstance(fee, bool) and fee >= 0)
+                )
+            )
+            if not valid:
+                outcome = "invalid_transfer"
+            else:
+                with self._db.service_transaction() as conn:
+                    outcome = PaymentsRepository(conn).withdrawal_finish(
+                        external_id,
+                        transfer_id,
+                        amount,
+                        fee,
+                        "completed" if event_type == "transfer.completed" else "failed",
+                    )
         with self._db.service_transaction() as conn:
             PaymentsRepository(conn).finish_webhook(event_id, outcome)
         logger.info("webhook %s processado: %s", event_type, outcome)
@@ -620,6 +654,94 @@ class PaymentsService:
             tax_id_last4=row["tax_id_last4"],
             created_at=row["created_at"],
         )
+
+    def _validated_payout(self, user: AuthenticatedUser) -> tuple[dict[str, Any], Any]:
+        gateway = self._ready()
+        with self._db.user_transaction(user) as conn:
+            if "teacher" not in ProfileRepository(conn).list_roles(user.id):
+                raise forbidden("role_required", "Disponível apenas para contas de professor.")
+            account = PaymentsRepository(conn).own_payout(user.id, self._env)
+        if account is None or account["status"] != "active":
+            raise ApiError(409, "payout_account_required", "Conta de recebimentos não configurada.")
+        try:
+            sub = gateway.get_sub_account(account["sub_account_id"])
+        except (
+            GatewayUnavailableError,
+            GatewayAuthError,
+            GatewayRejectedError,
+            InvalidGatewayResponseError,
+        ) as exc:
+            raise service_unavailable(
+                "payout_account_not_ready", "Não foi possível validar a subconta."
+            ) from exc
+        if sub.external_id != str(user.id) or (
+            sub.dev_mode is not None and sub.dev_mode != gateway.dev_mode
+        ):
+            raise service_unavailable(
+                "payout_account_not_ready", "A subconta não pôde ser validada."
+            )
+        return account, sub
+
+    def payout_balance(self, user: AuthenticatedUser) -> PayoutBalanceOut:
+        _, sub = self._validated_payout(user)
+        return PayoutBalanceOut(
+            environment=self._env,
+            available_cents=sub.available_cents,
+            blocked_cents=sub.blocked_cents,
+            withdrawals_enabled=(
+                self._env == "production"
+                and self._settings.subaccount_withdrawals_enabled
+                and self._settings.abacatepay_split_enabled
+            ),
+        )
+
+    def withdrawals(self, user: AuthenticatedUser) -> list[WithdrawalOut]:
+        with self._db.user_transaction(user) as conn:
+            if "teacher" not in ProfileRepository(conn).list_roles(user.id):
+                raise forbidden("role_required", "Disponível apenas para contas de professor.")
+            rows = PaymentsRepository(conn).withdrawals(user.id, self._env)
+        return [WithdrawalOut(**row) for row in rows]
+
+    def request_withdrawal(self, user: AuthenticatedUser, data: WithdrawalIn) -> WithdrawalOut:
+        if self._env != "production" or not self._settings.subaccount_withdrawals_enabled:
+            raise forbidden("withdrawals_disabled", "Saques não estão autorizados neste ambiente.")
+        account, sub = self._validated_payout(user)
+        if data.amount_cents > sub.available_cents:
+            raise ApiError(
+                409, "insufficient_balance", "Saldo disponível insuficiente para este saque."
+            )
+        external = f"wd_{data.idempotency_key.hex}"
+        with self._db.user_transaction(user) as conn, as_connection_role(conn):
+            row = PaymentsRepository(conn).withdrawal_create(
+                data.amount_cents,
+                data.idempotency_key,
+                external,
+                self._env,
+                account["sub_account_id"],
+            )
+        # Já anexado/presente: reentrega com a mesma chave nunca chama o gateway novamente.
+        if row["gateway_transfer_id"] is not None:
+            return WithdrawalOut(**row)
+        gateway = self._ready()
+        try:
+            transfer = gateway.withdraw_sub_account(
+                sub_account_id=account["sub_account_id"],
+                amount=data.amount_cents,
+                external_id=external,
+            )
+        except GatewayUnavailableError:
+            # Resultado desconhecido: mantém pending e reutiliza o mesmo externalId depois.
+            return WithdrawalOut(**row)
+        except (GatewayRejectedError, GatewayAuthError, InvalidGatewayResponseError) as exc:
+            raise service_unavailable(
+                "withdrawal_gateway_error", "Não foi possível solicitar o saque."
+            ) from exc
+        with self._db.user_transaction(user) as conn, as_connection_role(conn):
+            PaymentsRepository(conn).withdrawal_attach(
+                row["id"], transfer.id, transfer.platform_fee
+            )
+        row["gateway_transfer_id"], row["gateway_fee_cents"] = transfer.id, transfer.platform_fee
+        return WithdrawalOut(**row)
 
     def save_payout_account(
         self, user: AuthenticatedUser, data: PayoutAccountIn
