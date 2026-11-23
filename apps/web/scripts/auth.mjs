@@ -91,6 +91,14 @@ const ignoreExpectedNetworkErrors = () => {
     if (/supabase\.co|googleusercontent|status of (400|401|403|404|422)|ERR_FAILED/.test(b.errors[i])) b.errors.splice(i, 1);
 };
 
+/** Remove somente o 503 que este teste injeta para exercitar a recuperação do GIS. */
+const ignoreExpectedGisRecovery503 = () => {
+  for (let i = b.errors.length - 1; i >= 0; i--) {
+    const error = b.errors[i];
+    if (/status of 503/.test(error) && /accounts\.google\.com\/gsi\/client/.test(error)) b.errors.splice(i, 1);
+  }
+};
+
 /* --------------------------------- Mocks --------------------------------- */
 const FAKE_GIS = `(() => {
   let cfg = null;
@@ -145,6 +153,8 @@ const tokenRequests = [];
 let tokenMode = "ok"; // ok | invalid | network | not_allowed
 let tokenDelayMs = 0; // atraso artificial da resposta do Supabase (teste de corrida)
 let userVariant = "full"; // full | broken-photo | minimal
+let gisFailures = 0;
+let gisLoads = 0;
 let userEndpoint = "ok"; // ok | revoked
 const emailRequests = []; // { kind, email?, pkce?, redirect?, hasPassword? } — nunca a senha
 const EMAIL_USER_ID = "00000000-0000-4000-8000-000000000002";
@@ -225,7 +235,11 @@ b.on(async (m) => {
       body: Buffer.from(body).toString("base64"),
     });
 
-  if (url.host === "accounts.google.com") return reply(200, FAKE_GIS, "text/javascript");
+  if (url.host === "accounts.google.com") {
+    gisLoads++;
+    if (gisFailures-- > 0) return reply(503, "indisponível", "text/plain");
+    return reply(200, FAKE_GIS, "text/javascript");
+  }
   if (url.host.endsWith("googleusercontent.com")) {
     return url.pathname.includes("quebrada") ? reply(404, "", "text/plain") : reply(200, AVATAR_SVG, "image/svg+xml");
   }
@@ -487,7 +501,15 @@ await check(seen.length === 0, "nenhuma requisição ao Google ou ao Supabase na
 /* --------------------------- 2. Ambiente de testes --------------------------- */
 console.log(`Ambiente de testes (${testBase}) — GIS e Supabase falsos`);
 b.setStep("inicialização do GIS");
+gisFailures = 1;
 await b.go(testBase + "/", 1500);
+await check(await waitFor(`document.body.innerText.includes('Tentar carregar novamente')`), "falha ao carregar GIS mostra ação de retry");
+const gisLoadsBeforeRetry = gisLoads;
+await b.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent.includes('Tentar carregar novamente')); b?.click(); return !!b; })()`);
+await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "retry do GIS reinicia o carregamento e renderiza o botão");
+await check(gisLoads === gisLoadsBeforeRetry + 1, "retry do GIS solicita o script novamente");
+await check(await waitFor(`window.__gis.config?.client_id === ${JSON.stringify(CLIENT_ID)}`), "retry conclui a inicialização do GIS");
+ignoreExpectedGisRecovery503();
 await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "botão oficial do GIS renderizado na entrada única");
 const cfg = await b.evaluate(`window.__gis.config`);
 await check(cfg?.client_id === CLIENT_ID, "GIS inicializado com o Client ID público");
@@ -600,11 +622,15 @@ await b.viewport(1280);
 tokenDelayMs = 0;
 await check(tokenRequests.at(-1)?.nonceOk === true, "Supabase recebe o nonce ORIGINAL (SHA-256 confere com o claim)");
 await check(tokenRequests.at(-1)?.body.provider === "google" && !("access_token" in tokenRequests.at(-1).body), "signInWithIdToken com provider google, sem access token do Google");
-await waitFor(`window.__gis.config.nonce !== ${JSON.stringify(nonceBefore)}`);
-await check((await b.evaluate(`window.__gis.config.nonce`)) !== nonceBefore, "nova tentativa recebe um novo nonce");
+await check((await b.evaluate(`window.__gis.config.nonce`)) === nonceBefore, "falha não reinicializa o GIS nem troca nonce no mesmo documento");
+const replayToken = await b.evaluate(`window.__gis.lastToken`);
+await act("reiniciar tentativa de login", `(() => { const button = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Atualizar página e tentar novamente')); button?.click(); return !!button; })()`);
+await b.go(testBase + "/", 1200); // nova página = nova tentativa/nonce, sem reutilização insegura
+await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "nova tentativa segura carrega uma nova página");
 
 b.setStep("reutilização de token");
 const before = tokenRequests.length;
+await b.evaluate(`window.__gis.lastToken = ${JSON.stringify(replayToken)}`);
 await b.evaluate(`window.__gis.replay()`);
 await check(await waitFor(failureIs("invalid_nonce")), "reenviar um ID token já usado é bloqueado (nonce de uso único)");
 await check(tokenRequests.length === before, "token reutilizado não chega ao Supabase");
@@ -616,6 +642,8 @@ await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
 await check(await waitFor(failureIs("network")), "falha de rede tratada com mensagem acessível");
 await check(await b.evaluate(`!!document.querySelector('[role=alert]')`), "erros anunciados com role=alert");
 ignoreExpectedNetworkErrors();
+await b.go(testBase + "/", 1200);
+await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "falha de rede reinicia a tentativa com nova página");
 
 b.setStep("usuário não autorizado");
 tokenMode = "not_allowed";
