@@ -109,6 +109,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "produção exige API_PAYMENTS_PRODUCTION_APPROVED=true (autorização operacional)"
                 )
+            if not self.abacatepay_split_enabled:
+                raise ValueError(
+                    "produção exige API_ABACATEPAY_SPLIT_ENABLED=true "
+                    "(Pix real sem split é bloqueado)"
+                )
         secret = self.abacatepay_webhook_secret
         if secret is not None and len(secret.get_secret_value()) < 32:
             raise ValueError("API_ABACATEPAY_WEBHOOK_SECRET precisa ter ao menos 32 caracteres")

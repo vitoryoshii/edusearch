@@ -260,6 +260,13 @@ class PaymentsService:
         splits = None
         split_status = "not_applicable"
         sacc = None
+        production = self._env == "production"
+        if production and not self._settings.abacatepay_split_enabled:
+            # Nunca cria um Pix real sem divisão automática explicitamente habilitada.
+            raise service_unavailable(
+                "split_required",
+                "O recebimento do professor ainda não está pronto para pagamentos.",
+            )
         if self._settings.abacatepay_split_enabled:
             with self._db.user_transaction(user) as conn, as_connection_role(conn):
                 sacc = PaymentsRepository(conn).payout_account_of(
@@ -267,7 +274,36 @@ class PaymentsService:
                 )
             if sacc:
                 splits = [{"subAccountId": sacc, "amount": intent["teacher_share_cents"]}]
+                if production:
+                    try:
+                        sub = gateway.get_sub_account(sacc)
+                        if (
+                            sub.id != sacc
+                            or sub.external_id != str(intent["teacher_id"])
+                            or (sub.dev_mode is not None and sub.dev_mode != gateway.dev_mode)
+                        ):
+                            raise InvalidGatewayResponseError("subconta não pertence ao professor")
+                    except (
+                        GatewayUnavailableError,
+                        GatewayAuthError,
+                        GatewayRejectedError,
+                        InvalidGatewayResponseError,
+                    ) as exc:
+                        # Não existe cobrança externa neste ponto: não há fallback sem split.
+                        with self._db.user_transaction(user) as conn, as_connection_role(conn):
+                            PaymentsRepository(conn).set_split(
+                                intent["id"], sacc, intent["teacher_share_cents"], "failed"
+                            )
+                        raise service_unavailable(
+                            "payout_account_not_ready",
+                            "O recebimento do professor não pôde ser validado agora.",
+                        ) from exc
             else:
+                if production:
+                    raise service_unavailable(
+                        "payout_account_required",
+                        "O professor ainda não está habilitado para receber este pagamento.",
+                    )
                 split_status = "unavailable"  # professor sem subconta: sem repasse automático
         try:
             charge = gateway.create_pix(
@@ -280,8 +316,17 @@ class PaymentsService:
             )
             if splits:
                 split_status = "pending"
-        except SplitNotEnabledError:
-            # Capacidade bloqueada na conta: cobra sem split e registra (sem fingir repasse).
+        except SplitNotEnabledError as exc:
+            if production:
+                # 400 conhecido: a cobrança com split foi recusada. Não tenta outra sem ``splits``.
+                with self._db.user_transaction(user) as conn, as_connection_role(conn):
+                    PaymentsRepository(conn).set_split(
+                        intent["id"], sacc, intent["teacher_share_cents"], "failed"
+                    )
+                raise service_unavailable(
+                    "split_required", "O split obrigatório não foi aceito pelo gateway."
+                ) from exc
+            # Sandbox mantém o fallback de demonstração, sem fingir repasse.
             logger.warning(
                 "split indisponível na AbacatePay; cobrança sem split (intent=%s)", intent["id"]
             )
@@ -564,11 +609,13 @@ class PaymentsService:
         if not self._settings.abacatepay_split_enabled:
             return PayoutAccountOut(status="split_unavailable")
         with self._db.user_transaction(user) as conn:
-            row = PaymentsRepository(conn).own_payout(user.id)
+            if "teacher" not in ProfileRepository(conn).list_roles(user.id):
+                raise forbidden("role_required", "Disponível apenas para contas de professor.")
+            row = PaymentsRepository(conn).own_payout(user.id, self._env)
         if row is None:
             return PayoutAccountOut(status="not_configured")
         return PayoutAccountOut(
-            status="active",
+            status=row["status"],
             environment=row["environment"],
             tax_id_last4=row["tax_id_last4"],
             created_at=row["created_at"],
@@ -585,6 +632,31 @@ class PaymentsService:
         with self._db.user_transaction(user) as conn:
             if "teacher" not in ProfileRepository(conn).list_roles(user.id):
                 raise forbidden("role_required", "Disponível apenas para contas de professor.")
+            existing = PaymentsRepository(conn).own_payout(user.id, self._env)
+        if existing is not None:
+            # Evita cadastrar outro CPF/CNPJ para o mesmo professor/ambiente por repetição ou troca
+            # de formulário. O identificador local continua sendo a fonte de verdade do recebedor.
+            try:
+                sub = gateway.get_sub_account(existing["sub_account_id"])
+            except (
+                GatewayUnavailableError,
+                GatewayAuthError,
+                GatewayRejectedError,
+                InvalidGatewayResponseError,
+            ) as exc:
+                raise service_unavailable(
+                    "payout_account_not_ready",
+                    "Não foi possível validar a conta de recebimentos agora.",
+                ) from exc
+            if (
+                sub.external_id != str(user.id)
+                or sub.tax_id_last4 != existing["tax_id_last4"]
+                or (sub.dev_mode is not None and sub.dev_mode != gateway.dev_mode)
+            ):
+                raise service_unavailable(
+                    "payout_account_not_ready", "A conta de recebimentos não pôde ser validada."
+                )
+            return self.payout_account(user)
         try:
             sub = gateway.create_sub_account(
                 name=data.legal_name, tax_id=data.tax_id, external_id=str(user.id)
@@ -601,8 +673,18 @@ class PaymentsService:
             raise service_unavailable(
                 "payment_gateway_error", "Gateway indisponível. Tente de novo."
             ) from exc
+        if (
+            sub.external_id != str(user.id)
+            or sub.tax_id_last4 != data.tax_id[-4:]
+            or (sub.dev_mode is not None and sub.dev_mode != gateway.dev_mode)
+        ):
+            raise ApiError(
+                422,
+                "payout_rejected",
+                "O gateway devolveu uma subconta incompatível com o professor.",
+            )
         with self._db.user_transaction(user) as conn, as_connection_role(conn):
-            PaymentsRepository(conn).payout_upsert(sub.id, data.tax_id[-4:], self._env)
+            PaymentsRepository(conn).payout_upsert(sub.id, sub.tax_id_last4, self._env)
         return self.payout_account(user)
 
 

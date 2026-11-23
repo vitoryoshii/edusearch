@@ -300,13 +300,18 @@ Detalhes, estados, casos difíceis e variáveis em [payments.md](payments.md). I
 | GET | `/v1/payments/{id}` | participantes; pendente → servidor recria/concilia |
 | POST | `/v1/payments/{id}/simulate` | só sandbox (Modo Teste) |
 | GET | `/v1/me/payments` | histórico |
-| GET/PUT | `/v1/me/payout-account` | professor: subconta para split (só os 4 últimos dígitos ficam salvos) |
+| GET/PUT | `/v1/me/payout-account` | professor: subconta para split, isolada por ambiente (só os 4 últimos dígitos ficam salvos; `externalId` é o JWT do próprio professor) |
 | POST | `/v1/payments/webhooks/abacatepay` | público; segredo + HMAC-SHA256 do corpo bruto |
 | GET | `/v1/me/teacher-finance?period=30d` | professor; agregados e histórico próprios, em centavos; nunca saldo disponível |
 | GET | `/v1/me/commission-progress` | professor; política/versionamento e progresso próprio, derivados do JWT; sem saldo, repasse ou alteração de comissão |
 
 `GET /v1/me/lessons`: `status` agora inclui `awaiting_payment` e `expired`; `is_test` é `false`
 para aulas pagas, que trazem `payment {id, status, amount_cents}`.
+
+Em Production, `POST /v1/payments/checkout` exige split habilitado, subconta ativa do mesmo ambiente
+e validação autenticada do recebedor no gateway. Os erros operacionais `split_required`,
+`payout_account_required` e `payout_account_not_ready` retornam 503 sem criar um Pix alternativo sem
+split. `teacher_share_cents` continua sendo parcela atribuída, não saldo ou saque disponível.
 
 ## Implementado na Fase 6.3: base de comissão progressiva
 

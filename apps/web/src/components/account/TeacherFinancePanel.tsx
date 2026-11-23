@@ -81,7 +81,7 @@ export function TeacherFinancePanel() {
                 <div className="space-y-3">
                   <Card>
                     <h3 className="font-semibold text-fg-strong">Conta de recebimentos</h3>
-                    <p className="mt-2 text-sm text-fg-muted">{payout.status === "active" ? `Conta configurada (final ${payout.tax_id_last4 ?? "—"}).` : payout.status === "split_unavailable" ? "Split e repasses automáticos ainda não estão habilitados." : "Conta de recebimentos ainda não configurada."}</p>
+                    <p className="mt-2 text-sm text-fg-muted">{payout.status === "active" ? `Conta configurada e validada neste ambiente (final ${payout.tax_id_last4 ?? "—"}). Valores atribuídos não representam saldo disponível ou saque.` : payout.status === "disabled" ? "A conta de recebimentos foi desabilitada pelo gateway e não pode receber novos Pix." : payout.status === "split_unavailable" ? "Split e repasses automáticos ainda não estão habilitados." : "Conta de recebimentos ainda não configurada."}</p>
                   </Card>
                   <Card>
                     <h3 className="font-semibold text-fg-strong">Situação das aulas</h3>

@@ -128,7 +128,7 @@ class PayoutAccountIn(BaseModel):
 
 
 class PayoutAccountOut(BaseModel):
-    status: Literal["split_unavailable", "not_configured", "active"]
+    status: Literal["split_unavailable", "not_configured", "active", "disabled"]
     environment: Literal["sandbox", "production"] | None = None
     tax_id_last4: str | None = None
     created_at: datetime | None = None

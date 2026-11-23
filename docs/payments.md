@@ -11,8 +11,10 @@ Produção depende de aprovação operacional, jurídica e financeira (ver "Chec
 - Valor = `teacher_profiles.price_cents` (por aula, qualquer duração — regra do cadastro do
   professor; **validar com o negócio**). Comissão 15% / professor 85%, em centavos inteiros,
   **congelados na reserva**. Tarifa do gateway (`platformFee`) registrada à parte.
-- Split para a subconta do professor (`data.splits`) **só quando habilitado** na conta pela
-  AbacatePay. Sem habilitação: `split_status = unavailable` e nenhum repasse é simulado.
+- No Sandbox, split para a subconta do professor (`data.splits`) só é enviado quando habilitado; sem
+  habilitação, `split_status = unavailable` e nenhum repasse é simulado. Em **Production**, split é
+  obrigatório: sem capacidade habilitada, subconta ativa do ambiente e validação autenticada do
+  recebedor, a API falha fechada e não cria Pix sem `splits`.
 - Reembolsos: registrados como **solicitações** (`refund_requests`) para a operação executar.
   Não há reembolso automático.
 - Aulas de teste do piloto (Fase 3A) continuam iguais (`is_test = true`, sem cobrança).
@@ -24,10 +26,17 @@ Produção depende de aprovação operacional, jurídica e financeira (ver "Chec
 | Criar Pix | `POST https://api.abacatepay.com/v2/transparents/create` `{"method":"PIX","data":{amount, description, expiresIn, externalId, metadata, splits?}}` |
 | Consultar | `GET /v2/transparents/check?id=pix_char_…` |
 | Simular pagamento (só Modo Teste) | `POST /v2/transparents/simulate-payment?id=…` |
-| Subconta do professor | `POST /v2/sub-accounts/create` `{name, taxId, externalId}` |
+| Criar subconta do professor | `POST /v2/sub-accounts/create` `{name, taxId, externalId}` |
+| Validar subconta antes do Pix Production | `GET /v2/sub-accounts/get?id=sacc_…` |
 | Reembolso (operação) | `POST /v2/transparents/refund` `{id, reason}` |
 
 - O ambiente vem da **chave**: `abc_dev_…` = Modo Teste; `abc_prod_…` = produção.
+- A resposta autenticada de subconta precisa confirmar o mesmo `externalId` do professor. A chave
+  usada na consulta é a prova do ambiente; quando `devMode` vier na resposta, ele também é conferido.
+- A AbacatePay documenta que o split de Pix credita a subconta após o pagamento, mas o webhook Pix
+  não traz uma liquidação individual conciliável. Por segurança, EduSearch mantém `split_status`
+  como `pending` até existir evidência verificável do provedor; pagamento da aula não é saldo nem
+  saque disponível para o professor.
 - `externalId` = id da cobrança interna (`payment_intents.id`). A AbacatePay devolve a cobrança
   pendente existente para o mesmo `externalId`: **repetir a criação nunca duplica o Pix**.
 - Nada da API v1 foi reaproveitado.
@@ -84,6 +93,8 @@ O horário fica bloqueado (EXCLUDE) em `scheduled` e `awaiting_payment`.
 | Dois alunos no mesmo horário | EXCLUDE no banco → 409 `slot_unavailable` |
 | Rede cai após criar o Pix | intent fica pendente sem cobrança; a próxima consulta recupera pelo `externalId` (sem duplicar) |
 | Gateway recusa a criação | intent `failed`, horário liberado, 503 para o app |
+| Production sem split/subconta válida | 503 operacional, sem chamada Pix sem `splits`; a reserva segue pendente para tentativa idempotente depois da regularização |
+| Split Production recusado | `split_status = failed`, 503 operacional; nunca há segunda tentativa sem `splits` |
 | Webhook forjado / sem assinatura / segredo errado | 401, nada muda |
 | Webhook do outro ambiente (`devMode` ≠ estágio) | ignorado |
 | Webhook repetido (mesmo id) | `duplicate`, nada repetido |
@@ -113,7 +124,8 @@ O horário fica bloqueado (EXCLUDE) em `scheduled` e `awaiting_payment`.
 
 Erros: `payments_disabled` (403), `payments_not_configured` (503), `slot_unavailable` (409),
 `idempotency_conflict` (409), `price_not_set` (409), `payment_gateway_error` (503),
-`sandbox_only` (403), `split_unavailable` (409), `invalid_webhook` (401).
+`sandbox_only` (403), `split_unavailable` (409), `split_required` / `payout_account_required` /
+`payout_account_not_ready` (503), `invalid_webhook` (401).
 
 ## Variáveis de ambiente
 
@@ -211,6 +223,10 @@ Rollback: `supabase/rollback/20261122_fase_5_down.sql` (testado: o catálogo vol
 - [ ] Validação jurídica (termos de pagamento, reembolso, intermediação) e financeira.
 - [ ] Preço por aula vs. por duração confirmado com o negócio.
 - [ ] Split habilitado pelo suporte da AbacatePay e testado no Modo Teste.
+- [ ] Resposta autenticada de `GET /v2/sub-accounts/get` confirmada para a subconta Production do
+  professor de homologação, com `externalId` correspondente ao usuário EduSearch.
+- [ ] Transação controlada formalmente autorizada: valor, professor/subconta, taxa, id da cobrança,
+  evidência de split no provedor e resultado da conciliação registrados antes de expor Production.
 - [ ] Revisão LGPD do CPF/CNPJ do professor.
 - [ ] Chave `abc_prod_` cadastrada **só** na Vercel (Production), webhook de produção com segredo novo.
 - [ ] `API_PAYMENTS_PRODUCTION_APPROVED=true` e `VITE_STAGE_PAYMENTS=production` (documentos publicados).
@@ -224,3 +240,5 @@ Rollback: `supabase/rollback/20261122_fase_5_down.sql` (testado: o catálogo vol
 - Reservas vencidas são liberadas quando alguém consulta horários/checkout (sem cron). A
   conciliação de cobranças esquecidas depende de consulta; um job periódico fica para a operação.
 - Reembolsos são solicitações; a execução no gateway é manual (operação).
+- Não há ainda evento/consulta de liquidação do split por cobrança integrado à API. Por isso nenhum
+  valor de `teacher_share_cents` é exibido como recebido, disponível ou sacável.

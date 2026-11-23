@@ -60,7 +60,7 @@ export type CheckoutRequest = {
 };
 
 export type PayoutAccount = {
-  status: "split_unavailable" | "not_configured" | "active";
+  status: "split_unavailable" | "not_configured" | "active" | "disabled";
   environment?: "sandbox" | "production" | null;
   tax_id_last4?: string | null;
   created_at?: string | null;
