@@ -69,11 +69,16 @@ function AgendaPage() {
         </QueryContent>
         <CalendarConnectionCard />
         <AvailabilityEditor />
-        <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-fg">Para consultar todas as aulas e pagamentos, acesse Minhas aulas.</p>
-          <Link to="/conta/aulas" className={buttonClasses({ variant: "secondary", size: "sm", className: "shrink-0" })}>
-            Ver minhas aulas
-          </Link>
+        <Card className="border-primary/20 bg-primary-soft/40">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="font-semibold text-fg-strong">Acompanhe suas aulas</h2>
+              <p className="mt-1 text-sm leading-relaxed text-fg-muted">Consulte os detalhes, o Google Meet e pagamentos de cada reserva em Minhas aulas.</p>
+            </div>
+            <Link to="/conta/aulas" className={buttonClasses({ variant: "secondary", size: "sm", className: "w-full sm:w-auto" })}>
+              Ver minhas aulas
+            </Link>
+          </div>
         </Card>
       </div>
     </>
@@ -180,24 +185,24 @@ function AvailabilityEditor() {
   const update = (i: number, patch: Partial<AvailabilityWindow>) => setDraft(windows.map((w, j) => (j === i ? { ...w, ...patch } : w)));
 
   return (
-    <Card data-testid="availability-card">
-      <h2 className="text-lg font-semibold text-fg-strong">Disponibilidade semanal</h2>
-      <p className="mt-1 text-sm text-fg-muted">Horários de Brasília, de 15 em 15 minutos. Alunos só podem reservar dentro destas janelas.</p>
+    <Card data-testid="availability-card" className="overflow-hidden">
+      <div className="flex flex-col gap-1 border-b border-line pb-4">
+        <h2 className="text-lg font-semibold text-fg-strong">Disponibilidade semanal</h2>
+        <p className="max-w-2xl text-sm leading-relaxed text-fg-muted">Horários de Brasília, de 15 em 15 minutos. Alunos só podem reservar dentro destas janelas.</p>
+      </div>
       <div className="mt-4">
         <QueryContent query={state} loading="spinner">
           {() => (
-            <div className="space-y-3">
-              {windows.length === 0 && <p className="text-sm text-fg-muted">Nenhuma janela cadastrada.</p>}
+            <div className="space-y-4">
+              {windows.length === 0 && <p className="rounded-card border border-dashed border-line-strong bg-surface-muted px-4 py-5 text-sm text-fg-muted">Nenhuma janela cadastrada. Adicione o primeiro período em que você aceita aulas.</p>}
               {windows.map((w, i) => (
                 /*
-                  Sem largura mínima implícita: o wrapper de cada campo é item de grid/flex com
-                  min-width:auto, e input type=time não encolhe abaixo do conteúdo ("09:00 AM" em
-                  navegadores en-US). Por isso min-w-0 + trilhas minmax(0,1fr).
-                  - Celular: [Dia ......][lixeira] / Início e Fim empilhados (< 400px) ou lado a lado.
-                  - sm+: uma linha [Dia][Início][Fim][lixeira] (sm:contents + order).
+                  Cartão por janela: a divisão evita a aparência de formulário corrido e mantém o
+                  input nativo de hora seguro no Chrome en-US. Em telas muito estreitas ele empilha
+                  sem esconder conteúdo; a partir de 400px o intervalo fica lado a lado.
                 */
-                <div key={i} className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end" data-testid="availability-row">
-                  <div className="flex min-w-0 items-end gap-2 sm:contents">
+                <section key={i} className="rounded-card border border-line bg-surface-muted/60 p-3 shadow-card sm:p-4" data-testid="availability-row">
+                  <div className="flex min-w-0 items-end gap-2">
                     <Select
                       label="Dia"
                       value={w.weekday}
@@ -205,31 +210,33 @@ function AvailabilityEditor() {
                       options={WEEKDAY_ORDER.map((d) => ({ value: d, label: WEEKDAY_LABEL[d] }))}
                       className="min-w-0 flex-1"
                     />
-                    <Button variant="ghost" size="sm" className="mb-1 shrink-0 sm:order-last" aria-label={`Remover janela de ${WEEKDAY_LABEL[w.weekday]}`} onClick={() => setDraft(windows.filter((_, j) => j !== i))}>
+                    <Button variant="ghost" size="sm" className="mb-1 shrink-0 text-fg-muted hover:bg-danger-soft hover:text-danger-text" aria-label={`Remover janela de ${WEEKDAY_LABEL[w.weekday]}`} onClick={() => setDraft(windows.filter((_, j) => j !== i))}>
                       <TrashIcon className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="grid min-w-0 grid-cols-1 gap-2 min-[400px]:grid-cols-2 sm:contents">
+                  <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 min-[400px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[400px]:items-end">
                     <Input label="Início" className="min-w-0" type="time" step={900} value={w.start} onChange={(e) => update(i, { start: e.target.value })} />
+                    <span className="hidden pb-3 text-center text-lg font-semibold text-fg-muted min-[400px]:block" aria-hidden="true">→</span>
                     <Input label="Fim" className="min-w-0" type="time" step={900} value={w.end === "24:00" ? "23:59" : w.end} onChange={(e) => update(i, { end: e.target.value === "23:59" ? "24:00" : e.target.value })} />
                   </div>
-                </div>
+                </section>
               ))}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Button variant="secondary" size="sm" leftIcon={<PlusIcon className="h-4 w-4" />} onClick={() => setDraft([...windows, { weekday: "seg", start: "09:00", end: "12:00" }])} disabled={windows.length >= 28}>
+              <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <Button variant="secondary" size="sm" leftIcon={<PlusIcon className="h-4 w-4" />} onClick={() => setDraft([...windows, { weekday: "seg", start: "09:00", end: "12:00" }])} disabled={windows.length >= 28} className="w-full sm:w-auto">
                   Adicionar janela
                 </Button>
                 <Button
-                  size="sm"
+                  size="md"
                   disabled={draft === null || issue !== null}
                   loading={save.pending}
                   onClick={() => void save.run().catch((e) => toast({ tone: "error", title: "Não foi possível salvar", description: describeError(e) }))}
+                  className="w-full sm:w-auto"
                 >
                   Salvar disponibilidade
                 </Button>
               </div>
               {draft !== null && issue && (
-                <p role="alert" className="text-sm text-danger-text">
+                <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-sm font-medium text-danger-text">
                   {issue}
                 </p>
               )}
