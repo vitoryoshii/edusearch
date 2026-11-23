@@ -600,8 +600,10 @@ await b.viewport(1280);
 tokenDelayMs = 0;
 await check(tokenRequests.at(-1)?.nonceOk === true, "Supabase recebe o nonce ORIGINAL (SHA-256 confere com o claim)");
 await check(tokenRequests.at(-1)?.body.provider === "google" && !("access_token" in tokenRequests.at(-1).body), "signInWithIdToken com provider google, sem access token do Google");
-await waitFor(`window.__gis.config.nonce !== ${JSON.stringify(nonceBefore)}`);
-await check((await b.evaluate(`window.__gis.config.nonce`)) !== nonceBefore, "nova tentativa recebe um novo nonce");
+await check((await b.evaluate(`window.__gis.config.nonce`)) === nonceBefore, "falha não reinicializa o GIS nem troca nonce no mesmo documento");
+await act("reiniciar tentativa de login", `(() => { const button = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Atualizar página e tentar novamente')); button?.click(); return !!button; })()`);
+await b.go(testBase + "/", 1200); // nova página = nova tentativa/nonce, sem reutilização insegura
+await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "nova tentativa segura carrega uma nova página");
 
 b.setStep("reutilização de token");
 const before = tokenRequests.length;
@@ -616,6 +618,8 @@ await b.evaluate(`document.querySelector('[data-fake-gis]').click()`);
 await check(await waitFor(failureIs("network")), "falha de rede tratada com mensagem acessível");
 await check(await b.evaluate(`!!document.querySelector('[role=alert]')`), "erros anunciados com role=alert");
 ignoreExpectedNetworkErrors();
+await b.go(testBase + "/", 1200);
+await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "falha de rede reinicia a tentativa com nova página");
 
 b.setStep("usuário não autorizado");
 tokenMode = "not_allowed";

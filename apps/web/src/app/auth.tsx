@@ -61,6 +61,7 @@ const AuthContext = createContext<Ctx | null>(null);
 // Nonces só em memória (nunca em storage). Um por tentativa, uso único.
 const vault = new NonceVault();
 let current: { hashed: string; issuedAt: number } | null = null;
+let preparingNonce: Promise<{ hashed: string; issuedAt: number }> | null = null;
 
 function hasStoredSession() {
   try {
@@ -158,10 +159,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const now = Date.now();
     // StrictMode/remontagem: reaproveita o nonce ainda não usado da tentativa atual.
     if (current && now - current.issuedAt < NONCE_MAX_AGE_MS / 2) return current.hashed;
-    const pair = await createNonce();
-    vault.remember(pair, now);
-    current = { hashed: pair.hashed, issuedAt: now };
-    return pair.hashed;
+    // Duas montagens/efeitos concorrentes compartilham a MESMA tentativa.
+    // Só o hash vai ao GIS; o valor original fica exclusivamente no cofre em memória.
+    preparingNonce ??= createNonce().then((pair) => {
+      const issuedAt = Date.now();
+      vault.remember(pair, issuedAt);
+      current = { hashed: pair.hashed, issuedAt };
+      return current;
+    });
+    try {
+      return (await preparingNonce).hashed;
+    } finally {
+      preparingNonce = null;
+    }
   }, []);
 
   const signInWithGoogleCredential = useCallback(
@@ -219,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     disableGisAutoSelect();
     vault.clear();
     current = null;
+    preparingNonce = null;
     if (userId) clearRoleIntent(userId);
     apply(null);
   }, [apply, client, profile?.id]);

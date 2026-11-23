@@ -3,8 +3,9 @@
  *
  * - O script oficial (https://accounts.google.com/gsi/client) é injetado uma
  *   única vez e só quando o login real está ativo.
- * - `initialize` é chamado uma vez por nonce: as montagens duplas do React
- *   StrictMode reaproveitam a mesma inicialização.
+ * - `initialize` é chamado uma única vez por documento. O GIS associa o nonce
+ *   à configuração global; tentar trocá-lo em uma remontagem gera callbacks
+ *   que não correspondem à tentativa original.
  * - O callback do GIS repassa a credencial apenas ao componente montado no
  *   momento. Respostas que chegam depois da desmontagem são descartadas.
  */
@@ -79,12 +80,12 @@ export function loadGis(timeoutMs = 15_000): Promise<GisId> {
 }
 
 let listener: ((response: CredentialResponse) => void) | null = null;
-let initializedWith: string | null = null;
+let initialized = false;
 
-/** Inicializa o GIS para um nonce (hash). Repetir com o mesmo nonce não faz nada. */
+/** Inicializa o GIS uma vez; renderizações posteriores só redesenham o botão. */
 export function initializeGis(gis: GisId, opts: { clientId: string; hashedNonce: string }) {
-  if (initializedWith === opts.hashedNonce) return;
-  initializedWith = opts.hashedNonce;
+  if (initialized) return;
+  initialized = true;
   gis.initialize({
     client_id: opts.clientId,
     nonce: opts.hashedNonce,

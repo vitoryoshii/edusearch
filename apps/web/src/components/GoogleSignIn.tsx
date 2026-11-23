@@ -68,8 +68,10 @@ function GisButton({ next }: { next: string }) {
   const slot = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [failure, setFailure] = useState<AuthFailure | null>(null);
-  // Muda a cada nova tentativa: gera novo nonce e redesenha o botão.
-  const [attempt, setAttempt] = useState(0);
+  // O GIS é global no documento. O nonce também fica fixo nesta página: depois
+  // de consumido, uma nova tentativa segura recarrega o documento.
+  const initialNonce = useRef<Promise<string> | null>(null);
+  const signing = useRef(false);
 
   /*
    * O resultado de um login em andamento pertence ao COMPONENTE, não a uma
@@ -87,6 +89,8 @@ function GisButton({ next }: { next: string }) {
   useEffect(() => {
     return setCredentialListener((response) => {
       if (!mounted.current) return; // resposta atrasada após desmontagem: descartada
+      if (signing.current) return; // callback duplicado do GIS não inicia outra troca
+      signing.current = true;
       setPhase("signing");
       setFailure(null);
       signInWithGoogleCredential(response.credential).then((result) => {
@@ -98,7 +102,7 @@ function GisButton({ next }: { next: string }) {
         }
         setFailure(result.failure);
         setPhase("ready");
-        setAttempt((n) => n + 1); // novo nonce para a próxima tentativa
+        signing.current = false;
       });
     });
   }, [signInWithGoogleCredential, endDemo, navigate, next]);
@@ -142,13 +146,15 @@ function GisButton({ next }: { next: string }) {
     [resolved],
   );
 
-  // Inicializa e desenha o botão oficial: primeira carga, nova tentativa ou troca de tema.
+  // Inicializa e desenha o botão oficial. Tema/largura só redesenham o botão:
+  // nunca criam nonce nem chamam initialize novamente.
   useEffect(() => {
     let active = true;
     (async () => {
       try {
         const gis = await loadGis();
-        const hashedNonce = await prepareNonce();
+        initialNonce.current ??= prepareNonce();
+        const hashedNonce = await initialNonce.current;
         if (!active || !slot.current) return;
         initializeGis(gis, { clientId: AUTH_CONFIG.googleClientId, hashedNonce });
         gisRef.current = gis;
@@ -165,7 +171,7 @@ function GisButton({ next }: { next: string }) {
     return () => {
       active = false;
     };
-  }, [attempt, prepareNonce, draw]);
+  }, [prepareNonce, draw]);
 
   /*
    * O iframe do Google tem largura FIXA em px. Quando o contêiner muda (rotação, teclado,
@@ -236,7 +242,7 @@ function GisButton({ next }: { next: string }) {
             shape="pill"
             size="sm"
             className={AUTH_CTA_CLASS}
-            onClick={() => { setFailure(null); setPhase("loading"); setAttempt((n) => n + 1); }}
+            onClick={() => { setFailure(null); setPhase("loading"); }}
           >
             Tentar carregar novamente
           </Button>
@@ -257,6 +263,17 @@ function GisButton({ next }: { next: string }) {
             <span className="text-fg">{msg.description}</span>
           </span>
         </div>
+      )}
+      {failure && failure !== "gis_unavailable" && (
+        <Button
+          variant="secondary"
+          shape="pill"
+          size="sm"
+          className="mt-3 w-full"
+          onClick={() => window.location.reload()}
+        >
+          Atualizar página e tentar novamente
+        </Button>
       )}
     </div>
   );
