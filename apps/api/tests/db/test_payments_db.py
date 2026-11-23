@@ -328,6 +328,11 @@ def people(users, make_token, client, admin):
     yield data
     # ``withdrawal_requests`` preserva histórico com FK RESTRICT; os dados de
     # teste precisam sair antes do fixture ``users`` remover os perfis.
+    admin.execute(
+        "delete from private.withdrawal_audit_log where withdrawal_id in "
+        "(select id from public.withdrawal_requests where teacher_id = %s)",
+        (teacher,),
+    )
     admin.execute("delete from public.withdrawal_requests where teacher_id = %s", (teacher,))
 
 

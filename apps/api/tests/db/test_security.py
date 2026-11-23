@@ -224,6 +224,9 @@ def test_withdrawal_history_is_private_and_not_writable(admin, users, as_user, a
                     (owner, uuid.uuid4()),
                 )
     finally:
+        admin.execute(
+            "delete from private.withdrawal_audit_log where withdrawal_id = %s", (withdrawal_id,)
+        )
         admin.execute("delete from public.withdrawal_requests where id = %s", (withdrawal_id,))
 
 
