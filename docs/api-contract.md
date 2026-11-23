@@ -313,6 +313,17 @@ e validação autenticada do recebedor no gateway. Os erros operacionais `split_
 `payout_account_required` e `payout_account_not_ready` retornam 503 sem criar um Pix alternativo sem
 split. `teacher_share_cents` continua sendo parcela atribuída, não saldo ou saque disponível.
 
+## Recebimentos e saques V1
+
+| Método | Rota | Resumo |
+|---|---|---|
+| GET | `/v1/me/payout-balance` | professor: saldo `available`/`blocked` da subconta validada no gateway |
+| GET | `/v1/me/withdrawals` | professor: histórico próprio por ambiente |
+| POST | `/v1/me/withdrawals` | `{amount_cents,idempotency_key}`; o servidor define subconta/destino/externalId |
+
+Saques são desligados por padrão e só podem ocorrer em Production autorizada. O status final vem de
+webhook autenticado `transfer.completed` ou `transfer.failed`, nunca apenas da resposta inicial.
+
 ## Implementado na Fase 6.3: base de comissão progressiva
 
 Política comercial versionada, snapshot por cobrança e endpoint de transparência estão documentados

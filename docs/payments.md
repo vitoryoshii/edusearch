@@ -234,6 +234,19 @@ Rollback: `supabase/rollback/20261122_fase_5_down.sql` (testado: o catálogo vol
 
 ## Limitações conhecidas
 
+### Recebimentos e saques V1
+
+- `GET /v1/me/payout-balance` consulta a subconta autenticada e retorna somente os saldos reais
+  `available` e `blocked`; eles não são calculados a partir das aulas.
+- `POST /v1/me/withdrawals` aceita apenas `amount_cents` (mínimo 100) e `idempotency_key`.
+  Professor, ambiente, subconta e destino CPF/CNPJ são derivados pelo servidor. O destino nunca é
+  uma chave Pix enviada pelo navegador.
+- Saques ficam desligados por padrão com `API_SUBACCOUNT_WITHDRAWALS_ENABLED=false` e são bloqueados
+  fora de Production. Uma solicitação é `pending` até webhook autenticado `transfer.completed` ou
+  `transfer.failed`; HTTP 200 da solicitação não é liquidação.
+- Após timeout o mesmo `externalId` é reutilizado. Não crie nova chave enquanto o resultado estiver
+  desconhecido. A AbacatePay aplica mínimo de R$1,00 e intervalo de 30 segundos por subconta.
+
 - A chave pública HMAC da AbacatePay é configuração (`API_ABACATEPAY_WEBHOOK_PUBLIC_KEY`): copie
   da documentação oficial. Sem ela o webhook recusa tudo (falha fechada) e a confirmação acontece
   pela conciliação quando o app consulta.

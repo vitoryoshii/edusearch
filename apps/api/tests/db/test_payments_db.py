@@ -52,6 +52,10 @@ class FakeAbacate:
         self.split_enabled = True
         self.sub_accounts: dict[str, dict] = {}
         self.sub_account_by_tax: dict[tuple[bool, str], str] = {}
+        self.transfers: dict[str, dict] = {}
+        self.withdraw_calls = 0
+        self.withdraw_timeout = False
+        self.withdraw_rejected = False
         self.last_create_body: dict | None = None
 
     def _ok(self, data) -> httpx.Response:
@@ -135,6 +139,7 @@ class FakeAbacate:
                     "taxId": tax,
                     "externalId": body["externalId"],
                     "devMode": dev_mode,
+                    "balance": {"available": 0, "blocked": 0},
                 },
             )
             return self._ok(account)
@@ -145,6 +150,33 @@ class FakeAbacate:
                     400, json={"data": None, "success": False, "error": "Subconta não encontrada"}
                 )
             return self._ok(account)
+        if path == "/sub-accounts/withdraw":
+            body = json.loads(request.content)
+            account = self.sub_accounts.get(body["id"])
+            if account is None or account["devMode"] != dev_mode:
+                return httpx.Response(
+                    400, json={"data": None, "success": False, "error": "Subconta não encontrada"}
+                )
+            if self.withdraw_rejected:
+                return httpx.Response(
+                    400, json={"data": None, "success": False, "error": "Saldo insuficiente"}
+                )
+            ext = body["externalId"]
+            transfer = self.transfers.get(ext)
+            if transfer is None:
+                self.withdraw_calls += 1
+                transfer = {
+                    "id": f"tran_{uuid.uuid4().hex[:16]}",
+                    "externalId": ext,
+                    "amount": body["amount"],
+                    "status": "PENDING",
+                    "platformFee": 80,
+                }
+                self.transfers[ext] = transfer
+            if self.withdraw_timeout:
+                self.withdraw_timeout = False
+                raise httpx.ReadTimeout("resultado de saque desconhecido")
+            return self._ok(transfer)
         return httpx.Response(404)
 
     def pay(self, charge_id: str) -> None:
@@ -215,7 +247,7 @@ def abacate() -> FakeAbacate:
 def make_client(settings, verifier, api_database_url, google, cipher, abacate):
     clients: list[TestClient] = []
 
-    def _make(stage: str = "sandbox", split: bool = False) -> TestClient:
+    def _make(stage: str = "sandbox", split: bool = False, withdrawals: bool = False) -> TestClient:
         api_key = "abc_prod_teste" if stage == "production" else "abc_dev_teste"
         s = settings.model_copy(
             update={
@@ -228,6 +260,7 @@ def make_client(settings, verifier, api_database_url, google, cipher, abacate):
                 "abacatepay_webhook_secret": __import__("pydantic").SecretStr(SECRET),
                 "abacatepay_webhook_public_key": __import__("pydantic").SecretStr(PUBLIC_KEY),
                 "abacatepay_split_enabled": split,
+                "subaccount_withdrawals_enabled": withdrawals,
             }
         )
         gcal = GoogleCalendarClient(
@@ -291,7 +324,16 @@ def people(users, make_token, client, admin):
         == 200
     )
     publish(admin, teacher)
-    return {"teacher": teacher, "s1": s1, "s2": s2, "tokens": tokens}
+    data = {"teacher": teacher, "s1": s1, "s2": s2, "tokens": tokens}
+    yield data
+    # ``withdrawal_requests`` preserva histórico com FK RESTRICT; os dados de
+    # teste precisam sair antes do fixture ``users`` remover os perfis.
+    admin.execute(
+        "delete from private.withdrawal_audit_log where withdrawal_id in "
+        "(select id from public.withdrawal_requests where teacher_id = %s)",
+        (teacher,),
+    )
+    admin.execute("delete from public.withdrawal_requests where teacher_id = %s", (teacher,))
 
 
 def slot(
@@ -975,6 +1017,152 @@ def test_production_blocks_pix_without_validated_sub_account(make_client, people
     response = checkout(client, people, slot(client, people))
     assert response.status_code == 503 and response.json()["code"] == "payout_account_required"
     assert abacate.last_create_body is None and not abacate.charges
+
+
+# --------------------------------------------------------------------------- saques
+
+
+def transfer_webhook_body(
+    transfer: dict, *, event: str = "transfer.completed", event_id: str | None = None
+) -> bytes:
+    status = "COMPLETE" if event == "transfer.completed" else "FAILED"
+    return json.dumps(
+        {
+            "id": event_id or f"evt_{uuid.uuid4().hex}",
+            "event": event,
+            "apiVersion": 2,
+            "devMode": False,
+            "data": {"transfer": {**transfer, "status": status, "method": "PIX"}},
+        }
+    ).encode()
+
+
+def configure_production_payout(client, people, abacate) -> str:
+    token = auth(people["tokens"][people["teacher"]])
+    response = client.put(
+        "/v1/me/payout-account",
+        json={"legal_name": "Prof Paga", "tax_id": VALID_CPF},
+        headers=token,
+    )
+    assert response.status_code == 200, response.text
+    account = next(a for a in abacate.sub_accounts.values() if a["devMode"] is False)
+    account["balance"] = {"available": 5_000, "blocked": 300}
+    return token
+
+
+def test_withdrawals_are_gated_by_stage_and_operational_flag(make_client, people, abacate) -> None:
+    payload = {"amount_cents": 100, "idempotency_key": str(uuid.uuid4())}
+    sandbox = make_client("sandbox", split=True, withdrawals=True)
+    assert (
+        sandbox.post(
+            "/v1/me/withdrawals", json=payload, headers=auth(people["tokens"][people["teacher"]])
+        ).json()["code"]
+        == "withdrawals_disabled"
+    )
+    production = make_client("production", split=True, withdrawals=False)
+    assert (
+        production.post(
+            "/v1/me/withdrawals", json=payload, headers=auth(people["tokens"][people["teacher"]])
+        ).json()["code"]
+        == "withdrawals_disabled"
+    )
+    assert not abacate.transfers
+
+
+def test_withdrawal_idempotency_balance_and_transfer_webhooks(make_client, people, abacate) -> None:
+    client = make_client("production", split=True, withdrawals=True)
+    token = configure_production_payout(client, people, abacate)
+    assert client.get("/v1/me/payout-balance", headers=token).json() == {
+        "environment": "production",
+        "available_cents": 5_000,
+        "blocked_cents": 300,
+        "withdrawals_enabled": True,
+    }
+    too_much = client.post(
+        "/v1/me/withdrawals",
+        json={"amount_cents": 5_001, "idempotency_key": str(uuid.uuid4())},
+        headers=token,
+    )
+    assert too_much.status_code == 409 and too_much.json()["code"] == "insufficient_balance"
+
+    key = uuid.uuid4()
+    first = client.post(
+        "/v1/me/withdrawals",
+        json={"amount_cents": 1_000, "idempotency_key": str(key)},
+        headers=token,
+    )
+    assert first.status_code == 200 and first.json()["status"] == "pending"
+    again = client.post(
+        "/v1/me/withdrawals",
+        json={"amount_cents": 1_000, "idempotency_key": str(key)},
+        headers=token,
+    )
+    assert again.status_code == 200 and abacate.withdraw_calls == 1
+    conflict = client.post(
+        "/v1/me/withdrawals",
+        json={"amount_cents": 1_001, "idempotency_key": str(key)},
+        headers=token,
+    )
+    assert (
+        conflict.status_code == 409 and conflict.json()["code"] == "withdrawal_idempotency_conflict"
+    )
+
+    transfer = next(iter(abacate.transfers.values()))
+    body = transfer_webhook_body(transfer)
+    assert post_webhook(client, body).json()["outcome"] == "completed"
+    assert post_webhook(client, body).json()["outcome"] == "duplicate"
+    # Um evento posterior não regride uma transferência já concluída.
+    assert (
+        post_webhook(client, transfer_webhook_body(transfer, event="transfer.failed")).json()[
+            "outcome"
+        ]
+        == "already_processed"
+    )
+    history = client.get("/v1/me/withdrawals", headers=token).json()
+    assert len(history) == 1 and history[0]["status"] == "completed"
+
+
+def test_withdrawal_timeout_and_concurrent_retries_keep_one_order(
+    make_client, people, abacate, admin
+) -> None:
+    client = make_client("production", split=True, withdrawals=True)
+    token = configure_production_payout(client, people, abacate)
+    key = uuid.uuid4()
+    payload = {"amount_cents": 1_000, "idempotency_key": str(key)}
+    abacate.withdraw_timeout = True
+    first = client.post("/v1/me/withdrawals", json=payload, headers=token)
+    assert first.status_code == 200 and first.json()["status"] == "pending"
+
+    responses = []
+
+    def retry() -> None:
+        responses.append(client.post("/v1/me/withdrawals", json=payload, headers=token))
+
+    threads = [threading.Thread(target=retry) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert [response.status_code for response in responses] == [200, 200]
+    assert abacate.withdraw_calls == 1  # externalId persistido, nunca uma segunda ordem
+    rows = admin.execute(
+        "select id, external_id, gateway_transfer_id from public.withdrawal_requests "
+        "where teacher_id=%s and environment='production'",
+        (people["teacher"],),
+    ).fetchall()
+    assert len(rows) == 1 and rows[0]["gateway_transfer_id"] is not None
+
+
+def test_known_withdrawal_rejection_is_final_for_the_same_key(make_client, people, abacate) -> None:
+    client = make_client("production", split=True, withdrawals=True)
+    token = configure_production_payout(client, people, abacate)
+    abacate.withdraw_rejected = True
+    payload = {"amount_cents": 1_000, "idempotency_key": str(uuid.uuid4())}
+    rejected = client.post("/v1/me/withdrawals", json=payload, headers=token)
+    assert rejected.status_code == 503 and rejected.json()["code"] == "withdrawal_gateway_error"
+    assert client.get("/v1/me/withdrawals", headers=token).json()[0]["status"] == "failed"
+    assert client.post("/v1/me/withdrawals", json=payload, headers=token).status_code == 200
+    assert abacate.withdraw_calls == 0
 
 
 # --------------------------------------------------------------------------- RLS e isolamento

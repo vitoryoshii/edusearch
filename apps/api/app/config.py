@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     abacatepay_webhook_public_key: SecretStr | None = None
     # Split Pix com subcontas: só depois que o suporte da AbacatePay habilitar na conta.
     abacatepay_split_enabled: bool = False
+    # Saques são irreversíveis e ficam desligados até homologação financeira explícita.
+    subaccount_withdrawals_enabled: bool = False
     # Autorização operacional EXPLÍCITA para cobrar de verdade.
     payments_production_approved: bool = False
     payments_hold_seconds: int = Field(default=900, ge=300, le=3600)
