@@ -88,8 +88,11 @@ class PixCharge:
 @dataclass(frozen=True)
 class SubAccount:
     id: str
-    tax_id_digits: str
-    dev_mode: bool
+    tax_id_last4: str
+    external_id: str
+    # A documentação atual não garante ``devMode`` na subconta. Quando vier, ele é conferido;
+    # quando não vier, o ambiente é atestado pela chave usada na consulta autenticada.
+    dev_mode: bool | None
 
 
 def _iso(value: Any) -> datetime | None:
@@ -125,6 +128,29 @@ def _parse_charge(data: Any) -> PixCharge:
         platform_fee=fee if isinstance(fee, int) and not isinstance(fee, bool) else None,
         expires_at=_iso(data.get("expiresAt")),
         dev_mode=bool(data.get("devMode")),
+    )
+
+
+def _parse_sub_account(data: Any) -> SubAccount:
+    if not isinstance(data, dict):
+        raise InvalidGatewayResponseError("subconta ausente")
+    sub_account_id = data.get("id")
+    external_id = data.get("externalId")
+    digits = re.sub(r"\D", "", str(data.get("taxId") or ""))
+    if not isinstance(sub_account_id, str) or not _SACC_ID.match(sub_account_id):
+        raise InvalidGatewayResponseError("subconta sem id válido")
+    if not isinstance(external_id, str) or not external_id:
+        raise InvalidGatewayResponseError("subconta sem externalId")
+    if len(digits) not in {11, 14}:
+        raise InvalidGatewayResponseError("subconta sem CPF/CNPJ válido")
+    dev_mode = data.get("devMode")
+    if dev_mode is not None and not isinstance(dev_mode, bool):
+        raise InvalidGatewayResponseError("devMode da subconta inválido")
+    return SubAccount(
+        id=sub_account_id,
+        tax_id_last4=digits[-4:],
+        external_id=external_id,
+        dev_mode=dev_mode,
     )
 
 
@@ -237,14 +263,15 @@ class AbacatePayClient:
             "/sub-accounts/create",
             json={"name": name[:100], "taxId": tax_id, "externalId": external_id[:100]},
         )
-        if (
-            not isinstance(data, dict)
-            or not isinstance(data.get("id"), str)
-            or not _SACC_ID.match(data["id"])
-        ):
-            raise InvalidGatewayResponseError("subconta sem id")
-        digits = re.sub(r"\D", "", str(data.get("taxId") or tax_id))
-        return SubAccount(id=data["id"], tax_id_digits=digits, dev_mode=bool(data.get("devMode")))
+        return _parse_sub_account(data)
+
+    def get_sub_account(self, sub_account_id: str) -> SubAccount:
+        """Consulta autenticada usada para validar o recebedor antes do Pix de produção."""
+        if not _SACC_ID.match(sub_account_id):
+            raise ValueError("id de subconta inválido")
+        return _parse_sub_account(
+            self._request("GET", "/sub-accounts/get", params={"id": sub_account_id})
+        )
 
 
 # ---------------------------------------------------------------------- webhooks

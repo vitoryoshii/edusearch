@@ -50,7 +50,8 @@ class FakeAbacate:
         self.down = False
         self.timeout_after_create = False
         self.split_enabled = True
-        self.sub_accounts: dict[str, str] = {}
+        self.sub_accounts: dict[str, dict] = {}
+        self.sub_account_by_tax: dict[tuple[bool, str], str] = {}
         self.last_create_body: dict | None = None
 
     def _ok(self, data) -> httpx.Response:
@@ -61,6 +62,9 @@ class FakeAbacate:
             return httpx.Response(503, json={"data": None, "success": False, "error": "x"})
         path = request.url.path.removeprefix("/v2")
         q = parse_qs(urlsplit(str(request.url)).query)
+        dev_mode = (
+            request.headers.get("Authorization", "").removeprefix("Bearer ").startswith("abc_dev_")
+        )
         if path == "/transparents/create":
             body = json.loads(request.content)
             self.last_create_body = body
@@ -87,7 +91,7 @@ class FakeAbacate:
                     "id": cid,
                     "amount": data["amount"],
                     "status": "PENDING",
-                    "devMode": True,
+                    "devMode": dev_mode,
                     "brCode": f"00020126PIX{cid}",
                     "brCodeBase64": "data:image/png;base64,iVBORw0KGgo=",
                     "platformFee": 80,
@@ -121,8 +125,26 @@ class FakeAbacate:
                     400, json={"data": None, "success": False, "error": "Função não habilitada"}
                 )
             tax = body["taxId"]
-            sacc = self.sub_accounts.setdefault(tax, f"sacc_{uuid.uuid4().hex[:20]}")
-            return self._ok({"id": sacc, "name": body["name"], "taxId": tax, "devMode": True})
+            key = (dev_mode, tax)
+            sacc = self.sub_account_by_tax.setdefault(key, f"sacc_{uuid.uuid4().hex[:20]}")
+            account = self.sub_accounts.setdefault(
+                sacc,
+                {
+                    "id": sacc,
+                    "name": body["name"],
+                    "taxId": tax,
+                    "externalId": body["externalId"],
+                    "devMode": dev_mode,
+                },
+            )
+            return self._ok(account)
+        if path == "/sub-accounts/get":
+            account = self.sub_accounts.get(q["id"][0])
+            if account is None or account["devMode"] != dev_mode:
+                return httpx.Response(
+                    400, json={"data": None, "success": False, "error": "Subconta não encontrada"}
+                )
+            return self._ok(account)
         return httpx.Response(404)
 
     def pay(self, charge_id: str) -> None:
@@ -636,7 +658,7 @@ def test_teacher_finance_isolated_by_server_environment(
     assert [payment["environment"] for payment in sandbox_data["payments"]] == ["sandbox"]
 
     # O processo de produção aqui só lê o mesmo banco descartável; não aciona gateway ou cobrança.
-    production_client = make_client("production")
+    production_client = make_client("production", split=True)
     production_view = production_client.get("/v1/me/teacher-finance?period=30d", headers=token)
     assert production_view.status_code == 200
     production_data = production_view.json()
@@ -863,7 +885,8 @@ def test_split_with_authorized_sub_account(make_client, people, abacate, admin) 
         "tax_id_last4": "4725",
     }
     stored = admin.execute(
-        "select * from public.teacher_payout_accounts where teacher_id = %s", (people["teacher"],)
+        "select * from public.teacher_payout_accounts where teacher_id = %s and environment = 'sandbox'",
+        (people["teacher"],),
     ).fetchone()
     assert VALID_CPF not in json.dumps(stored, default=str)  # só os 4 últimos dígitos
     p = checkout(c, people, slot(c, people)).json()
@@ -878,7 +901,7 @@ def test_split_with_authorized_sub_account(make_client, people, abacate, admin) 
         c.get(f"/v1/payments/{p['id']}", headers=auth(people["tokens"][people["s1"]])).json()[
             "split_status"
         ]
-        == "credited"
+        == "pending"
     )
 
 
@@ -898,6 +921,60 @@ def test_split_unavailable_is_recorded_without_fake_payout(make_client, people, 
         make_client(split=False).get("/v1/me/payout-account", headers=auth(tk)).json()["status"]
         == "split_unavailable"
     )
+
+
+def test_production_split_requires_environment_bound_sub_account(
+    make_client, people, abacate, admin
+) -> None:
+    sandbox = make_client("sandbox", split=True)
+    production = make_client("production", split=True)
+    token = auth(people["tokens"][people["teacher"]])
+    payload = {"legal_name": "Prof Paga", "tax_id": VALID_CPF}
+
+    assert sandbox.put("/v1/me/payout-account", json=payload, headers=token).status_code == 200
+    assert production.put("/v1/me/payout-account", json=payload, headers=token).status_code == 200
+    accounts = admin.execute(
+        "select environment::text as environment, sub_account_id "
+        "from public.teacher_payout_accounts where teacher_id = %s order by environment",
+        (people["teacher"],),
+    ).fetchall()
+    assert [row["environment"] for row in accounts] == ["production", "sandbox"]
+    assert accounts[0]["sub_account_id"] != accounts[1]["sub_account_id"]
+
+    payment = checkout(production, people, slot(production, people)).json()
+    assert abacate.last_create_body["data"]["splits"] == [
+        {"subAccountId": accounts[0]["sub_account_id"], "amount": 6800}
+    ]
+    assert charge_of(abacate, payment)["devMode"] is False
+
+
+def test_production_never_falls_back_to_unsplit_pix(make_client, people, abacate, admin) -> None:
+    client = make_client("production", split=True)
+    teacher_token = auth(people["tokens"][people["teacher"]])
+    assert (
+        client.put(
+            "/v1/me/payout-account",
+            json={"legal_name": "Prof Paga", "tax_id": VALID_CPF},
+            headers=teacher_token,
+        ).status_code
+        == 200
+    )
+    abacate.split_enabled = False
+    response = checkout(client, people, slot(client, people))
+    assert response.status_code == 503 and response.json()["code"] == "split_required"
+    assert abacate.last_create_body["data"]["splits"]  # a única tentativa continha split
+    assert not abacate.charges
+    row = admin.execute(
+        "select split_status::text as split_status from public.payment_intents order by created_at desc limit 1"
+    ).fetchone()
+    assert row["split_status"] == "failed"
+
+
+def test_production_blocks_pix_without_validated_sub_account(make_client, people, abacate) -> None:
+    client = make_client("production", split=True)
+    response = checkout(client, people, slot(client, people))
+    assert response.status_code == 503 and response.json()["code"] == "payout_account_required"
+    assert abacate.last_create_body is None and not abacate.charges
 
 
 # --------------------------------------------------------------------------- RLS e isolamento

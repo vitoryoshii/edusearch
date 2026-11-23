@@ -95,11 +95,13 @@ class PaymentsRepository:
             (teacher_id, environment),
         ).fetchone()
 
-    def own_payout(self, teacher_id: UUID) -> dict[str, Any] | None:
+    def own_payout(self, teacher_id: UUID, environment: str) -> dict[str, Any] | None:
         return self._conn.execute(
-            "select environment::text as environment, tax_id_last4, created_at, status "
-            "from public.teacher_payout_accounts where teacher_id = %s",
-            (teacher_id,),
+            "select sub_account_id, environment::text as environment, tax_id_last4, created_at, "
+            "status "
+            "from public.teacher_payout_accounts "
+            "where teacher_id = %s and environment = %s::public.payment_environment",
+            (teacher_id, environment),
         ).fetchone()
 
     # ------------------------------------------------------------------ escrita (papel de conexão)

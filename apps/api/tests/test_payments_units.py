@@ -176,6 +176,34 @@ def test_network_timeout_is_unknown_outcome() -> None:
         client_with(boom).check_pix("pix_char_abc123")
 
 
+def test_sub_account_lookup_uses_authenticated_environment() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers["Authorization"]
+        return ok(
+            {
+                "id": "sacc_abcd1234",
+                "taxId": "52998224725",
+                "externalId": "teacher-42",
+                "devMode": True,
+            }
+        )
+
+    sub = client_with(handler).get_sub_account("sacc_abcd1234")
+    assert seen == {
+        "url": "https://api.abacatepay.com/v2/sub-accounts/get?id=sacc_abcd1234",
+        "auth": "Bearer abc_dev_teste",
+    }
+    assert (sub.id, sub.tax_id_last4, sub.external_id, sub.dev_mode) == (
+        "sacc_abcd1234",
+        "4725",
+        "teacher-42",
+        True,
+    )
+
+
 def test_simulation_only_with_dev_key() -> None:
     prod = AbacatePayClient("abc_prod_x", transport=httpx.MockTransport(lambda r: ok(CHARGE)))
     with pytest.raises(GatewayRejectedError):
@@ -198,6 +226,13 @@ def test_payments_off_by_default_and_guardrails() -> None:
         Settings(**BASE, payments_stage="off", abacatepay_api_key="abc_prod_x")
     with pytest.raises(ValueError, match="APPROVED"):
         Settings(**BASE, payments_stage="production", abacatepay_api_key="abc_prod_x")
+    with pytest.raises(ValueError, match="SPLIT_ENABLED"):
+        Settings(
+            **BASE,
+            payments_stage="production",
+            payments_production_approved=True,
+            abacatepay_api_key="abc_prod_x",
+        )
     with pytest.raises(ValueError, match="32"):
         Settings(**BASE, abacatepay_webhook_secret="curto")
     ok_sandbox = Settings(
