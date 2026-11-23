@@ -208,20 +208,23 @@ def test_withdrawal_history_is_private_and_not_writable(admin, users, as_user, a
         (withdrawal_id, owner, uuid.uuid4()),
     )
 
-    assert [
-        row["id"] for row in as_user(owner).rows("select id from public.withdrawal_requests")
-    ] == [withdrawal_id]
-    assert as_user(other).rows("select id from public.withdrawal_requests") == []
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        anon.rows("select id from public.withdrawal_requests")
-    for session in (as_user(owner), as_user(other)):
+    try:
+        assert [
+            row["id"] for row in as_user(owner).rows("select id from public.withdrawal_requests")
+        ] == [withdrawal_id]
+        assert as_user(other).rows("select id from public.withdrawal_requests") == []
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            session.execute(
-                "insert into public.withdrawal_requests "
-                "(teacher_id, environment, sub_account_id, amount_cents, idempotency_key, external_id) "
-                "values (%s, 'production', 'sacc_security1234', 100, %s, 'wd_directwrite1234')",
-                (owner, uuid.uuid4()),
-            )
+            anon.rows("select id from public.withdrawal_requests")
+        for session in (as_user(owner), as_user(other)):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                session.execute(
+                    "insert into public.withdrawal_requests "
+                    "(teacher_id, environment, sub_account_id, amount_cents, idempotency_key, external_id) "
+                    "values (%s, 'production', 'sacc_security1234', 100, %s, 'wd_directwrite1234')",
+                    (owner, uuid.uuid4()),
+                )
+    finally:
+        admin.execute("delete from public.withdrawal_requests where id = %s", (withdrawal_id,))
 
 
 def test_foreign_keys_are_indexed(admin) -> None:

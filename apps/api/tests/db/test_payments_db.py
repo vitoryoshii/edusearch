@@ -324,7 +324,11 @@ def people(users, make_token, client, admin):
         == 200
     )
     publish(admin, teacher)
-    return {"teacher": teacher, "s1": s1, "s2": s2, "tokens": tokens}
+    data = {"teacher": teacher, "s1": s1, "s2": s2, "tokens": tokens}
+    yield data
+    # ``withdrawal_requests`` preserva histórico com FK RESTRICT; os dados de
+    # teste precisam sair antes do fixture ``users`` remover os perfis.
+    admin.execute("delete from public.withdrawal_requests where teacher_id = %s", (teacher,))
 
 
 def slot(
