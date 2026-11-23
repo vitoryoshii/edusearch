@@ -68,6 +68,7 @@ function GisButton({ next }: { next: string }) {
   const slot = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [failure, setFailure] = useState<AuthFailure | null>(null);
+  const [gisLoadAttempt, setGisLoadAttempt] = useState(0);
   // O GIS é global no documento. O nonce também fica fixo nesta página: depois
   // de consumido, uma nova tentativa segura recarrega o documento.
   const initialNonce = useRef<Promise<string> | null>(null);
@@ -171,7 +172,7 @@ function GisButton({ next }: { next: string }) {
     return () => {
       active = false;
     };
-  }, [prepareNonce, draw]);
+  }, [gisLoadAttempt, prepareNonce, draw]);
 
   /*
    * O iframe do Google tem largura FIXA em px. Quando o contêiner muda (rotação, teclado,
@@ -242,7 +243,13 @@ function GisButton({ next }: { next: string }) {
             shape="pill"
             size="sm"
             className={AUTH_CTA_CLASS}
-            onClick={() => { setFailure(null); setPhase("loading"); }}
+            onClick={() => {
+              setFailure(null);
+              setPhase("loading");
+              // `loadGis` limpa a promessa após erro; este contador reinicia
+              // efetivamente o carregamento do script sem trocar o nonce.
+              setGisLoadAttempt((attempt) => attempt + 1);
+            }}
           >
             Tentar carregar novamente
           </Button>
