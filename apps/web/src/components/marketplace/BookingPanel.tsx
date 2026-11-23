@@ -6,7 +6,7 @@ import { ApiError, describeError } from "../../lib/api/client";
 import type { Lesson } from "../../lib/api/scheduling";
 import { FEATURES } from "../../lib/features";
 import { useBookLessonMutation, useCheckoutMutation, useSlotsQuery } from "../../lib/query/hooks";
-import { SLOT_PERIOD_LABEL, groupSlotsByDay, groupSlotsByPeriod } from "../../lib/scheduling";
+import { SLOT_PERIOD_LABEL, dateParts, groupSlotsByDay, groupSlotsByPeriod, timeOf } from "../../lib/scheduling";
 
 type Offer = { id: string; display_name?: string | null; subjects: string[]; lesson_durations_minutes: number[] };
 
@@ -89,11 +89,12 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
   };
 
   return (
-    <div className="space-y-5" data-testid="booking-panel">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Select label="Disciplina" value={subject} onChange={(e) => setSubject(e.target.value)} options={teacher.subjects.map((s) => ({ value: s, label: subjectName(s) }))} />
+    <div className="min-w-0 space-y-5" data-testid="booking-panel">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <Select label="Disciplina" className="min-w-0" value={subject} onChange={(e) => setSubject(e.target.value)} options={teacher.subjects.map((s) => ({ value: s, label: subjectName(s) }))} />
         <Select
           label="Duração"
+          className="min-w-0"
           value={String(duration)}
           onChange={(e) => {
             setDuration(Number(e.target.value));
@@ -126,8 +127,8 @@ export function BookingPanel({ teacher, subjectName, onBooked }: { teacher: Offe
         )}
       </QueryContent>
       <BookingSummary teacher={teacher} subjectName={subjectName} subject={subject} duration={duration} slot={slot} paid={paid} />
-      <div className="flex flex-wrap items-center gap-3">
-        <Button disabled={!slot || !subject} loading={book.pending} onClick={() => void book.run().catch(fail)} data-testid="book-lesson">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <Button className="w-full sm:w-auto" disabled={!slot || !subject} loading={book.pending} onClick={() => void book.run().catch(fail)} data-testid="book-lesson">
           {!slot ? "Escolha uma data e horário" : paid ? "Reservar e pagar com Pix" : "Confirmar reserva"}
         </Button>
         {booked && (
@@ -151,9 +152,70 @@ function SlotPicker({ slots, selectedDay, setSelectedDay, slot, setSlot }: { slo
   const activeDay = days.some((day) => day.key === selectedDay) ? selectedDay : days[0]?.key;
   const day = days.find((item) => item.key === activeDay);
   if (!day) return null;
-  return <div className="space-y-4"><fieldset data-testid="date-picker"><legend className="text-sm font-semibold text-fg-strong">Escolha uma data</legend><div className="mt-2 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-label="Próximas datas com horários livres">{days.map((item) => <button key={item.key} type="button" aria-pressed={item.key === activeDay} onClick={() => { setSelectedDay(item.key); setSlot(""); }} className={`min-w-24 rounded-control border px-3 py-2 text-left text-sm transition-colors ${item.key === activeDay ? "border-primary bg-primary text-primary-fg" : "border-line bg-surface hover:bg-surface-muted"}`}><span className="block font-semibold first-letter:uppercase">{item.label.split(", ")[0]}</span><span className="block text-xs opacity-80">{item.slots.length} horários</span></button>)}</div></fieldset><div data-testid="slot-list"><p className="text-sm font-semibold text-fg-strong first-letter:uppercase">{day.label}</p><div className="mt-3 space-y-3">{groupSlotsByPeriod(day.slots).map((group) => <fieldset key={group.period}><legend className="text-xs font-medium text-fg-muted">{SLOT_PERIOD_LABEL[group.period]}</legend><div className="mt-1.5 flex flex-wrap gap-2">{group.slots.map((item) => <Chip key={item.iso} selected={slot === item.iso} onClick={() => setSlot(item.iso)} aria-pressed={slot === item.iso}>{item.time}</Chip>)}</div></fieldset>)}</div></div></div>;
+  return (
+    <div className="min-w-0 space-y-4">
+      <fieldset data-testid="date-picker" className="min-w-0">
+        <legend className="text-sm font-semibold text-fg-strong">Escolha uma data</legend>
+        <div className="mt-2 flex max-w-full snap-x gap-2 overflow-x-auto overscroll-x-contain pb-2 pr-3 scroll-smooth" aria-label="Próximas datas com horários livres">
+          {days.map((item) => {
+            const parts = dateParts(item.slots[0]!.iso);
+            return (
+              <button
+                key={item.key}
+                type="button"
+                aria-pressed={item.key === activeDay}
+                onClick={() => {
+                  setSelectedDay(item.key);
+                  setSlot("");
+                }}
+                className={`w-20 shrink-0 snap-start rounded-control border px-2 py-2.5 text-center transition-colors ${item.key === activeDay ? "border-primary bg-primary text-primary-fg" : "border-line bg-surface hover:bg-surface-muted"}`}
+              >
+                <span className="block text-xs font-semibold tracking-wide uppercase">{parts.weekday}</span>
+                <span className="mt-0.5 block text-sm font-semibold tabular-nums">{parts.day} {parts.month}</span>
+                <span className="mt-1 block text-[0.6875rem] opacity-80">{item.slots.length} horários</span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <div data-testid="slot-list" className="min-w-0">
+        <p className="text-sm font-semibold text-fg-strong first-letter:uppercase">{day.label}</p>
+        <div className="mt-3 space-y-3">
+          {groupSlotsByPeriod(day.slots).map((group) => (
+            <fieldset key={group.period} className="min-w-0">
+              <legend className="text-xs font-medium text-fg-muted">{SLOT_PERIOD_LABEL[group.period]}</legend>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {group.slots.map((item) => <Chip key={item.iso} selected={slot === item.iso} onClick={() => setSlot(item.iso)} aria-pressed={slot === item.iso}>{item.time}</Chip>)}
+              </div>
+            </fieldset>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function BookingSummary({ teacher, subjectName, subject, duration, slot, paid }: { teacher: Offer; subjectName: (slug: string) => string; subject: string; duration: number; slot: string | null; paid: boolean }) {
-  return <Card tone="soft" aria-live="polite" data-testid="booking-summary"><h3 className="font-semibold text-fg-strong">Resumo da reserva</h3><dl className="mt-2 grid gap-1 text-sm text-fg-muted"><div className="flex justify-between gap-4"><dt>Professor</dt><dd className="text-right font-medium text-fg">{teacher.display_name ?? "Professor selecionado"}</dd></div><div className="flex justify-between gap-4"><dt>Disciplina</dt><dd className="text-right font-medium text-fg">{subject ? subjectName(subject) : "—"}</dd></div><div className="flex justify-between gap-4"><dt>Duração</dt><dd className="font-medium text-fg">{duration} min</dd></div><div className="flex justify-between gap-4"><dt>Data e horário</dt><dd className="text-right font-medium text-fg">{slot ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(slot)) : "Escolha um horário"}</dd></div></dl><p className="mt-3 text-xs text-fg-muted">{paid ? "O valor e o Pix são definidos com segurança pelo servidor na próxima etapa." : "Aula do piloto, sem cobrança."}</p></Card>;
+  const parts = slot ? dateParts(slot) : null;
+  const rows = [
+    ["Professor", teacher.display_name ?? "Professor selecionado"],
+    ["Disciplina", subject ? subjectName(subject) : "—"],
+    ["Duração", `${duration} minutos`],
+    ["Data", parts ? `${parts.weekday.toUpperCase()}, ${parts.day} ${parts.month}` : "Escolha um horário"],
+    ["Horário", slot ? timeOf(slot) : "—"],
+  ];
+  return (
+    <Card tone="soft" aria-live="polite" data-testid="booking-summary" className="min-w-0">
+      <h3 className="font-semibold text-fg-strong">Resumo da reserva</h3>
+      <dl className="mt-3 space-y-3 text-sm text-fg-muted">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid min-w-0 gap-1 min-[380px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] min-[380px]:gap-3">
+            <dt>{label}</dt>
+            <dd className="min-w-0 break-words font-medium text-fg min-[380px]:text-right">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-4 text-xs leading-relaxed text-fg-muted">{paid ? "O valor e o Pix são definidos com segurança pelo servidor na próxima etapa." : "Aula do piloto, sem cobrança."}</p>
+    </Card>
+  );
 }
