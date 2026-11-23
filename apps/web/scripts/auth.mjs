@@ -91,6 +91,14 @@ const ignoreExpectedNetworkErrors = () => {
     if (/supabase\.co|googleusercontent|status of (400|401|403|404|422)|ERR_FAILED/.test(b.errors[i])) b.errors.splice(i, 1);
 };
 
+/** Remove somente o 503 que este teste injeta para exercitar a recuperação do GIS. */
+const ignoreExpectedGisRecovery503 = () => {
+  for (let i = b.errors.length - 1; i >= 0; i--) {
+    const error = b.errors[i];
+    if (/status of 503/.test(error) && /accounts\.google\.com\/gsi\/client/.test(error)) b.errors.splice(i, 1);
+  }
+};
+
 /* --------------------------------- Mocks --------------------------------- */
 const FAKE_GIS = `(() => {
   let cfg = null;
@@ -501,6 +509,7 @@ await b.evaluate(`(() => { const b = [...document.querySelectorAll('button')].fi
 await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "retry do GIS reinicia o carregamento e renderiza o botão");
 await check(gisLoads === gisLoadsBeforeRetry + 1, "retry do GIS solicita o script novamente");
 await check(await waitFor(`window.__gis.config?.client_id === ${JSON.stringify(CLIENT_ID)}`), "retry conclui a inicialização do GIS");
+ignoreExpectedGisRecovery503();
 await check(await waitFor(`!!document.querySelector('[data-fake-gis]')`), "botão oficial do GIS renderizado na entrada única");
 const cfg = await b.evaluate(`window.__gis.config`);
 await check(cfg?.client_id === CLIENT_ID, "GIS inicializado com o Client ID público");
