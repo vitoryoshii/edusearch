@@ -193,6 +193,9 @@ class PaymentsRepository:
             "select private.withdrawal_attach(%s,%s,%s)", (withdrawal_id, transfer_id, fee)
         )
 
+    def withdrawal_fail(self, withdrawal_id: UUID) -> None:
+        self._conn.execute("select private.withdrawal_fail(%s)", (withdrawal_id,))
+
     def withdrawal_finish(
         self, external: str, transfer: str, amount: int, fee: int | None, status: str
     ) -> str:

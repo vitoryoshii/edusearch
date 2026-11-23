@@ -68,6 +68,7 @@ _DB_ERRORS = {
     "teacher_not_found": (404, "Professor não encontrado."),
     "price_not_set": (409, "Este professor ainda não definiu o valor da aula."),
     "idempotency_conflict": (409, "Esta reserva já foi usada para outro horário."),
+    "withdrawal_idempotency_conflict": (409, "Esta chave já foi usada para outro valor de saque."),
     "role_required": (403, "Disponível apenas para contas de aluno."),
     "intent_not_found": (404, "Pagamento não encontrado."),
 }
@@ -615,6 +616,7 @@ class PaymentsService:
                 and not isinstance(amount, bool)
                 and amount >= 100
                 and transfer.get("status") == expected_status
+                and transfer.get("method") == "PIX"
                 and (
                     fee is None or (isinstance(fee, int) and not isinstance(fee, bool) and fee >= 0)
                 )
@@ -711,16 +713,19 @@ class PaymentsService:
                 409, "insufficient_balance", "Saldo disponível insuficiente para este saque."
             )
         external = f"wd_{data.idempotency_key.hex}"
-        with self._db.user_transaction(user) as conn, as_connection_role(conn):
-            row = PaymentsRepository(conn).withdrawal_create(
-                data.amount_cents,
-                data.idempotency_key,
-                external,
-                self._env,
-                account["sub_account_id"],
-            )
+        try:
+            with self._db.user_transaction(user) as conn, as_connection_role(conn):
+                row = PaymentsRepository(conn).withdrawal_create(
+                    data.amount_cents,
+                    data.idempotency_key,
+                    external,
+                    self._env,
+                    account["sub_account_id"],
+                )
+        except (psycopg.errors.RaiseException, psycopg.errors.InsufficientPrivilege) as exc:
+            raise _db_error(exc) from exc
         # Já anexado/presente: reentrega com a mesma chave nunca chama o gateway novamente.
-        if row["gateway_transfer_id"] is not None:
+        if row["gateway_transfer_id"] is not None or row["status"] != "pending":
             return WithdrawalOut(**row)
         gateway = self._ready()
         try:
@@ -732,9 +737,19 @@ class PaymentsService:
         except GatewayUnavailableError:
             # Resultado desconhecido: mantém pending e reutiliza o mesmo externalId depois.
             return WithdrawalOut(**row)
-        except (GatewayRejectedError, GatewayAuthError, InvalidGatewayResponseError) as exc:
+        except (GatewayRejectedError, GatewayAuthError) as exc:
+            # Recusa conhecida não pode permanecer pendente nem ser reenviada com
+            # o mesmo externalId. Uma nova solicitação exige uma nova chave.
+            with self._db.user_transaction(user) as conn, as_connection_role(conn):
+                PaymentsRepository(conn).withdrawal_fail(row["id"])
             raise service_unavailable(
                 "withdrawal_gateway_error", "Não foi possível solicitar o saque."
+            ) from exc
+        except InvalidGatewayResponseError as exc:
+            # Uma resposta 200 fora do contrato pode ter criado a transferência;
+            # conserva a ordem pendente e o mesmo externalId para conciliação/retry.
+            raise service_unavailable(
+                "withdrawal_gateway_unknown", "O resultado do saque precisa ser conciliado."
             ) from exc
         with self._db.user_transaction(user) as conn, as_connection_role(conn):
             PaymentsRepository(conn).withdrawal_attach(

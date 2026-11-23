@@ -1,6 +1,7 @@
 """Hook de admissão, endurecimento de rls_auto_enable e verificações no estilo do Security Advisor."""
 
 import json
+import uuid
 
 import psycopg
 import pytest
@@ -20,6 +21,7 @@ APP_TABLES = [
     "payment_intents",
     "payment_splits",
     "teacher_payout_accounts",
+    "withdrawal_requests",
     "refund_requests",
 ]
 
@@ -190,6 +192,38 @@ def test_private_schema_not_usable_by_api_roles(admin) -> None:
     assert row == {"anon": False, "authn": False}
 
 
+def test_withdrawal_history_is_private_and_not_writable(admin, users, as_user, anon) -> None:
+    """RLS limita o histórico ao professor e a API é a única escritora."""
+    owner, other = users.create("Prof Saque"), users.create("Outro Professor")
+    for teacher in (owner, other):
+        users.grant_role(teacher, "teacher")
+        admin.execute("insert into public.teacher_profiles (user_id) values (%s)", (teacher,))
+    withdrawal_id = uuid.uuid4()
+    admin.execute(
+        """
+        insert into public.withdrawal_requests
+          (id, teacher_id, environment, sub_account_id, amount_cents, idempotency_key, external_id)
+        values (%s, %s, 'production', 'sacc_security1234', 100, %s, 'wd_securitycheck1234')
+        """,
+        (withdrawal_id, owner, uuid.uuid4()),
+    )
+
+    assert [row["id"] for row in as_user(owner).rows("select id from public.withdrawal_requests")] == [
+        withdrawal_id
+    ]
+    assert as_user(other).rows("select id from public.withdrawal_requests") == []
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        anon.rows("select id from public.withdrawal_requests")
+    for session in (as_user(owner), as_user(other)):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            session.execute(
+                "insert into public.withdrawal_requests "
+                "(teacher_id, environment, sub_account_id, amount_cents, idempotency_key, external_id) "
+                "values (%s, 'production', 'sacc_security1234', 100, %s, 'wd_directwrite1234')",
+                (owner, uuid.uuid4()),
+            )
+
+
 def test_foreign_keys_are_indexed(admin) -> None:
     rows = admin.execute(
         """
@@ -239,6 +273,7 @@ EXPECTED_TABLE_GRANTS = {
     ("authenticated", "payment_intents", "SELECT"),
     ("authenticated", "payment_splits", "SELECT"),
     ("authenticated", "teacher_payout_accounts", "SELECT"),
+    ("authenticated", "withdrawal_requests", "SELECT"),
     ("authenticated", "refund_requests", "SELECT"),
 }
 
@@ -272,6 +307,7 @@ EXPECTED_POLICIES = {
     ("payment_intents", "payment_intents_select_participant", "SELECT"),
     ("payment_splits", "payment_splits_select_teacher", "SELECT"),
     ("teacher_payout_accounts", "teacher_payout_accounts_select_own", "SELECT"),
+    ("withdrawal_requests", "withdrawal_requests_select_own", "SELECT"),
     ("refund_requests", "refund_requests_select_participant", "SELECT"),
 }
 

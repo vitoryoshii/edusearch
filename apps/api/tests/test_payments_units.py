@@ -210,6 +210,37 @@ def test_simulation_only_with_dev_key() -> None:
         prod.simulate_payment("pix_char_abc123")
 
 
+def test_withdrawal_uses_production_contract_and_validates_response() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        return ok(
+            {
+                "id": "tran_abcd1234",
+                "externalId": "wd_abcdefgh",
+                "amount": 1_000,
+                "status": "PENDING",
+                "platformFee": 80,
+            }
+        )
+
+    production = AbacatePayClient("abc_prod_teste", transport=httpx.MockTransport(handler))
+    transfer = production.withdraw_sub_account(
+        sub_account_id="sacc_abcd1234", amount=1_000, external_id="wd_abcdefgh"
+    )
+    assert seen == {
+        "url": "https://api.abacatepay.com/v2/sub-accounts/withdraw",
+        "body": {"id": "sacc_abcd1234", "amount": 1_000, "externalId": "wd_abcdefgh"},
+    }
+    assert (transfer.id, transfer.amount, transfer.platform_fee) == ("tran_abcd1234", 1_000, 80)
+    with pytest.raises(GatewayRejectedError):
+        client_with(handler).withdraw_sub_account(
+            sub_account_id="sacc_abcd1234", amount=1_000, external_id="wd_abcdefgh"
+        )
+
+
 # ------------------------------------------------------------------------------- salvaguardas
 
 

@@ -47,7 +47,13 @@ begin
   values (v_teacher,p_env,p_sacc,p_amount,p_key,p_external)
   on conflict (teacher_id, environment, idempotency_key) do nothing returning * into v;
   if not found then
-    select * into v from public.withdrawal_requests where teacher_id=v_teacher and environment=p_env and idempotency_key=p_key;
+    -- A tentativa concorrente aguarda a chave única. Só a mesma solicitação pode
+    -- reutilizar a chave; trocar o valor é um erro, nunca uma nova ordem de saque.
+    select * into v from public.withdrawal_requests
+      where teacher_id=v_teacher and environment=p_env and idempotency_key=p_key for update;
+    if v.amount_cents <> p_amount then
+      raise exception using errcode='P0001', message='withdrawal_idempotency_conflict';
+    end if;
   else
     insert into private.withdrawal_audit_log(withdrawal_id,actor,to_status,detail) values(v.id,'teacher','pending','requested');
   end if;
@@ -61,6 +67,18 @@ begin
    where id=p_id and teacher_id=private.claims_sub() and status='pending';
 end $$;
 
+create function private.withdrawal_fail(p_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare v public.withdrawal_requests;
+begin
+  select * into v from public.withdrawal_requests
+    where id=p_id and teacher_id=private.claims_sub() for update;
+  if not found or v.status <> 'pending' then return; end if;
+  update public.withdrawal_requests set status='failed' where id=v.id;
+  insert into private.withdrawal_audit_log(withdrawal_id,actor,from_status,to_status,detail)
+  values(v.id,'system','pending','failed','gateway_rejected');
+end $$;
+
 create function private.withdrawal_finish(p_external text, p_transfer text, p_amount integer,
   p_fee integer, p_status public.withdrawal_status)
 returns text language plpgsql security definer set search_path = '' as $$
@@ -68,7 +86,10 @@ declare v public.withdrawal_requests;
 begin
   select * into v from public.withdrawal_requests where external_id=p_external for update;
   if not found then return 'unknown_withdrawal'; end if;
-  if v.environment <> 'production' or v.amount_cents <> p_amount then return 'mismatch'; end if;
+  if v.environment <> 'production' or v.amount_cents <> p_amount
+     or (v.gateway_transfer_id is not null and v.gateway_transfer_id <> p_transfer) then
+    return 'mismatch';
+  end if;
   if v.status <> 'pending' then return 'already_processed'; end if;
   update public.withdrawal_requests set status=p_status, gateway_transfer_id=p_transfer,
     gateway_fee_cents=coalesce(p_fee,gateway_fee_cents) where id=v.id;
@@ -79,7 +100,9 @@ end $$;
 
 revoke all on function private.withdrawal_create(integer, uuid, text, public.payment_environment, text),
   private.withdrawal_attach(uuid, text, integer),
+  private.withdrawal_fail(uuid),
   private.withdrawal_finish(text, text, integer, integer, public.withdrawal_status) from public, anon, authenticated;
 grant execute on function private.withdrawal_create(integer, uuid, text, public.payment_environment, text),
   private.withdrawal_attach(uuid, text, integer),
+  private.withdrawal_fail(uuid),
   private.withdrawal_finish(text, text, integer, integer, public.withdrawal_status) to edusearch_api;
