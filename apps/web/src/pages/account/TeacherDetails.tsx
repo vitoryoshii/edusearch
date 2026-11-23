@@ -63,8 +63,8 @@ function TeacherDetailsPage({ id, canBook }: { id: string; canBook: boolean }) {
       )}
       <QueryContent query={profile} loading="spinner" loadingLabel="Carregando perfil…">
         {(t) => (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start" data-testid="teacher-profile">
-            <div className="space-y-6">
+          <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start" data-testid="teacher-profile">
+            <div className="min-w-0 space-y-6">
               {t.is_own_profile && (
                 <Card tone="muted" className="flex items-start gap-3 text-sm" data-testid="own-preview">
                   <InfoIcon className="mt-0.5 h-5 w-5 shrink-0 text-link" />
@@ -74,24 +74,24 @@ function TeacherDetailsPage({ id, canBook }: { id: string; canBook: boolean }) {
                   </p>
                 </Card>
               )}
-              <Card>
+              <Card className="min-w-0">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                   <Avatar name={t.display_name} src={t.avatar_url ?? undefined} size="xl" />
                   <div className="min-w-0">
-                    <h1 className="text-2xl font-semibold tracking-tight text-fg-strong">{t.display_name}</h1>
-                    {t.headline && <p className="mt-1 text-fg">{t.headline}</p>}
+                    <h1 className="break-words text-2xl font-semibold tracking-tight text-fg-strong">{t.display_name}</h1>
+                    {t.headline && <p className="mt-1 break-words text-fg">{t.headline}</p>}
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {t.modality && <Badge tone="neutral">{MODALITY_LABELS[t.modality as Modality]}</Badge>}
-                      {t.experience && <Badge tone="neutral">Experiência: {EXPERIENCE_LABELS[t.experience as ExperienceRange]}</Badge>}
-                      {t.lesson_durations_minutes.length > 0 && <Badge tone="neutral">Aulas de {[...t.lesson_durations_minutes].sort((a, b) => a - b).join(", ")} min</Badge>}
+                      {t.modality && <Badge tone="neutral" className="max-w-full whitespace-normal break-words">{MODALITY_LABELS[t.modality as Modality]}</Badge>}
+                      {t.experience && <Badge tone="neutral" className="max-w-full whitespace-normal break-words">Experiência: {EXPERIENCE_LABELS[t.experience as ExperienceRange]}</Badge>}
+                      {t.lesson_durations_minutes.length > 0 && <Badge tone="neutral" className="max-w-full whitespace-normal break-words">Aulas de {[...t.lesson_durations_minutes].sort((a, b) => a - b).join(", ")} min</Badge>}
                     </div>
                   </div>
                 </div>
               </Card>
-              <Card className="space-y-6">
+              <Card className="min-w-0 space-y-6">
                 {t.bio && (
                   <Section title="Sobre">
-                    <p className="whitespace-pre-line">{t.bio}</p>
+                    <p className="break-words whitespace-pre-line">{t.bio}</p>
                   </Section>
                 )}
                 <Section title="Disciplinas">
@@ -103,8 +103,8 @@ function TeacherDetailsPage({ id, canBook }: { id: string; canBook: boolean }) {
                     ))}
                   </div>
                 </Section>
-                {t.specialties && <Section title="Especialidades">{t.specialties}</Section>}
-                {t.academic_background && <Section title="Formação">{t.academic_background}</Section>}
+                {t.specialties && <Section title="Especialidades"><p className="break-words">{t.specialties}</p></Section>}
+                {t.academic_background && <Section title="Formação"><p className="break-words">{t.academic_background}</p></Section>}
                 {(t.teaching_methods.length > 0 || t.methodology) && (
                   <Section title="Como são as aulas">
                     {t.teaching_methods.length > 0 && (
@@ -116,13 +116,13 @@ function TeacherDetailsPage({ id, canBook }: { id: string; canBook: boolean }) {
                         ))}
                       </ul>
                     )}
-                    {t.methodology && <p className="mt-2 whitespace-pre-line">{t.methodology}</p>}
+                    {t.methodology && <p className="mt-2 break-words whitespace-pre-line">{t.methodology}</p>}
                   </Section>
                 )}
               </Card>
             </div>
             {canBook ? (
-              <Card className="lg:sticky lg:top-6" data-testid="booking-card">
+              <Card className="min-w-0 lg:sticky lg:top-6" data-testid="booking-card">
                 <h2 className="text-lg font-semibold text-fg-strong">Reservar aula</h2>
                 <p className="mt-1 mb-4 text-sm text-fg-muted">Horários de Brasília, próximos 14 dias.</p>
                 <BookingPanel teacher={t} subjectName={subjectName} />
