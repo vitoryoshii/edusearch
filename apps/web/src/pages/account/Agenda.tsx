@@ -14,13 +14,14 @@ import {
   useToast,
 } from "@edusearch/ui";
 import { hasRole, useServerMe } from "../../app/account";
+import { RealLessonCalendar } from "../../components/account/RealLessonCalendar";
 import { QueryContent } from "../../components/QueryContent";
 import { PageHeader } from "../../components/PageHeader";
 import { describeError } from "../../lib/api/client";
 import { schedulingApi, type CalendarConnection } from "../../lib/api/scheduling";
 import { FEATURES } from "../../lib/features";
 import { useAction } from "../../lib/hooks/useAsync";
-import { toAsyncState, useAvailabilityQuery, useCalendarQuery, useDisconnectCalendarMutation, useSaveAvailabilityMutation } from "../../lib/query/hooks";
+import { toAsyncState, useAvailabilityQuery, useCalendarQuery, useDisconnectCalendarMutation, useLessonsQuery, useSaveAvailabilityMutation } from "../../lib/query/hooks";
 import {
   WEEKDAY_LABEL,
   WEEKDAY_ORDER,
@@ -43,8 +44,10 @@ export default function AccountAgenda() {
   return <AgendaPage />;
 }
 
-/** Agenda do PROFESSOR: Google Agenda/Meet e disponibilidade semanal. Aulas ficam em /conta/aulas. */
+/** Agenda do PROFESSOR: aulas reais, Google Agenda/Meet e disponibilidade semanal. */
 function AgendaPage() {
+  const lessons = useLessonsQuery();
+  const availability = useAvailabilityQuery();
   return (
     <>
       <PageHeader
@@ -57,10 +60,17 @@ function AgendaPage() {
         }
       />
       <div className="space-y-5">
+        <QueryContent
+          query={lessons}
+          loading="spinner"
+          loadingLabel="Carregando aulas da agenda…"
+        >
+          {(data) => <RealLessonCalendar lessons={data} windows={availability.data?.windows ?? []} />}
+        </QueryContent>
         <CalendarConnectionCard />
         <AvailabilityEditor />
         <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-fg">As aulas reservadas pelos alunos, com o link do Meet, ficam em Minhas aulas.</p>
+          <p className="text-sm text-fg">Para consultar todas as aulas e pagamentos, acesse Minhas aulas.</p>
           <Link to="/conta/aulas" className={buttonClasses({ variant: "secondary", size: "sm", className: "shrink-0" })}>
             Ver minhas aulas
           </Link>

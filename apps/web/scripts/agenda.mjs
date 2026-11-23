@@ -325,7 +325,7 @@ const calendarStatus = `document.querySelector('[data-testid=calendar-status]')?
  * rolagem": um campo pode vazar do cartão sem chegar à borda da tela). Com `stress`, simula o
  * controle nativo de horário largo do Chrome em inglês ("09:00 AM", CI Linux) em qualquer máquina.
  */
-const CARDS = ["calendar-card", "availability-card", "booking-card", "lesson-list", "teacher-profile", "catalog-filters", "catalog-results"];
+const CARDS = ["calendar-card", "availability-card", "real-calendar", "booking-card", "lesson-list", "teacher-profile", "catalog-filters", "catalog-results"];
 async function fitsInCards(label, { stress = false, widths = [320, 360, 390, 430, 768, 1440] } = {}) {
   if (stress) await b.evaluate(`(() => { const s = document.createElement('style'); s.id = 'stress-time'; s.textContent = 'input[type=time]{min-width:9.5rem}'; document.head.append(s); return true; })()`);
   const bad = [];
@@ -373,6 +373,13 @@ await check(await b.evaluate(`[...document.querySelectorAll('nav a')].some((a) =
 await b.go(base + "/conta/agenda", 1500);
 await check(await waitFor(`${calendarStatus} === 'not_connected' && !!document.querySelector('[data-testid=scheduling-test-notice]')`), "agenda: aviso de aulas de teste e Google Agenda não conectada");
 await check(!(await b.evaluate(`!!document.querySelector('[data-testid=booking-card]')`)), "professor não vê o formulário de reserva de aluno");
+  await check(await waitFor(`!!document.querySelector('[data-testid=real-calendar]')`), "agenda autenticada exibe calendário com dados reais da conta");
+  await act("abrir visualização mensal", `(() => { const x = [...document.querySelectorAll('[data-testid=real-calendar] button')].find((b) => b.textContent.trim() === 'Mês'); if (!x) return false; x.click(); return true; })()`);
+  await check(await waitFor(`document.querySelectorAll('[data-testid=real-calendar] [data-calendar-day]').length >= 28`), "agenda mensal possui grade navegável por teclado");
+  await act("navegar mês com teclado", `(() => { const x = document.querySelector('[data-testid=real-calendar] [role=group] button[tabindex="0"]'); if (!x) return false; x.focus(); x.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return true; })()`);
+  await check(await waitFor(`document.activeElement?.matches('[data-calendar-day]')`), "agenda mensal mantém foco após navegação por teclado");
+  await act("abrir visualização diária", `(() => { const x = [...document.querySelectorAll('[data-testid=real-calendar] button')].find((b) => b.textContent.trim() === 'Dia'); if (!x) return false; x.click(); return true; })()`);
+  await check(await waitFor(`document.querySelector('[data-testid=real-calendar]')?.innerText.includes('Sem aulas ou disponibilidade cadastrada.')`), "agenda diária mostra os compromissos e a disponibilidade recorrente");
 await axe("agenda do professor");
 
 await act("Conectar Google Agenda", `(() => { document.querySelector('[data-testid=calendar-connect]').click(); return true; })()`);
