@@ -62,8 +62,8 @@ class FakeAbacate:
             return httpx.Response(503, json={"data": None, "success": False, "error": "x"})
         path = request.url.path.removeprefix("/v2")
         q = parse_qs(urlsplit(str(request.url)).query)
-        dev_mode = request.headers.get("Authorization", "").removeprefix("Bearer ").startswith(
-            "abc_dev_"
+        dev_mode = (
+            request.headers.get("Authorization", "").removeprefix("Bearer ").startswith("abc_dev_")
         )
         if path == "/transparents/create":
             body = json.loads(request.content)
