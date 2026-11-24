@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+  "name": "edusearch-notifications-cron",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-24",
+  "workers_dev": false,
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": { "EDUSEARCH_API_URL": "https://api.edusearch.com.br" }
+}

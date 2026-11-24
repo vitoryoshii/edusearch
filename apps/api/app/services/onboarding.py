@@ -98,6 +98,20 @@ class DbOnboardingService:
             row = repo.get_student(user.id)
             if row is None:  # pragma: no cover — acabou de ser gravado na mesma transação
                 raise not_found("student_profile_not_found", "Cadastro de aluno ainda não salvo.")
+            # A chave estável torna o reenvio do PUT idempotente. A função privada resolve
+            # exclusivamente o e-mail confirmado em auth.users; nenhum e-mail chega do cliente.
+            with as_connection_role(conn):
+                conn.execute(
+                    "select private.notification_enqueue_for_user(%s, null, %s, %s, "
+                    "jsonb_build_object('NOME', %s), %s)",
+                    (
+                        "onboarding.student_completed",
+                        user.id,
+                        "edusearch-boas-vindas-aluno-v1",
+                        load_profile(conn, user).display_name,
+                        f"welcome/student/{user.id}",
+                    ),
+                )
             return StudentProfileOut(**row)
 
     # ------------------------------------------------------------------ professor
@@ -124,6 +138,18 @@ class DbOnboardingService:
             if row is None:  # pragma: no cover
                 raise not_found(
                     "teacher_profile_not_found", "Cadastro de professor ainda não salvo."
+                )
+            with as_connection_role(conn):
+                conn.execute(
+                    "select private.notification_enqueue_for_user(%s, null, %s, %s, "
+                    "jsonb_build_object('NOME', %s), %s)",
+                    (
+                        "onboarding.teacher_completed",
+                        user.id,
+                        "edusearch-boas-vindas-professor-v1",
+                        load_profile(conn, user).display_name,
+                        f"welcome/teacher/{user.id}",
+                    ),
                 )
             return TeacherProfileOut(**row)
 

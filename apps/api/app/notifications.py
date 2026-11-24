@@ -10,6 +10,8 @@ from typing import Any
 
 import httpx
 
+from app.db import BaseDatabase
+
 logger = logging.getLogger("edusearch.api.notifications")
 
 _BASE_URL = "https://api.resend.com"
@@ -105,3 +107,42 @@ class ResendClient:
             # Não registra destinatário, payload, token ou resposta do provedor.
             raise NotificationPermanentError(f"http_{response.status_code}")
         return SentNotification(provider_message_id=message_id)
+
+
+class NotificationDispatcher:
+    """Consome leases da outbox. Falhas de e-mail jamais revertem o evento de negócio."""
+
+    def __init__(self, database: BaseDatabase, client: ResendClient) -> None:
+        self._db = database
+        self._client = client
+
+    def dispatch(self, batch_size: int) -> dict[str, int]:
+        with self._db.service_transaction() as conn:
+            rows = conn.execute(
+                "select * from private.notification_claim(%s, %s)", (batch_size, 300)
+            ).fetchall()
+        sent = retried = failed = 0
+        for row in rows:
+            try:
+                message = self._client.send_template(
+                    recipient=row["recipient_email"],
+                    template_alias=row["template_alias"],
+                    variables=row["template_variables"],
+                    idempotency_key=row["idempotency_key"],
+                )
+                with self._db.service_transaction() as conn:
+                    conn.execute(
+                        "select private.notification_sent(%s, %s)",
+                        (row["id"], message.provider_message_id),
+                    )
+                sent += 1
+            except NotificationRetryableError as exc:
+                with self._db.service_transaction() as conn:
+                    conn.execute("select private.notification_retry(%s, %s)", (row["id"], str(exc)))
+                retried += 1
+            except NotificationPermanentError as exc:
+                with self._db.service_transaction() as conn:
+                    # A função aplica o limite; erro de contrato não tem retry útil.
+                    conn.execute("select private.notification_retry(%s, %s)", (row["id"], str(exc)))
+                failed += 1
+        return {"claimed": len(rows), "sent": sent, "retried": retried, "failed": failed}

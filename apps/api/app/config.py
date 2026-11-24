@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     resend_api_key: SecretStr | None = None
     resend_from: str | None = None
     resend_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+    notifications_dispatch_secret: SecretStr | None = None
+    notifications_batch_size: int = Field(default=10, ge=1, le=100)
     # Autorização operacional EXPLÍCITA para cobrar de verdade.
     payments_production_approved: bool = False
     payments_hold_seconds: int = Field(default=900, ge=300, le=3600)
