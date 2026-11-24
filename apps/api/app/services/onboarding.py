@@ -90,6 +90,7 @@ class DbOnboardingService:
     def save_student(self, user: AuthenticatedUser, data: StudentProfileIn) -> StudentProfileOut:
         with self._db.user_transaction(user) as conn:
             self._guard(conn, user, "student", write=True)
+            display_name = load_profile(conn, user).display_name
             repo = OnboardingRepository(conn)
             try:
                 repo.upsert_student(user.id, data)
@@ -108,7 +109,7 @@ class DbOnboardingService:
                         "onboarding.student_completed",
                         user.id,
                         "edusearch-boas-vindas-aluno-v1",
-                        load_profile(conn, user).display_name,
+                        display_name,
                         f"welcome/student/{user.id}",
                     ),
                 )
@@ -129,6 +130,7 @@ class DbOnboardingService:
     def save_teacher(self, user: AuthenticatedUser, data: TeacherProfileIn) -> TeacherProfileOut:
         with self._db.user_transaction(user) as conn:
             self._guard(conn, user, "teacher", write=True)
+            display_name = load_profile(conn, user).display_name
             repo = OnboardingRepository(conn)
             try:
                 repo.upsert_teacher(user.id, data)
@@ -147,7 +149,7 @@ class DbOnboardingService:
                         "onboarding.teacher_completed",
                         user.id,
                         "edusearch-boas-vindas-professor-v1",
-                        load_profile(conn, user).display_name,
+                        display_name,
                         f"welcome/teacher/{user.id}",
                     ),
                 )
