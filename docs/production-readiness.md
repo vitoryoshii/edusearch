@@ -29,7 +29,17 @@ Pagamentos e saques reais continuam **desligados**. A API falha fechada para pro
 5. Fazer Pix real de baixo valor, conferir split, auditoria e conciliação antes de ampliar acesso.
 6. Para Resend, verificar o domínio no painel e copiar **exatamente** os registros DNS fornecidos para Cloudflare. Não há valores DNS inferidos neste repositório.
 
+## Procedimento de transição e rollback
+
+Com `API_PAYMENTS_STAGE=sandbox`, uma chave `abc_prod_` é corretamente recusada na inicialização:
+isso mantém recursos não financeiros disponíveis apenas após a chave ser corrigida para `abc_dev_`
+ou após a transição formal para produção. A transição exige, nesta ordem: confirmação de split,
+`abc_prod_`, segredo/HMAC de produção, `API_ABACATEPAY_SPLIT_ENABLED=true` e aprovação explícita.
+Para rollback, desative a aprovação e o split (ou retorne ao Sandbox com chave `abc_dev_`); não
+apague intenções, webhooks ou registros de auditoria.
+
 ## Limitações deliberadas
 
-Ainda não há outbox persistente nem agendador confiável para lembretes. Portanto notificações e
-lembretes automáticos seguem desligados; uma falha de e-mail não pode afetar pagamento ou reserva.
+A outbox existe, porém não há agendador confiável configurado para o despachante. Portanto
+notificações e lembretes automáticos seguem desligados; uma falha de e-mail não pode afetar
+pagamento ou reserva.

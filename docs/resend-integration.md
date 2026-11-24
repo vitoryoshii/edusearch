@@ -1,17 +1,23 @@
-# Resend — integração transacional planejada
+# Resend — integração transacional
 
 ## Estado
 
-`API_NOTIFICATIONS_STAGE=off` por padrão. Esta fase prepara as configurações e não ativa envio
-porque ainda não existe outbox persistente nem agendador confiável no ambiente atual. Uma falha de
+`API_NOTIFICATIONS_STAGE=off` por padrão. A outbox persistente e o cliente Resend existem, mas
+nenhum despachante é habilitado enquanto a operação não aprovar o agendador e a flag. Uma falha de
 e-mail nunca pode cancelar uma reserva ou alterar um pagamento/saque.
 
 ## Arquitetura aprovada para ativação futura
 
-1. Criar `private.notification_outbox`, com chave de idempotência única, tentativas, estado e erro sanitizado.
-2. Enfileirar **após** o commit do evento de domínio; nunca dentro da transação financeira.
-3. Enviar pelo endpoint Resend `/emails` no backend, com timeout curto e `Idempotency-Key`.
-4. Reprocessar apenas por job autenticado e aprovado. Lembretes ficam desabilitados sem agendador confiável.
+1. `private.notification_outbox` guarda chave de idempotência única, estado, lease, tentativas e erro sanitizado.
+2. Funções privadas concedidas somente a `edusearch_api` fazem enqueue, claim, confirmação e retry.
+3. O cliente envia `POST /emails` com o alias publicado, variáveis validadas e `Idempotency-Key`.
+4. Retry exponencial é limitado a oito tentativas; leases expirados voltam à fila.
+5. Um cron/worker persistente ainda é obrigatório antes de ativar o dispatch. Lembretes seguem desabilitados.
+
+## Templates publicados
+
+Os aliases e suas variáveis obrigatórias são validados no backend. Não há template publicado para
+saque; esse evento permanece fora do dispatch até existir contrato aprovado.
 
 ## Domínio e DNS
 

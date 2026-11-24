@@ -136,11 +136,7 @@ class Settings(BaseSettings):
     @property
     def notifications_configured(self) -> bool:
         """Somente metadado de readiness; envio continua desligado até existir outbox homologada."""
-        return bool(
-            self.notifications_stage != "off"
-            and self.resend_api_key
-            and self.resend_from
-        )
+        return bool(self.notifications_stage != "off" and self.resend_api_key and self.resend_from)
 
     @property
     def payments_configured(self) -> bool:
