@@ -75,7 +75,7 @@ create function private.notification_retry(p_id uuid, p_error_code text)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
   update private.notification_outbox set
-    status=case when attempts >= 8 then 'failed' else 'pending' end,
+    status=(case when attempts >= 8 then 'failed' else 'pending' end)::private.notification_status,
     next_attempt_at=case when attempts >= 8 then next_attempt_at
       else now() + make_interval(secs => least(3600, 30 * power(2, attempts - 1)::integer)) end,
     error_code=left(coalesce(p_error_code, 'provider_error'), 80),
