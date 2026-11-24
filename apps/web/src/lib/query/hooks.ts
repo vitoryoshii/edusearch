@@ -291,6 +291,28 @@ export function usePayoutAccountQuery(enabled = true) {
   });
 }
 
+/** Saldo real do gateway, disponível somente para subconta já validada. */
+export function usePayoutBalanceQuery(enabled = true) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.payoutBalance(uid),
+    queryFn: ({ signal }) => paymentsApi.payoutBalance(signal),
+    staleTime: STALE_MS.payoutAccount,
+    enabled: enabled && !!uid,
+  });
+}
+
+/** Histórico próprio de solicitações; o backend já isola professor e ambiente. */
+export function useWithdrawalsQuery(enabled = true) {
+  const uid = useAccountUid();
+  return useQuery({
+    queryKey: queryKeys.withdrawals(uid),
+    queryFn: ({ signal }) => paymentsApi.withdrawals(signal),
+    staleTime: STALE_MS.payoutAccount,
+    enabled: enabled && !!uid,
+  });
+}
+
 /** Painel financeiro agregado pela API; a chave é privada por conta e período. */
 export function useTeacherFinanceQuery(period: TeacherFinancePeriod, enabled = true) {
   const uid = useAccountUid();

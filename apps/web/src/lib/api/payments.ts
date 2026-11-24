@@ -66,6 +66,23 @@ export type PayoutAccount = {
   created_at?: string | null;
 };
 
+/** Saldo informado pela subconta; nunca é calculado a partir das aulas. */
+export type PayoutBalance = {
+  environment: "sandbox" | "production";
+  available_cents: number;
+  blocked_cents: number;
+  withdrawals_enabled: boolean;
+};
+
+export type Withdrawal = {
+  id: string;
+  amount_cents: number;
+  status: "pending" | "completed" | "failed";
+  gateway_fee_cents: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TeacherFinancePeriod = "7d" | "30d" | "90d";
 
 /** Leitura do backend: parcela atribuída não significa saldo disponível ou repasse concluído. */
@@ -118,4 +135,6 @@ export const paymentsApi = {
   payoutAccount: (signal?: AbortSignal) => apiRequest<PayoutAccount>("/v1/me/payout-account", { signal }),
   savePayoutAccount: (body: { legal_name: string; tax_id: string }) =>
     apiRequest<PayoutAccount>("/v1/me/payout-account", { method: "PUT", body }),
+  payoutBalance: (signal?: AbortSignal) => apiRequest<PayoutBalance>("/v1/me/payout-balance", { signal }),
+  withdrawals: (signal?: AbortSignal) => apiRequest<Withdrawal[]>("/v1/me/withdrawals", { signal }),
 };
