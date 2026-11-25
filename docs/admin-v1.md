@@ -32,6 +32,30 @@ registrado. Nunca usar o onboarding público, JWT metadata, e-mail ou PostgREST 
 4. Adicionar `https://admin.edusearch.com.br` à allowlist CORS exata da API antes de publicar.
 5. Verificar um administrador provisionado e um usuário comum (403).
 
+## Autenticação administrativa
+
+O Admin possui seu próprio armazenamento de sessão (`edusearch-admin-auth`); ele não pressupõe
+cookies ou `localStorage` compartilhados com `app.edusearch.com.br`. O botão usa Google Identity
+Services com nonce aleatório em memória, SHA-256 enviado ao GIS e nonce original enviado somente ao
+Supabase em `signInWithIdToken`. A sessão Supabase é então apresentada à API, que chama
+`GET /v1/admin/me`; um JWT válido sem membership ativa recebe `403`, e sessão ausente/expirada
+recebe `401`. Nenhum desses estados concede acesso ao painel.
+
+Variáveis públicas do Cloudflare Pages (`apps/admin`):
+
+```env
+VITE_API_BASE_URL=https://api.edusearch.com.br
+VITE_SUPABASE_URL=<url pública do projeto>
+VITE_SUPABASE_PUBLISHABLE_KEY=<chave publishable>
+VITE_GOOGLE_CLIENT_ID=<client id web do Google>
+```
+
+No Supabase Auth e no Google Cloud, adicionar exatamente `https://admin.edusearch.com.br` às
+origens JavaScript autorizadas. Como o fluxo GIS usa popup/ID token, não há redirect OAuth de login
+para registrar; se o produto adicionar e-mail/OAuth redirecionado no futuro, registrar também uma
+URL de callback específica do Admin. Não usar secret key, service role, client secret do Google ou
+segredo de dispatcher no Cloudflare Pages.
+
 Rollback: remover o deployment/rota do Cloudflare e revogar as memberships ativas. Não apagar
 auditoria. A migration é aditiva; não execute rollback destrutivo em produção.
 

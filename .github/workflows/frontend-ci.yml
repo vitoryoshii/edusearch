@@ -88,7 +88,9 @@ jobs:
           pnpm --filter @edusearch/admin lint
 
       - name: Testes unitários (comissão 15%, calendário, Meet, OAuth, estágios, e-mail)
-        run: pnpm --filter @edusearch/web test:unit
+        run: |
+          pnpm --filter @edusearch/web test:unit
+          pnpm --filter @edusearch/admin test:auth
 
       - name: Testes dos documentos jurídicos (renderização, publicação, conteúdo, cabeçalho)
         run: pnpm --filter @edusearch/website test:legal
