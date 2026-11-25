@@ -28,7 +28,7 @@ async function nonceForAttempt() {
   return nonce;
 }
 type Status = "loading" | "signed_out" | "checking" | "authorized" | "forbidden" | "error";
-type AdminAuth = { status: Status; signOut: () => Promise<void>; renderGoogle: (node: HTMLElement) => Promise<void> };
+type AdminAuth = { status: Status; signOut: () => Promise<void>; renderGoogle: (node: HTMLElement) => Promise<void>; request: (path: string) => Promise<Response> };
 const Ctx = createContext<AdminAuth | null>(null);
 
 async function apiMe(session: Session) {
@@ -66,6 +66,14 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     return () => data.subscription.unsubscribe();
   }, [refresh]);
   const signOut = useCallback(async () => { window.google?.accounts?.id?.disableAutoSelect(); await getClient().auth.signOut({ scope: "local" }); nonce = null; setStatus("signed_out"); }, []);
+  const request = useCallback(async (path: string) => {
+    const session = (await getClient().auth.getSession()).data.session;
+    if (!session) { setStatus("signed_out"); throw new Error("session_missing"); }
+    const response = await fetch(`${config.api}${path}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+    if (response.status === 401) setStatus("signed_out");
+    if (response.status === 403) setStatus("forbidden");
+    return response;
+  }, []);
   const renderGoogle = useCallback(async (node: HTMLElement) => {
     if (!config.googleClientId) throw new Error("google_unconfigured");
     const pair = await nonceForAttempt(); const gis = await loadGis();
@@ -73,6 +81,6 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     if (!gisReady) { gis.initialize({ client_id: config.googleClientId, nonce: pair.hash, callback: (result: { credential?: string }) => result.credential && callback?.(result.credential), auto_select: false, ux_mode: "popup" }); gisReady = true; }
     node.replaceChildren(); gis.renderButton(node, { theme: "outline", size: "large", text: "continue_with", shape: "pill", width: Math.max(220, Math.floor(node.clientWidth || 320)) });
   }, []);
-  return <Ctx.Provider value={useMemo(() => ({ status, signOut, renderGoogle }), [status, signOut, renderGoogle])}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={useMemo(() => ({ status, signOut, renderGoogle, request }), [status, signOut, renderGoogle, request])}>{children}</Ctx.Provider>;
 }
 export function useAdminAuth() { const value = useContext(Ctx); if (!value) throw new Error("AdminAuthProvider ausente"); return value; }
