@@ -74,6 +74,26 @@ class AdminService:
             raise
         return row["data"]
 
+    def operational_list(
+        self, user: AuthenticatedUser, kind: str, limit: int, offset: int, query: str | None
+    ) -> dict[str, Any]:
+        permissions = {
+            "students": "users.read",
+            "lessons": "lessons.read",
+            "payments": "payments.read",
+            "payout-accounts": "payments.read",
+            "notifications": "notifications.read",
+            "audit": "audit.read",
+            "administrators": "admins.manage",
+        }
+        self._permission(user, permissions[kind])
+        with self._db.service_transaction() as conn:
+            row = conn.execute(
+                "select private.admin_operational_list(%s, %s, %s, %s, %s) as data",
+                (user.id, kind.replace("-", "_"), limit, offset, query),
+            ).fetchone()
+        return row["data"]
+
 
 def get_admin_service(
     request: Request, database: Annotated[BaseDatabase, Depends(get_database)]
