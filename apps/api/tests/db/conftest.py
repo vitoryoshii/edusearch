@@ -119,6 +119,17 @@ class Users:
 
     def cleanup(self) -> None:
         if self.created:
+            # Tabelas privadas de auditoria/outbox usam FKs RESTRICT para preservar
+            # histórico operacional em produção. Nos testes descartáveis, limpe só
+            # os registros ligados aos usuários efêmeros antes do cascade de auth.
+            self._admin.execute(
+                "delete from private.admin_audit_log where actor_id = any(%s) or resource_id = any(%s)",
+                (self.created, self.created),
+            )
+            self._admin.execute(
+                "delete from private.notification_outbox where recipient_user_id = any(%s)",
+                (self.created,),
+            )
             self._admin.execute("delete from auth.users where id = any(%s)", (self.created,))
 
 
