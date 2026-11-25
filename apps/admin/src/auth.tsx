@@ -28,7 +28,7 @@ async function nonceForAttempt() {
   return nonce;
 }
 type Status = "loading" | "signed_out" | "checking" | "authorized" | "forbidden" | "error";
-type AdminAuth = { status: Status; signOut: () => Promise<void>; renderGoogle: (node: HTMLElement) => Promise<void>; request: (path: string) => Promise<Response> };
+type AdminAuth = { status: Status; signOut: () => Promise<void>; renderGoogle: (node: HTMLElement) => Promise<void>; request: (path: string, init?: RequestInit) => Promise<Response> };
 const Ctx = createContext<AdminAuth | null>(null);
 
 async function apiMe(session: Session) {
@@ -65,13 +65,12 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     });
     return () => data.subscription.unsubscribe();
   }, [refresh]);
-  const signOut = useCallback(async () => { window.google?.accounts?.id?.disableAutoSelect(); await getClient().auth.signOut({ scope: "local" }); nonce = null; setStatus("signed_out"); }, []);
-  const request = useCallback(async (path: string) => {
+  const signOut = useCallback(async () => { window.google?.accounts?.id?.disableAutoSelect(); await getClient().auth.signOut({ scope: "local" }); nonce = null; window.location.reload(); }, []);
+  const request = useCallback(async (path: string, init: RequestInit = {}) => {
     const session = (await getClient().auth.getSession()).data.session;
     if (!session) { setStatus("signed_out"); throw new Error("session_missing"); }
-    const response = await fetch(`${config.api}${path}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+    const response = await fetch(`${config.api}${path}`, { ...init, headers: { Authorization: `Bearer ${session.access_token}`, ...(init.headers ?? {}) } });
     if (response.status === 401) setStatus("signed_out");
-    if (response.status === 403) setStatus("forbidden");
     return response;
   }, []);
   const renderGoogle = useCallback(async (node: HTMLElement) => {
