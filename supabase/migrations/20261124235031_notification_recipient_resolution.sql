@@ -15,9 +15,9 @@ create function private.notification_enqueue_for_user(
 declare v_email text;
 begin
   v_email := private.notification_recipient_email(p_recipient_user_id);
-  if v_email is null then
-    raise exception using errcode='P0001', message='notification_recipient_unconfirmed';
-  end if;
+  -- Inelegibilidade de e-mail é esperada e não pode desfazer a transação de negócio.
+  -- Falhas reais de integridade/permissão da inserção continuam propagando normalmente.
+  if v_email is null then return null; end if;
   return private.notification_enqueue(
     p_event_type, p_source_id, p_recipient_user_id, v_email,
     p_template_alias, p_template_variables, p_idempotency_key
