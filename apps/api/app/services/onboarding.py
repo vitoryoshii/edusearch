@@ -104,7 +104,7 @@ class DbOnboardingService:
             with as_connection_role(conn):
                 conn.execute(
                     "select private.notification_enqueue_for_user(%s, null, %s, %s, "
-                    "jsonb_build_object('NOME', %s), %s)",
+                    "jsonb_build_object('NOME', %s::text), %s)",
                     (
                         "onboarding.student_completed",
                         user.id,
@@ -144,7 +144,7 @@ class DbOnboardingService:
             with as_connection_role(conn):
                 conn.execute(
                     "select private.notification_enqueue_for_user(%s, null, %s, %s, "
-                    "jsonb_build_object('NOME', %s), %s)",
+                    "jsonb_build_object('NOME', %s::text), %s)",
                     (
                         "onboarding.teacher_completed",
                         user.id,
