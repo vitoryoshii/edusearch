@@ -38,7 +38,9 @@ const MOCK = `(() => {
   const token = () => encode({alg:"RS256",typ:"JWT"}) + "." + encode({sub:"admin-e2e",aud:"authenticated",exp:Math.floor(Date.now()/1000)+3600}) + ".test";
   const user = { id:"11111111-1111-4111-8111-111111111111", aud:"authenticated", role:"authenticated", email:"admin@example.test", email_confirmed_at:"2026-01-01T00:00:00Z", app_metadata:{provider:"google"}, user_metadata:{full_name:"Admin de teste"} };
   const session = () => ({access_token:token(),refresh_token:"refresh-test",token_type:"bearer",expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,user});
-  const state = window.__adminE2E = { authorized:true, api401:false, api403:false, network:false, badNonce:false, posts:0, page:0, teacher:{id:"22222222-2222-4222-8222-222222222222",display_name:"Professora E2E",account_status:"active",verification_status:"pending",is_published:false,price_cents:9000} };
+  const documentNumber = Number(sessionStorage.getItem("admin-e2e-document") || "0") + 1;
+  sessionStorage.setItem("admin-e2e-document", String(documentNumber));
+  const state = window.__adminE2E = { documentNumber, authorized:true, api401:false, api403:false, network:false, badNonce:false, posts:0, page:0, teacher:{id:"22222222-2222-4222-8222-222222222222",display_name:"Professora E2E",account_status:"active",verification_status:"pending",is_published:false,price_cents:9000} };
   let gisConfig;
   window.google = {accounts:{id:{
     initialize(config){ gisConfig=config; state.initialize=(state.initialize||0)+1; },
@@ -53,7 +55,7 @@ const MOCK = `(() => {
       if (state.badNonce) return new Response(JSON.stringify({error:"invalid_nonce"}),{status:400,headers:{"Content-Type":"application/json"}});
       return new Response(JSON.stringify(session()),{status:200,headers:{"Content-Type":"application/json"}});
     }
-    if (url.includes("supabase-admin-e2e.test/auth/v1/logout")) return new Response("",{status:204});
+    if (url.includes("supabase-admin-e2e.test/auth/v1/logout")) return new Response(null,{status:204});
     if (url.includes("api.admin-e2e.test/v1/admin/") && state.api401) return new Response("",{status:401});
     if (url.includes("api.admin-e2e.test/v1/admin/me")) {
       if (!state.authorized) return new Response("",{status:403});
@@ -82,6 +84,14 @@ await check(await waitFor("!!document.querySelector('[data-e2e-google]')"), "tel
 await click("[data-e2e-google]");
 await check(await waitFor("document.querySelector('aside')?.textContent.includes('EduSearch Admin')"), "login autorizado valida /v1/admin/me");
 await check(await b.evaluate("window.__adminE2E.initialize === 1"), "GIS inicializado uma única vez");
+
+const documentNumber = () => b.evaluate("Number(sessionStorage.getItem('admin-e2e-document') || 0)");
+const waitForNewDocument = (previous) => waitFor(`Number(sessionStorage.getItem('admin-e2e-document') || 0) > ${previous} && !!document.querySelector('[data-e2e-google]')`);
+const logOutDocument = await documentNumber();
+await b.evaluate("[...document.querySelectorAll('button')].find((b)=>b.textContent==='Sair')?.click()");
+await check(await waitForNewDocument(logOutDocument), "logout remove a sessão e reinicia a jornada administrativa");
+await click("[data-e2e-google]");
+await check(await waitFor("document.querySelector('aside')?.textContent.includes('EduSearch Admin')"), "novo login após logout valida o servidor");
 
 for (const path of ["/students", "/teachers", "/lessons", "/payments", "/payout-accounts", "/notifications", "/audit", "/administrators"]) {
   await b.go(base + path);
@@ -120,16 +130,19 @@ await check(await waitFor("document.body.textContent.includes('Não foi possíve
 await b.evaluate("window.__adminE2E.network=false;window.__adminE2E.api401=true;[...document.querySelectorAll('a')].find((a)=>a.getAttribute('href')==='/students')?.click()");
 await check(await waitFor("document.querySelector('.gate h1')?.textContent.includes('Acesso administrativo')"), "HTTP 401 encerra a sessão administrativa");
 
+const rejectedDocument = await documentNumber();
 await b.evaluate("window.__adminE2E.api401=false;window.__adminE2E.badNonce=true");
 await click("[data-e2e-google]");
-await check(await waitFor("document.querySelector('.gate h1')?.textContent.includes('Acesso administrativo')"), "nonce inválido não cria sessão");
+await check(await waitForNewDocument(rejectedDocument), "nonce inválido reinicia o documento antes de nova tentativa");
+await check(await b.evaluate("!document.querySelector('aside') && !!document.querySelector('[data-e2e-google]')"), "nonce inválido não cria sessão");
 await b.evaluate("window.__adminE2E.badNonce=false;window.__adminE2E.authorized=false");
 await click("[data-e2e-google]");
-await check(await waitFor("document.body.textContent.includes('Acesso restrito')"), "conta sem RBAC recebe acesso restrito");
+await check(await waitFor("document.body.textContent.includes('Acesso restrito') && !document.querySelector('aside')"), "conta sem RBAC recebe acesso restrito");
 
 for (const [width, dark] of [[1440,false],[768,true],[390,false],[320,true]]) {
   await b.viewport(width, { dark });
   await b.go(base + "/teachers");
+  await check(await waitFor("!!document.querySelector('aside') && !document.querySelector('[role=status]')"), `painel autorizado carregado em ${width}px`);
   const geometry = await b.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth");
   await check(geometry, `sem overflow horizontal em ${width}px`);
   if (shots) await b.screenshot(join(shots, `admin-${width}-${dark ? "dark" : "light"}.png`));
