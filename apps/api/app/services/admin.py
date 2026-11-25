@@ -9,7 +9,7 @@ from fastapi import Depends, Request
 from app.auth.dependencies import get_database
 from app.auth.jwt import AuthenticatedUser
 from app.db import BaseDatabase, as_connection_role
-from app.errors import forbidden, not_found
+from app.errors import ApiError, forbidden, not_found
 
 
 class AdminService:
@@ -33,7 +33,17 @@ class AdminService:
         return str(role)
 
     def me(self, user: AuthenticatedUser) -> dict[str, Any]:
-        role = self._permission(user, "dashboard.read")
+        # /me comprova a identidade administrativa; não exige dashboard.read para que
+        # auditores possam iniciar sessão sem receber privilégios de outro módulo.
+        with self._db.user_transaction(user) as conn:
+            with as_connection_role(conn):
+                role = conn.execute(
+                    "select private.admin_role_for(%s) as role", (user.id,)
+                ).fetchone()["role"]
+        if not role:
+            raise forbidden(
+                "admin_permission_required", "Sua conta não tem permissão administrativa."
+            )
         return {"id": user.id, "role": role}
 
     def dashboard(self, user: AuthenticatedUser, days: int) -> dict[str, Any]:
@@ -71,6 +81,12 @@ class AdminService:
             # Não converte falhas de banco genéricas; só evita enumerar professor inexistente.
             if getattr(exc, "sqlstate", None) == "P0002":
                 raise not_found("teacher_not_found", "Professor não encontrado.") from exc
+            if getattr(exc, "sqlstate", None) == "22023" and "teacher_transition_invalid" in str(
+                exc
+            ):
+                raise ApiError(
+                    422, "teacher_transition_invalid", "Transição de professor inválida."
+                ) from exc
             raise
         return row["data"]
 

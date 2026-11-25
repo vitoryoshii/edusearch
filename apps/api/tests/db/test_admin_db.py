@@ -40,6 +40,7 @@ def grant_admin(admin, user_id, role: str) -> None:
 def make_teacher(admin, users, name: str = "Professor pendente"):
     teacher_id = users.create(name, email_confirmed=True)
     users.grant_role(teacher_id, "teacher")
+    admin.execute("update public.profiles set status = 'active' where id = %s", (teacher_id,))
     admin.execute("insert into public.teacher_profiles (user_id) values (%s)", (teacher_id,))
     return teacher_id
 
@@ -76,6 +77,7 @@ def test_each_role_has_only_its_persisted_permissions(
     operator = users.create(f"Admin {role}", email_confirmed=True)
     grant_admin(admin, operator, role)
     headers = auth(make_token(operator))
+    assert client.get("/v1/admin/me", headers=headers).status_code == 200
     assert client.get(allowed, headers=headers).status_code == 200
     if denied:
         assert client.get(denied, headers=headers).status_code == 403
@@ -121,7 +123,7 @@ def test_teacher_transitions_are_audited_and_reject_invalid_actor(
     teacher = make_teacher(admin, users)
     headers = auth(make_token(operator))
 
-    for action in ("approve", "reject", "suspend", "reactivate"):
+    for action in ("approve", "suspend", "reactivate"):
         response = client.post(
             f"/v1/admin/teachers/{teacher}/{action}",
             headers=headers,
@@ -136,11 +138,44 @@ def test_teacher_transitions_are_audited_and_reject_invalid_actor(
     ).fetchall()
     assert [row["action"] for row in rows] == [
         "teachers.approve",
-        "teachers.reject",
         "teachers.suspend",
         "teachers.reactivate",
     ]
     assert {row["result"] for row in rows} == {"success"}
+    assert rows[1]["action"] == "teachers.suspend"
+    states = admin.execute(
+        "select before_state, after_state from private.admin_audit_log where actor_id=%s and resource_id=%s "
+        "and action in ('teachers.suspend', 'teachers.reactivate') order by created_at",
+        (operator, teacher),
+    ).fetchall()
+    assert states[0]["before_state"]["account_status"] == "active"
+    assert states[0]["after_state"]["account_status"] == "suspended"
+    assert states[1]["before_state"]["account_status"] == "suspended"
+    assert states[1]["after_state"]["account_status"] == "active"
+
+    rejected = make_teacher(admin, users, "Professor rejeitado")
+    rejected_response = client.post(
+        f"/v1/admin/teachers/{rejected}/reject",
+        headers=headers,
+        json={"justification": "Documentação insuficiente"},
+    )
+    assert rejected_response.status_code == 200, rejected_response.text
+    rejected_row = admin.execute(
+        "select verification_status, verified_at, is_published, published_at from public.teacher_profiles where user_id=%s",
+        (rejected,),
+    ).fetchone()
+    assert rejected_row == {
+        "verification_status": "rejected",
+        "verified_at": None,
+        "is_published": False,
+        "published_at": None,
+    }
+    invalid = client.post(
+        f"/v1/admin/teachers/{teacher}/reject",
+        headers=headers,
+        json={"justification": "Transição inválida"},
+    )
+    assert invalid.status_code == 422
 
     public_user = users.create("Sem permissão", email_confirmed=True)
     before = admin.execute("select status from public.profiles where id=%s", (teacher,)).fetchone()[
@@ -208,12 +243,12 @@ def test_payments_keep_environment_and_outbox_hides_recipient_data(
     admin.execute(
         """
         insert into private.notification_outbox
-          (event_type, entity_type, entity_id, recipient_user_id, recipient_email, template_alias,
+          (event_type, source_id, recipient_user_id, recipient_email, template_alias,
            template_variables, idempotency_key)
-        values ('lesson.created', 'lesson', %s, %s, 'confirmed@example.com', 'edusearch-aula-confirmada-v1',
+        values ('lesson.created', %s, %s, 'confirmed@example.com', 'edusearch-aula-confirmada-v1',
                 %s::jsonb, %s)
         """,
-        (uuid.uuid4(), student, json.dumps({"NOME": "Privado"}), uuid.uuid4()),
+        (uuid.uuid4(), student, json.dumps({"NOME": "Privado"}), f"admin-outbox-{uuid.uuid4()}"),
     )
     notifications = client.get("/v1/admin/notifications", headers=auth(make_token(support)))
     assert notifications.status_code == 200, notifications.text
@@ -250,7 +285,8 @@ def test_admin_private_grants_and_rls_are_closed_to_public_roles(admin) -> None:
         ).fetchone()
         assert row == {"anon": False, "authenticated": False}
     policies = admin.execute(
-        "select tablename from pg_tables where schemaname='private' and tablename in "
+        "select c.relname as tablename, c.relrowsecurity from pg_class c join pg_namespace n "
+        "on n.oid=c.relnamespace where n.nspname='private' and c.relname in "
         "('admin_memberships','admin_audit_log','notification_outbox')"
     ).fetchall()
     assert {row["tablename"] for row in policies} == {
@@ -258,3 +294,4 @@ def test_admin_private_grants_and_rls_are_closed_to_public_roles(admin) -> None:
         "admin_audit_log",
         "notification_outbox",
     }
+    assert all(row["relrowsecurity"] for row in policies)
