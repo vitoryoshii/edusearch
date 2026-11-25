@@ -16,7 +16,8 @@ from app.crypto import TokenCipher
 from app.db import BaseDatabase, Database
 from app.errors import ApiError, install_error_handlers
 from app.google_calendar import GoogleCalendarClient
-from app.routers import health, me, onboarding, payments, scheduling
+from app.notifications import NotificationDispatcher, ResendClient
+from app.routers import health, internal_notifications, me, onboarding, payments, scheduling
 from app.services.payments import build_gateway
 from app.services.scheduling import build_calendar_client
 
@@ -126,6 +127,24 @@ def create_app(
     app.state.google_calendar = google_calendar
     app.state.token_cipher = token_cipher
     app.state.payment_gateway = payment_gateway
+    # O dispatcher só existe se a operação habilitar explicitamente as notificações; em ``off``
+    # o endpoint não processa a fila e nenhum e-mail pode ser enviado.
+    app.state.notification_dispatcher = None
+    if (
+        settings.notifications_stage != "off"
+        and settings.notifications_configured
+        and db is not None
+    ):
+        assert settings.resend_api_key is not None  # noqa: S101
+        assert settings.resend_from is not None  # noqa: S101
+        app.state.notification_dispatcher = NotificationDispatcher(
+            db,
+            ResendClient(
+                settings.resend_api_key.get_secret_value(),
+                settings.resend_from,
+                timeout=settings.resend_timeout_seconds,
+            ),
+        )
     if clock is not None:
         app.state.clock = clock
 
@@ -158,6 +177,7 @@ def create_app(
     app.include_router(onboarding.router)
     app.include_router(scheduling.router)
     app.include_router(payments.router)
+    app.include_router(internal_notifications.router)
     return app
 
 

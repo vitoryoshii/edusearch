@@ -90,6 +90,7 @@ class DbOnboardingService:
     def save_student(self, user: AuthenticatedUser, data: StudentProfileIn) -> StudentProfileOut:
         with self._db.user_transaction(user) as conn:
             self._guard(conn, user, "student", write=True)
+            display_name = load_profile(conn, user).display_name
             repo = OnboardingRepository(conn)
             try:
                 repo.upsert_student(user.id, data)
@@ -98,6 +99,20 @@ class DbOnboardingService:
             row = repo.get_student(user.id)
             if row is None:  # pragma: no cover — acabou de ser gravado na mesma transação
                 raise not_found("student_profile_not_found", "Cadastro de aluno ainda não salvo.")
+            # A chave estável torna o reenvio do PUT idempotente. A função privada resolve
+            # exclusivamente o e-mail confirmado em auth.users; nenhum e-mail chega do cliente.
+            with as_connection_role(conn):
+                conn.execute(
+                    "select private.notification_enqueue_for_user(%s, null, %s, %s, "
+                    "jsonb_build_object('NOME', %s::text), %s)",
+                    (
+                        "onboarding.student_completed",
+                        user.id,
+                        "edusearch-boas-vindas-aluno-v1",
+                        display_name,
+                        f"welcome/student/{user.id}",
+                    ),
+                )
             return StudentProfileOut(**row)
 
     # ------------------------------------------------------------------ professor
@@ -115,6 +130,7 @@ class DbOnboardingService:
     def save_teacher(self, user: AuthenticatedUser, data: TeacherProfileIn) -> TeacherProfileOut:
         with self._db.user_transaction(user) as conn:
             self._guard(conn, user, "teacher", write=True)
+            display_name = load_profile(conn, user).display_name
             repo = OnboardingRepository(conn)
             try:
                 repo.upsert_teacher(user.id, data)
@@ -124,6 +140,18 @@ class DbOnboardingService:
             if row is None:  # pragma: no cover
                 raise not_found(
                     "teacher_profile_not_found", "Cadastro de professor ainda não salvo."
+                )
+            with as_connection_role(conn):
+                conn.execute(
+                    "select private.notification_enqueue_for_user(%s, null, %s, %s, "
+                    "jsonb_build_object('NOME', %s::text), %s)",
+                    (
+                        "onboarding.teacher_completed",
+                        user.id,
+                        "edusearch-boas-vindas-professor-v1",
+                        display_name,
+                        f"welcome/teacher/{user.id}",
+                    ),
                 )
             return TeacherProfileOut(**row)
 

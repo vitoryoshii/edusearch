@@ -17,6 +17,7 @@ import {
 } from "@edusearch/ui";
 import { hasRole, useAccount, useDisplayProfile, useServerMe } from "../../app/account";
 import { PayoutAccountCard } from "../../components/account/PayoutAccountCard";
+import { PayoutOperationsCard } from "../../components/account/PayoutOperationsCard";
 import { FEATURES } from "../../lib/features";
 import { useAuth } from "../../app/auth";
 import { accountApi, type Me } from "../../lib/api/account";
@@ -194,6 +195,7 @@ function PayoutSection() {
     <section aria-labelledby="recebimentos">
       <SectionTitle id="recebimentos">Recebimentos</SectionTitle>
       <PayoutAccountCard />
+      <PayoutOperationsCard />
     </section>
   );
 }

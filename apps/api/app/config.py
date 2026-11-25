@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     abacatepay_split_enabled: bool = False
     # Saques são irreversíveis e ficam desligados até homologação financeira explícita.
     subaccount_withdrawals_enabled: bool = False
+    # Notificações transacionais ficam desligadas até domínio, DNS e operação serem homologados.
+    notifications_stage: str = "off"
+    resend_api_key: SecretStr | None = None
+    resend_from: str | None = None
+    resend_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+    notifications_dispatch_secret: SecretStr | None = None
+    notifications_batch_size: int = Field(default=10, ge=1, le=100)
     # Autorização operacional EXPLÍCITA para cobrar de verdade.
     payments_production_approved: bool = False
     payments_hold_seconds: int = Field(default=900, ge=300, le=3600)
@@ -90,6 +97,13 @@ class Settings(BaseSettings):
     def _validate_payments_stage(cls, value: str) -> str:
         if value not in {"off", "sandbox", "production"}:
             raise ValueError("API_PAYMENTS_STAGE aceita apenas off, sandbox ou production")
+        return value
+
+    @field_validator("notifications_stage")
+    @classmethod
+    def _validate_notifications_stage(cls, value: str) -> str:
+        if value not in {"off", "sandbox", "production"}:
+            raise ValueError("API_NOTIFICATIONS_STAGE aceita apenas off, sandbox ou production")
         return value
 
     @model_validator(mode="after")
@@ -120,6 +134,11 @@ class Settings(BaseSettings):
         if secret is not None and len(secret.get_secret_value()) < 32:
             raise ValueError("API_ABACATEPAY_WEBHOOK_SECRET precisa ter ao menos 32 caracteres")
         return self
+
+    @property
+    def notifications_configured(self) -> bool:
+        """Somente metadado de readiness; envio continua desligado até existir outbox homologada."""
+        return bool(self.notifications_stage != "off" and self.resend_api_key and self.resend_from)
 
     @property
     def payments_configured(self) -> bool:

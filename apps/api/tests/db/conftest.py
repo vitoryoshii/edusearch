@@ -97,14 +97,17 @@ class Users:
         self._admin = admin
         self.created: list[uuid.UUID] = []
 
-    def create(self, name: str = "Pessoa Fictícia", **meta: Any) -> uuid.UUID:
+    def create(
+        self, name: str = "Pessoa Fictícia", *, email_confirmed: bool = False, **meta: Any
+    ) -> uuid.UUID:
         uid = uuid.uuid4()
         email = f"teste+{uid.hex[:12]}@example.com"
         metadata = {"full_name": name, **meta}
         self._admin.execute(
-            "insert into auth.users (id, aud, role, email, raw_user_meta_data) "
-            "values (%s, 'authenticated', 'authenticated', %s, %s)",
-            (uid, email, json.dumps(metadata)),
+            "insert into auth.users (id, aud, role, email, email_confirmed_at, raw_user_meta_data) "
+            "values (%s, 'authenticated', 'authenticated', %s, "
+            "case when %s then now() else null end, %s)",
+            (uid, email, email_confirmed, json.dumps(metadata)),
         )
         self.created.append(uid)
         return uid
