@@ -17,7 +17,7 @@ from app.db import BaseDatabase, Database
 from app.errors import ApiError, install_error_handlers
 from app.google_calendar import GoogleCalendarClient
 from app.notifications import NotificationDispatcher, ResendClient
-from app.routers import health, internal_notifications, me, onboarding, payments, scheduling
+from app.routers import admin, health, internal_notifications, me, onboarding, payments, scheduling
 from app.services.payments import build_gateway
 from app.services.scheduling import build_calendar_client
 
@@ -178,6 +178,7 @@ def create_app(
     app.include_router(scheduling.router)
     app.include_router(payments.router)
     app.include_router(internal_notifications.router)
+    app.include_router(admin.router)
     return app
 
 
