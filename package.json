@@ -11,8 +11,10 @@
   "scripts": {
     "dev:website": "pnpm --filter @edusearch/website dev",
     "dev:web": "pnpm --filter @edusearch/web dev",
+    "dev:admin": "pnpm --filter @edusearch/admin dev",
     "build:website": "pnpm --filter @edusearch/website build",
     "build:web": "pnpm --filter @edusearch/web build",
+    "build:admin": "pnpm --filter @edusearch/admin build",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck"
   }

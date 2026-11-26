@@ -23,6 +23,7 @@ on:
     types: [opened, synchronize, reopened, labeled, ready_for_review]
     paths:
       - "apps/web/**"
+      - "apps/admin/**"
       - "apps/website/**"
       - "packages/ui/**"
       - "docs/legal/**"
@@ -81,21 +82,25 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
-      - name: Lint (efeitos React não podem retornar valor)
-        run: pnpm --filter @edusearch/web lint
+      - name: Lint (efeitos React e segurança do Admin)
+        run: |
+          pnpm --filter @edusearch/web lint
+          pnpm --filter @edusearch/admin lint
 
       - name: Testes unitários (comissão 15%, calendário, Meet, OAuth, estágios, e-mail)
-        run: pnpm --filter @edusearch/web test:unit
+        run: |
+          pnpm --filter @edusearch/web test:unit
+          pnpm --filter @edusearch/admin test:auth
 
       - name: Testes dos documentos jurídicos (renderização, publicação, conteúdo, cabeçalho)
         run: pnpm --filter @edusearch/website test:legal
 
-      - name: Build (website, app e design system)
+      - name: Build (website, app, admin e design system)
         run: pnpm -r build
 
       - name: Sem segredos nos bundles (Client Secret do Google, secret key do Supabase)
         run: |
-          if grep -rEl "GOCSPX-[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]{10,}" apps/web/dist apps/website/dist; then
+          if grep -rEl "GOCSPX-[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]{10,}" apps/web/dist apps/website/dist apps/admin/dist; then
             echo "Segredo encontrado no bundle"; exit 1
           fi
 
@@ -214,6 +219,24 @@ jobs:
         timeout-minutes: 6
         run: node apps/web/scripts/payments.mjs http://localhost:5194 "$RUNNER_TEMP/auth-screens/pagamentos" 2>&1 | tee "$RUNNER_TEMP/logs/payments.log"
 
+      - name: Servidor do Admin com autenticação simulada na porta 5195
+        if: success() || failure()
+        env:
+          VITE_API_BASE_URL: https://api.admin-e2e.test
+          VITE_SUPABASE_URL: https://supabase-admin-e2e.test
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_admin_e2e_test
+          VITE_GOOGLE_CLIENT_ID: 1234567890-edusearchci.apps.googleusercontent.com
+        run: |
+          pnpm --filter @edusearch/admin exec vite --port 5195 --strictPort > "$RUNNER_TEMP/logs/vite-admin.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:5195 > /dev/null && break; sleep 1; done
+          curl -sf http://localhost:5195 > /dev/null || { cat "$RUNNER_TEMP/logs/vite-admin.log"; exit 1; }
+          sleep 2
+
+      - name: Admin E2E (GIS, sessão, RBAC, mutações, 401/403 e responsividade)
+        if: success() || failure()
+        timeout-minutes: 6
+        run: pnpm --filter @edusearch/admin test:e2e http://localhost:5195 "$RUNNER_TEMP/admin-screens" 2>&1 | tee "$RUNNER_TEMP/logs/admin-e2e.log"
+
       - name: Website servido como estático (vite preview, sem fallback de SPA) na porta 4174
         if: success() || failure()
         run: |
@@ -231,7 +254,7 @@ jobs:
         run: |
           {
             echo "## Testes de navegador"
-            for t in smoke a11y auth persistence agenda payments legal-browser; do
+            for t in smoke a11y auth persistence agenda payments admin-e2e legal-browser; do
               f="$RUNNER_TEMP/logs/$t.log"
               [ -f "$f" ] || { echo "- **$t**: não executado"; continue; }
               ok=$(grep -c "  ✓ " "$f" || true)
@@ -240,7 +263,7 @@ jobs:
                 echo '```text'; { grep -A2 "✗" "$f" || true; } | head -n 40 || true; echo '```'
               fi
             done
-            for s in vite vite-auth vite-persistence vite-agenda vite-payments website; do
+            for s in vite vite-auth vite-persistence vite-agenda vite-payments vite-admin website; do
               f="$RUNNER_TEMP/logs/$s.log"
               if [ -f "$f" ] && grep -qiE "error|failed" "$f"; then
                 echo "### Log do servidor: $s"; echo '```text'; { grep -iE -B1 -A3 "error|failed" "$f" || true; } | head -n 30 || true; echo '```'
@@ -263,6 +286,15 @@ jobs:
         with:
           name: screenshots-fase-2.6b
           path: ${{ runner.temp }}/auth-screens
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Artefato — capturas e logs do Admin
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-admin
+          path: ${{ runner.temp }}/admin-screens
           if-no-files-found: warn
           retention-days: 14
 
