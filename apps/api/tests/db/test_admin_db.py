@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.db import Database
 from app.main import create_app
+from tests.db.conftest import credential_approved
 
 
 @pytest.fixture
@@ -123,6 +124,20 @@ def test_teacher_transitions_are_audited_and_reject_invalid_actor(
     teacher = make_teacher(admin, users)
     headers = auth(make_token(operator))
 
+    # A aprovação administrativa não contorna o Trust Engine.
+    bypass = client.post(
+        f"/v1/admin/teachers/{teacher}/approve",
+        headers=headers,
+        json={"justification": "Tentativa sem credenciamento"},
+    )
+    assert (bypass.status_code, bypass.json()["code"]) == (422, "trust_credential_required")
+    unchanged = admin.execute(
+        "select verification_status, is_published from public.teacher_profiles where user_id=%s",
+        (teacher,),
+    ).fetchone()
+    assert unchanged == {"verification_status": "pending", "is_published": False}
+
+    credential_approved(admin, teacher)
     for action in ("approve", "suspend", "reactivate"):
         response = client.post(
             f"/v1/admin/teachers/{teacher}/{action}",
