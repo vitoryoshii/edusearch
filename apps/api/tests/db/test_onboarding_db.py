@@ -314,3 +314,48 @@ def test_existing_rows_survive_new_columns(users, commit_as, admin) -> None:
         (a,),
     ).fetchone()
     assert row == {"m": [], "d": [], "p": 60}
+
+
+# -------------------------------------------------------------------- credenciamento
+
+
+VERIFICATION = {
+    "qualification_kind": "graduated",
+    "birth_date": "1990-01-02",
+    "institution": "Universidade Fictícia",
+    "qualification": "Licenciatura em Matemática",
+    "professional_experience": "Experiência comprovável em reforço escolar e preparação para vestibulares.",
+    "curriculum_summary": "Atuação em aulas individuais, planejamento didático e acompanhamento de aprendizagem.",
+    "financial_tax_id_kind": "cpf",
+    "financial_tax_id_last4": "1234",
+    "terms_version": "teacher-terms-2026-11",
+}
+
+
+def test_teacher_verification_is_private_and_submission_requires_documents(
+    client, users, make_token, as_user
+) -> None:
+    teacher = users.create("Prof Credenciado", email_confirmed=True)
+    token = make_token(teacher)
+    client.post("/v1/me/roles", json={"role": "teacher"}, headers=auth(token))
+    assert (
+        client.put("/v1/me/teacher-profile", json=TEACHER, headers=auth(token)).status_code == 200
+    )
+
+    assert client.get("/v1/me/teacher-verification", headers=auth(token)).status_code == 404
+    saved = client.put("/v1/me/teacher-verification", json=VERIFICATION, headers=auth(token))
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["status"] == "draft"
+    assert "birth_date" not in body and "financial_tax_id_last4" not in body
+
+    submitted = client.post("/v1/me/teacher-verification/submit", headers=auth(token))
+    assert (submitted.status_code, submitted.json()["code"]) == (
+        422,
+        "verification_documents_required",
+    )
+    # O usuário não recebe acesso direto aos dados sensíveis, mesmo autenticado.
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        as_user(teacher).rows("select * from private.teacher_verifications")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        as_user(teacher).rows("select * from private.teacher_verification_documents")

@@ -10,6 +10,10 @@ from app.schemas.onboarding import (
     SubjectOut,
     TeacherProfileIn,
     TeacherProfileOut,
+    TeacherVerificationDocumentIn,
+    TeacherVerificationDocumentOut,
+    TeacherVerificationIn,
+    TeacherVerificationOut,
 )
 from app.services.onboarding import OnboardingService, get_onboarding_service
 
@@ -53,6 +57,47 @@ def put_teacher_profile(
 ) -> TeacherProfileOut:
     """Cria ou substitui o cadastro profissional. Não aprova nem publica."""
     return service.save_teacher(user, payload)
+
+
+@router.get("/v1/me/teacher-verification", response_model=TeacherVerificationOut, responses=_ERRORS)
+def get_teacher_verification(user: CurrentUser, service: Service) -> TeacherVerificationOut:
+    """Dossiê privado do próprio professor; não retorna URLs ou conteúdo de documentos."""
+    return service.get_teacher_verification(user)
+
+
+@router.put(
+    "/v1/me/teacher-verification",
+    response_model=TeacherVerificationOut,
+    responses=_WRITE_ERRORS,
+)
+def put_teacher_verification(
+    payload: TeacherVerificationIn, user: CurrentUser, service: Service
+) -> TeacherVerificationOut:
+    """Salva o dossiê em draft. Estado de análise e publicação nunca vêm do cliente."""
+    return service.save_teacher_verification(user, payload)
+
+
+@router.post(
+    "/v1/me/teacher-verification/documents",
+    response_model=TeacherVerificationDocumentOut,
+    status_code=201,
+    responses=_WRITE_ERRORS,
+)
+def post_teacher_verification_document(
+    payload: TeacherVerificationDocumentIn, user: CurrentUser, service: Service
+) -> TeacherVerificationDocumentOut:
+    """Registra objeto privado enviado ao Storage pelo próprio titular após validar metadados."""
+    return service.register_teacher_verification_document(user, payload)
+
+
+@router.post(
+    "/v1/me/teacher-verification/submit",
+    response_model=TeacherVerificationOut,
+    responses=_WRITE_ERRORS,
+)
+def post_teacher_verification_submit(user: CurrentUser, service: Service) -> TeacherVerificationOut:
+    """Envia dossiê completo para revisão humana e remove publicação até nova decisão."""
+    return service.submit_teacher_verification(user)
 
 
 @router.get(

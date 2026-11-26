@@ -18,6 +18,10 @@ from app.schemas.onboarding import (
     SubjectOut,
     TeacherProfileIn,
     TeacherProfileOut,
+    TeacherVerificationDocumentIn,
+    TeacherVerificationDocumentOut,
+    TeacherVerificationIn,
+    TeacherVerificationOut,
 )
 from app.services.profiles import account_suspended, build_me, load_profile
 
@@ -37,6 +41,14 @@ class OnboardingService(Protocol):
     def save_teacher(
         self, user: AuthenticatedUser, data: TeacherProfileIn
     ) -> TeacherProfileOut: ...
+    def get_teacher_verification(self, user: AuthenticatedUser) -> TeacherVerificationOut: ...
+    def save_teacher_verification(
+        self, user: AuthenticatedUser, data: TeacherVerificationIn
+    ) -> TeacherVerificationOut: ...
+    def register_teacher_verification_document(
+        self, user: AuthenticatedUser, data: TeacherVerificationDocumentIn
+    ) -> TeacherVerificationDocumentOut: ...
+    def submit_teacher_verification(self, user: AuthenticatedUser) -> TeacherVerificationOut: ...
     def list_subjects(self) -> list[SubjectOut]: ...
 
 
@@ -47,6 +59,64 @@ def _role_required(role: Role) -> ApiError:
 
 def _unknown_subjects(exc: UnknownSubjectsError) -> ApiError:
     return ApiError(422, "unknown_subject", f"Disciplina inválida: {', '.join(exc.slugs)}.")
+
+
+def _verification_error(exc: psycopg.Error) -> ApiError:
+    """Mapeia somente regras de domínio deliberadas; integridade inesperada continua falhando."""
+    message = str(getattr(exc, "diag", None).message_primary or "")
+    codes = {
+        "teacher_must_be_adult": (
+            422,
+            "teacher_must_be_adult",
+            "É necessário ter 18 anos ou mais.",
+        ),
+        "invalid_financial_identity": (
+            422,
+            "invalid_financial_identity",
+            "Documento financeiro inválido.",
+        ),
+        "invalid_document_path": (422, "invalid_document_path", "Caminho de documento inválido."),
+        "invalid_document_content_type": (
+            422,
+            "invalid_document_content_type",
+            "Tipo de arquivo não permitido.",
+        ),
+        "invalid_document_size": (
+            422,
+            "invalid_document_size",
+            "O arquivo excede o limite permitido.",
+        ),
+        "document_not_owned": (403, "document_not_owned", "O documento não pertence à sua conta."),
+        "document_already_registered": (
+            409,
+            "document_already_registered",
+            "Documento já registrado.",
+        ),
+        "verification_locked_for_review": (
+            409,
+            "verification_locked_for_review",
+            "Dossiê em análise.",
+        ),
+        "verification_dossier_required": (
+            422,
+            "verification_dossier_required",
+            "Preencha o dossiê antes de enviar.",
+        ),
+        "verification_documents_required": (
+            422,
+            "verification_documents_required",
+            "Envie identidade e comprovação acadêmica.",
+        ),
+        "verification_not_submittable": (
+            409,
+            "verification_not_submittable",
+            "Dossiê não pode ser enviado neste estado.",
+        ),
+    }
+    if message in codes:
+        status, code, detail = codes[message]
+        return ApiError(status, code, detail)
+    raise exc
 
 
 class DbOnboardingService:
@@ -154,6 +224,59 @@ class DbOnboardingService:
                     ),
                 )
             return TeacherProfileOut(**row)
+
+    # --------------------------------------------------------------- credenciamento
+
+    def _teacher_verification_row(self, repo: OnboardingRepository) -> TeacherVerificationOut:
+        row = repo.teacher_verification()
+        if row is None:
+            raise not_found(
+                "teacher_verification_not_found", "Dossiê de credenciamento ainda não iniciado."
+            )
+        row["documents"] = [TeacherVerificationDocumentOut(**item) for item in row["documents"]]
+        return TeacherVerificationOut(**row)
+
+    def get_teacher_verification(self, user: AuthenticatedUser) -> TeacherVerificationOut:
+        with self._db.user_transaction(user) as conn:
+            self._guard(conn, user, "teacher")
+            with as_connection_role(conn):
+                return self._teacher_verification_row(OnboardingRepository(conn))
+
+    def save_teacher_verification(
+        self, user: AuthenticatedUser, data: TeacherVerificationIn
+    ) -> TeacherVerificationOut:
+        with self._db.user_transaction(user) as conn:
+            self._guard(conn, user, "teacher", write=True)
+            with as_connection_role(conn):
+                repo = OnboardingRepository(conn)
+                try:
+                    repo.upsert_teacher_verification(data)
+                except psycopg.Error as exc:
+                    raise _verification_error(exc) from exc
+                return self._teacher_verification_row(repo)
+
+    def register_teacher_verification_document(
+        self, user: AuthenticatedUser, data: TeacherVerificationDocumentIn
+    ) -> TeacherVerificationDocumentOut:
+        with self._db.user_transaction(user) as conn:
+            self._guard(conn, user, "teacher", write=True)
+            with as_connection_role(conn):
+                try:
+                    row = OnboardingRepository(conn).register_teacher_verification_document(data)
+                except psycopg.Error as exc:
+                    raise _verification_error(exc) from exc
+                return TeacherVerificationDocumentOut(**row)
+
+    def submit_teacher_verification(self, user: AuthenticatedUser) -> TeacherVerificationOut:
+        with self._db.user_transaction(user) as conn:
+            self._guard(conn, user, "teacher", write=True)
+            with as_connection_role(conn):
+                repo = OnboardingRepository(conn)
+                try:
+                    repo.submit_teacher_verification()
+                except psycopg.Error as exc:
+                    raise _verification_error(exc) from exc
+                return self._teacher_verification_row(repo)
 
     # ------------------------------------------------------------------ catálogo
 
