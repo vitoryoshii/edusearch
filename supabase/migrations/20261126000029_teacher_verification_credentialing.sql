@@ -109,14 +109,14 @@ create policy teacher_verification_storage_select_own on storage.objects
   for select to authenticated
   using (
     bucket_id = 'teacher-verification'
-    and owner_id = (select auth.uid())
+    and owner_id = (select auth.uid()::text)
   );
 
 create policy teacher_verification_storage_insert_own on storage.objects
   for insert to authenticated
   with check (
     bucket_id = 'teacher-verification'
-    and owner_id = (select auth.uid())
+    and owner_id = (select auth.uid()::text)
     and (storage.foldername(name))[1] = (select auth.jwt() ->> 'sub')
   );
 -- Sem UPDATE/DELETE: uma nova versão recebe um novo objeto e a cadeia de auditoria é preservada.
@@ -227,7 +227,8 @@ begin
     raise exception using errcode = '22023', message = 'invalid_document_path';
   end if;
   select * into v_object from storage.objects
-   where bucket_id = 'teacher-verification' and name = p_storage_path and owner_id = v_teacher;
+   where bucket_id = 'teacher-verification' and name = p_storage_path
+     and owner_id = v_teacher::text;
   if not found then
     raise exception using errcode = 'P0001', message = 'document_not_owned';
   end if;
