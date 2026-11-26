@@ -30,6 +30,8 @@ export const queryKeys = {
   withdrawals: (uid: string) => [ROOT, "user", uid, "withdrawals"] as const,
   teacherFinance: (uid: string, period: string) => [ROOT, "user", uid, "teacher-finance", period] as const,
   commissionProgress: (uid: string) => [ROOT, "user", uid, "commission-progress"] as const,
+  credential: (uid: string) => [ROOT, "user", uid, "credential"] as const,
+  credentialProgress: (uid: string) => [ROOT, "user", uid, "credential", "progress"] as const,
 
   catalogAll: (uid: string) => [ROOT, "user", uid, "catalog"] as const,
   /** Sem limit/offset: a paginação fica dentro da consulta infinita. */

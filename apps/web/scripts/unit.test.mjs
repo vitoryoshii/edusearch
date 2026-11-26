@@ -6,6 +6,15 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import {
+  STATUS_META,
+  canEdit,
+  hasRequiredDocuments,
+  journeySteps,
+  reasonText,
+  requirementLabel,
+  validateFile,
+} from "../src/lib/credentialing.ts";
 import { STANDARD_COMMISSION_BPS, commissionOf, formatBps, splitLessonAmount } from "../src/lib/commission.ts";
 import { addDays, addMonths, conflictReason, dateKey, monthGrid, startOfWeek, weekDays } from "../src/lib/calendar.ts";
 import { isTrustedMeetUrl, onlineLessonState } from "../src/lib/meeting.ts";
@@ -661,7 +670,8 @@ describe("marketplace real (Fase 4A)", () => {
   test("menu por papel: aluno, professor, ambos e agenda desligada", () => {
     const paths = (roles, on = true) => accountNav(roles, on).map((i) => i.to);
     assert.deepEqual(paths(["student"]), ["/conta", "/conta/explorar", "/conta/aulas", "/conta/perfil", "/conta/configuracoes"]);
-    assert.deepEqual(paths(["teacher"]), ["/conta", "/conta/agenda", "/conta/aulas", "/conta/perfil-profissional", "/conta/configuracoes"]);
+    assert.deepEqual(paths(["teacher"]), ["/conta", "/conta/agenda", "/conta/aulas", "/conta/perfil-profissional", "/conta/credenciamento", "/conta/configuracoes"]);
+    assert.ok(!paths(["student"]).includes("/conta/credenciamento"));
     assert.equal(accountNav(["teacher"], true)[0].label, "Painel");
     const both = accountNav(["student", "teacher"], true);
     assert.equal(both.filter((i) => i.to === "/conta/aulas").length, 1);
@@ -753,5 +763,41 @@ describe("pagamentos Pix (Fase 5)", () => {
     assert.equal(pollDelay(undefined, 0), 3000);
     for (const s of FINAL_STATUSES) assert.equal(pollDelay(s, 0), false);
     assert.equal(pollDelay("under_dispute", 0), 3000);
+  });
+});
+
+describe("credenciamento (Trust Engine)", () => {
+  test("todos os estados têm rótulo e descrição", () => {
+    for (const status of ["draft", "submitted", "pending_external", "under_review", "changes_requested", "approved", "rejected", "suspended"]) {
+      assert.ok(STATUS_META[status].label && STATUS_META[status].description, status);
+    }
+  });
+  test("edição só em rascunho ou correção", () => {
+    assert.equal(canEdit(null), true);
+    assert.equal(canEdit("draft"), true);
+    assert.equal(canEdit("changes_requested"), true);
+    for (const s of ["submitted", "pending_external", "under_review", "approved", "rejected"]) assert.equal(canEdit(s), false, s);
+  });
+  test("documentos obrigatórios ignoram recusados", () => {
+    assert.equal(hasRequiredDocuments([{ kind: "identity", status: "quarantined" }]), false);
+    assert.equal(hasRequiredDocuments([{ kind: "identity", status: "quarantined" }, { kind: "academic_proof", status: "rejected" }]), false);
+    assert.equal(hasRequiredDocuments([{ kind: "identity", status: "accepted" }, { kind: "academic_proof", status: "quarantined" }]), true);
+  });
+  test("validação local do arquivo (o servidor confere o conteúdo de novo)", () => {
+    assert.equal(validateFile({ size: 10, type: "application/pdf" }), null);
+    assert.match(validateFile({ size: 0, type: "application/pdf" }), /vazio/);
+    assert.match(validateFile({ size: 11 * 1024 * 1024, type: "image/png" }), /10 MiB/);
+    assert.match(validateFile({ size: 10, type: "application/x-msdownload" }), /PDF/);
+  });
+  test("etapas vêm só do estado real, sem percentuais", () => {
+    assert.deepEqual(journeySteps(null, false).map((s) => s.done), [false, false, false, false]);
+    assert.deepEqual(journeySteps("pending_external", true).map((s) => s.done), [true, true, true, false]);
+    assert.deepEqual(journeySteps("approved", true).map((s) => s.done), [true, true, true, true]);
+  });
+  test("motivos e requisitos legíveis, com fallback seguro", () => {
+    assert.match(reasonText("document.academic_proof_missing"), /diploma/);
+    assert.equal(reasonText(null), "");
+    assert.equal(requirementLabel("identity.verified"), "Identidade confirmada em fonte oficial");
+    assert.equal(requirementLabel("desconhecido.x"), "desconhecido.x");
   });
 });

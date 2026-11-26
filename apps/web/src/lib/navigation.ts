@@ -7,7 +7,7 @@
  * Sem a agenda real ligada (VITE_STAGE_SCHEDULING=off), só Início/Perfil/Configurações.
  * Com pagamentos ligados (VITE_STAGE_PAYMENTS≠off), "Pagamentos" entra no menu (não na barra do celular).
  */
-export type NavIconKey = "home" | "search" | "calendar" | "clock" | "user" | "graduation" | "settings" | "wallet";
+export type NavIconKey = "home" | "search" | "calendar" | "clock" | "user" | "graduation" | "settings" | "wallet" | "shield";
 export type AccountNavItem = { to: string; label: string; short?: string; icon: NavIconKey; end?: boolean; mobile: boolean };
 
 export function accountNav(roles: readonly string[], schedulingOn: boolean, paymentsOn = false): AccountNavItem[] {
@@ -21,6 +21,7 @@ export function accountNav(roles: readonly string[], schedulingOn: boolean, paym
   if (schedulingOn && (student || teacher)) items.push({ to: "/conta/aulas", label: "Aulas", icon: "calendar", mobile: true });
   if (schedulingOn && paymentsOn && (student || teacher)) items.push({ to: "/conta/pagamentos", label: "Pagamentos", icon: "wallet", mobile: false });
   if (teacher) items.push({ to: "/conta/perfil-profissional", label: "Perfil profissional", short: "Perfil", icon: "graduation", mobile: !student });
+  if (teacher) items.push({ to: "/conta/credenciamento", label: "Credenciamento", icon: "shield", mobile: false });
   if (student || !teacher) items.push({ to: "/conta/perfil", label: "Meu perfil", short: "Perfil", icon: "user", mobile: true });
   items.push({ to: "/conta/configuracoes", label: "Configurações", short: "Ajustes", icon: "settings", mobile: false });
   // A barra inferior do celular comporta no máximo 5 atalhos; o resto fica no menu.
