@@ -11,6 +11,7 @@ import {
   Select,
   ShieldIcon,
   Textarea,
+  buttonClasses,
   useToast,
 } from "@edusearch/ui";
 import { hasRole, useServerMe } from "../../app/account";
@@ -281,7 +282,7 @@ function DocumentsCard({ uid, documents }: { uid: string; documents: Progress["d
                     {latest.inspection_status === "passed" ? `Verificado (v${latest.version})` : "Verificação pendente"}
                   </Badge>
                 )}
-                <label className="cursor-pointer text-sm font-semibold text-primary">
+                <label className={buttonClasses({ variant: "secondary", size: "sm", className: "cursor-pointer focus-within:ring-2 focus-within:ring-primary" })}>
                   {busy === d.kind ? "Enviando…" : latest ? "Reenviar" : "Enviar arquivo"}
                   <input
                     type="file"
