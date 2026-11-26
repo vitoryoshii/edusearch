@@ -148,6 +148,14 @@ def _verification_error(exc: psycopg.Error) -> ApiError:
     raise exc
 
 
+def _document_out(item: dict) -> TeacherVerificationDocumentOut:
+    """O resumo SQL usa a chave ``kind``; o contrato público usa ``document_kind``."""
+    data = dict(item)
+    if "kind" in data and "document_kind" not in data:
+        data["document_kind"] = data.pop("kind")
+    return TeacherVerificationDocumentOut(**data)
+
+
 _INSPECTION_MESSAGES = {
     "inspection.empty": "O arquivo está vazio.",
     "inspection.too_large": "O arquivo excede 10 MiB.",
@@ -303,7 +311,7 @@ class DbOnboardingService:
             raise not_found(
                 "teacher_verification_not_found", "Dossiê de credenciamento ainda não iniciado."
             )
-        row["documents"] = [TeacherVerificationDocumentOut(**item) for item in row["documents"]]
+        row["documents"] = [_document_out(item) for item in row["documents"]]
         return TeacherVerificationOut(**row)
 
     def get_teacher_verification(self, user: AuthenticatedUser) -> TeacherVerificationOut:

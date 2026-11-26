@@ -384,3 +384,17 @@ def test_short_dispatch_secret_is_rejected_at_startup() -> None:
 def test_only_unconfigured_providers_exist() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, trust_identity_provider="fake")
+
+
+def test_dossier_summary_document_key_maps_to_public_contract() -> None:
+    from app.services.onboarding import _document_out
+
+    out = _document_out(
+        {
+            "kind": "identity",
+            "version": 1,
+            "status": "quarantined",
+            "uploaded_at": "2026-11-26T00:00:00Z",
+        }
+    )
+    assert out.document_kind == "identity"
