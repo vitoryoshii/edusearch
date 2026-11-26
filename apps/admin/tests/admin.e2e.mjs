@@ -61,6 +61,12 @@ const MOCK = `(() => {
       if (!state.authorized) return new Response("",{status:403});
       return Response.json({id:user.id,role:"operations_admin"});
     }
+    if (url.includes("api.admin-e2e.test/v1/admin/trust/contestations/") && init.method==="POST") {
+      state.trustPosts=[...(state.trustPosts||[]),JSON.parse(init.body)];
+      return Response.json({status:"submitted",resolution:"reprocess"});
+    }
+    if (url.includes("api.admin-e2e.test/v1/admin/trust/teachers/")) return Response.json({teacher_id:state.teacher.id,teacher_name:"Professora E2E",status:"under_review",qualification:"Licenciatura",institution:"Universidade",documents:[{kind:"identity",version:1,status:"quarantined",inspection_status:"passed",detected_content_type:"application/pdf",signature_present:false,sha256_prefix:"abcdef012345"}],jobs:[{id:"j1",status:"completed",evidence:[{requirement:"identity.verified",mandatory:true,result:"unavailable",source:"external_registry",reason_code:"identity.trusted_source_unavailable",observed_at:"2026-11-26T00:00:00Z"}]}],decisions:[{decision:"pending_external",actor_kind:"service",justification:null,decided_at:"2026-11-26T00:00:00Z"}],contestations:[]});
+    if (url.includes("api.admin-e2e.test/v1/admin/trust")) return Response.json({counts:{processing:1,failed_jobs:1,pending_external:3,under_review:1,auto_approved:0,pending_documents:4,open_contestations:1,legacy_unpublished:0},jobs:[{id:"j2",teacher_id:state.teacher.id,teacher_name:"Professora E2E",status:"failed",attempts:10,error_code:"processing_error",created_at:"2026-11-26T00:00:00Z"}],decisions:[{id:"d1",teacher_id:state.teacher.id,teacher_name:"Professora E2E",decision:"pending_external",reasons:["identity.trusted_source_unavailable"],actor_kind:"service",rules_version:"trust-rules-2026.11-v1",decided_at:"2026-11-26T00:00:00Z"}],contestations:[{id:"c1",teacher_id:state.teacher.id,teacher_name:"Professora E2E",status:"open",reason:"Meu diploma pode ser validado no portal do emissor.",resolution:null,created_at:"2026-11-26T00:00:00Z"}],validator_failures:[{validator:"identity_validator",requirement:"identity.verified",result:"unavailable",reason_code:"identity.trusted_source_unavailable",occurrences:3}]});
     if (url.includes("api.admin-e2e.test/v1/admin/teachers/") && (init.method||"GET")==="POST") {
       state.posts++;
       if (state.api403) return new Response("",{status:403});
@@ -93,7 +99,7 @@ await check(await waitForNewDocument(logOutDocument), "logout remove a sessão e
 await click("[data-e2e-google]");
 await check(await waitFor("document.querySelector('aside')?.textContent.includes('EduSearch Admin')"), "novo login após logout valida o servidor");
 
-for (const path of ["/students", "/teachers", "/lessons", "/payments", "/payout-accounts", "/notifications", "/audit", "/administrators"]) {
+for (const path of ["/students", "/teachers", "/trust", "/lessons", "/payments", "/payout-accounts", "/notifications", "/audit", "/administrators"]) {
   await b.go(base + path);
   await check(await waitFor("!document.querySelector('[role=status]')"), `navegação administrativa ${path}`);
 }
@@ -138,6 +144,20 @@ await check(await b.evaluate("!document.querySelector('aside') && !!document.que
 await b.evaluate("window.__adminE2E.badNonce=false;window.__adminE2E.authorized=false");
 await click("[data-e2e-google]");
 await check(await waitFor("document.body.textContent.includes('Acesso restrito') && !document.querySelector('aside')"), "conta sem RBAC recebe acesso restrito");
+
+await b.go(base + "/trust");
+await check(await waitFor("!!document.querySelector('[data-testid=trust-monitor]')"), "Trust Engine: monitoramento carregado");
+await check(await b.evaluate("document.querySelector('[data-testid=trust-monitor]').textContent.includes('Aguardando fonte oficial')"), "Trust Engine: contadores exibidos");
+await check(await b.evaluate("![...document.querySelectorAll('[data-testid=trust-monitor] button')].some(x => /aprovar/i.test(x.textContent) && !/não aprovar/i.test(x.textContent))"), "Trust Engine: nenhuma ação humana de aprovação");
+await b.evaluate("[...document.querySelectorAll('button')].find(x => x.textContent === 'Evidências')?.click()");
+await check(await waitFor("document.querySelector('[aria-label=\"Dossiê de credenciamento\"]')?.textContent.includes('identity.trusted_source_unavailable')"), "Trust Engine: evidências do dossiê sem conteúdo de documento");
+if (shots) await b.screenshot(join(shots, "admin-trust-dossier.png"));
+await b.evaluate("[...document.querySelectorAll('button')].find(x => x.textContent === 'Fechar')?.click()");
+await b.evaluate("[...document.querySelectorAll('button')].find(x => x.textContent === 'Reprocessar')?.click()");
+await setJustification("Reprocessar após integração");
+await b.evaluate("[...document.querySelectorAll('button')].find(x => x.textContent === 'Confirmar')?.click()");
+await check(await waitFor("window.__adminE2E.trustPosts?.[0]?.resolution === 'reprocess'"), "Trust Engine: contestação resolvida com justificativa");
+if (shots) await b.screenshot(join(shots, "admin-trust.png"));
 
 for (const [width, dark] of [[1440,false],[768,true],[390,false],[320,true]]) {
   await b.viewport(width, { dark });
