@@ -189,13 +189,15 @@ begin
     financial_tax_id_last4 = excluded.financial_tax_id_last4,
     terms_version = excluded.terms_version,
     terms_accepted_at = excluded.terms_accepted_at
-  where private.teacher_verifications.status in ('draft', 'changes_requested');
+  where private.teacher_verifications.status in (
+    'draft'::private.teacher_credential_status, 'changes_requested'::private.teacher_credential_status
+  );
   if not found then
     raise exception using errcode = 'P0001', message = 'verification_locked_for_review';
   end if;
   insert into private.teacher_verification_audit_log (teacher_id, actor_id, action, to_status)
-  select teacher_id, v_teacher, 'teacher.dossier_saved', status
-    from private.teacher_verifications where teacher_id = v_teacher;
+  select v.teacher_id, v_teacher, 'teacher.dossier_saved', v.status
+    from private.teacher_verifications as v where v.teacher_id = v_teacher;
   return query select v.status, v.qualification_kind, v.submitted_at, v.terms_accepted_at
     from private.teacher_verifications v where v.teacher_id = v_teacher;
 end;
@@ -217,18 +219,19 @@ declare
   v_content_type text;
   v_version smallint;
 begin
-  if not exists (
-    select 1 from private.teacher_verifications
-     where teacher_id = v_teacher and status in ('draft', 'changes_requested')
-  ) then
+  -- Trava o dossiê: registro de documento e submissão são serializados por professor.
+  perform 1 from private.teacher_verifications as v
+   where v.teacher_id = v_teacher and v.status in ('draft', 'changes_requested')
+   for update;
+  if not found then
     raise exception using errcode = 'P0001', message = 'verification_dossier_required';
   end if;
   if p_storage_path !~ ('^' || v_teacher::text || '/[0-9a-f-]{36}\.(pdf|png|jpe?g)$') then
     raise exception using errcode = '22023', message = 'invalid_document_path';
   end if;
-  select * into v_object from storage.objects
-   where bucket_id = 'teacher-verification' and name = p_storage_path
-     and owner_id = v_teacher::text;
+  select o.* into v_object from storage.objects as o
+   where o.bucket_id = 'teacher-verification' and o.name = p_storage_path
+     and o.owner_id = v_teacher::text;
   if not found then
     raise exception using errcode = 'P0001', message = 'document_not_owned';
   end if;
@@ -266,26 +269,31 @@ returns table (status private.teacher_credential_status, submitted_at timestampt
 language plpgsql security definer set search_path = '' as $$
 declare v_teacher uuid := private.teacher_verification_require_teacher(); v_status private.teacher_credential_status;
 begin
-  select status into v_status from private.teacher_verifications where teacher_id = v_teacher for update;
+  select v.status into v_status
+    from private.teacher_verifications as v
+   where v.teacher_id = v_teacher
+   for update;
   if not found then raise exception using errcode = 'P0001', message = 'verification_dossier_required'; end if;
   if v_status not in ('draft', 'changes_requested') then
     raise exception using errcode = 'P0001', message = 'verification_not_submittable';
   end if;
   if not exists (
-       select 1 from private.teacher_verification_documents
-        where teacher_id=v_teacher and document_kind='identity' and status <> 'rejected'
+       select 1 from private.teacher_verification_documents as d
+        where d.teacher_id = v_teacher and d.document_kind = 'identity' and d.status <> 'rejected'
      )
      or not exists (
-       select 1 from private.teacher_verification_documents
-        where teacher_id=v_teacher and document_kind='academic_proof' and status <> 'rejected'
+       select 1 from private.teacher_verification_documents as d
+        where d.teacher_id = v_teacher and d.document_kind = 'academic_proof' and d.status <> 'rejected'
      ) then
     raise exception using errcode = 'P0001', message = 'verification_documents_required';
   end if;
-  update private.teacher_verifications set status='submitted', submitted_at=now(), review_reason=null,
-    reviewed_at=null, reviewer_id=null where teacher_id=v_teacher;
+  update private.teacher_verifications as v set status = 'submitted', submitted_at = now(),
+    review_reason = null, reviewed_at = null, reviewer_id = null
+   where v.teacher_id = v_teacher;
   -- Uma nova análise nunca mantém publicação/aprovação antiga por acidente.
-  update public.teacher_profiles set verification_status='pending', verified_at=null,
-    is_published=false, published_at=null where user_id=v_teacher;
+  update public.teacher_profiles as tp set verification_status = 'pending', verified_at = null,
+    is_published = false, published_at = null
+   where tp.user_id = v_teacher;
   insert into private.teacher_verification_audit_log (teacher_id, actor_id, action, from_status, to_status)
     values (v_teacher, v_teacher, 'teacher.verification_submitted', v_status, 'submitted');
   return query select v.status, v.submitted_at from private.teacher_verifications v where v.teacher_id=v_teacher;
