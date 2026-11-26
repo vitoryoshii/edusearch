@@ -428,8 +428,8 @@ await check(await waitFor(`${calendarStatus} === 'not_connected'`) && apiLog.som
 
 /* Menu e perfil profissional do professor */
 await check(
-  await b.evaluate(`JSON.stringify([...document.querySelector('nav[aria-label="Navegação principal"]').querySelectorAll('a')].map((a) => a.getAttribute('href'))) === JSON.stringify(['/conta','/conta/agenda','/conta/aulas','/conta/perfil-profissional','/conta/configuracoes'])`),
-  "menu do professor: Painel, Agenda, Aulas, Perfil profissional, Configurações (sem Explorar)",
+  await b.evaluate(`JSON.stringify([...document.querySelector('nav[aria-label="Navegação principal"]').querySelectorAll('a')].map((a) => a.getAttribute('href'))) === JSON.stringify(['/conta','/conta/agenda','/conta/aulas','/conta/perfil-profissional','/conta/credenciamento','/conta/configuracoes'])`),
+  "menu do professor: Painel, Agenda, Aulas, Perfil profissional, Credenciamento, Configurações (sem Explorar)",
 );
 await b.go(base + "/conta/perfil-profissional", 1500);
 await check(await waitFor(`!!document.querySelector('[data-testid=own-preview]') && !document.querySelector('[data-testid=booking-card]')`), "perfil profissional: pré-visualização do próprio perfil, sem reserva");

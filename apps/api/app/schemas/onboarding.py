@@ -7,8 +7,9 @@ servidor (verificação, publicação, ids) nunca são aceitos.
 
 import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal, Self
+from uuid import UUID
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
@@ -24,6 +25,19 @@ Difficulty = Literal["base", "exercicios", "pratica", "fala", "organizacao"]
 TeachingMethod = Literal["pratica", "teorica", "exercicios", "conversacao", "projetos"]
 ExperienceRange = Literal["menos-1", "1-3", "3-5", "5-mais"]
 LessonDuration = Literal[30, 45, 60, 90]
+TeacherQualificationKind = Literal["graduated", "specialist", "university_student", "tutor"]
+TeacherCredentialStatus = Literal[
+    "draft",
+    "submitted",
+    "pending_external",
+    "under_review",
+    "changes_requested",
+    "approved",
+    "rejected",
+    "suspended",
+]
+TeacherDocumentKind = Literal["identity", "academic_proof", "curriculum"]
+TeacherDocumentStatus = Literal["quarantined", "accepted", "rejected"]
 
 _SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f​-‏ -‮⁠-⁤﻿]")
@@ -161,6 +175,116 @@ class TeacherProfileOut(BaseModel):
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+# --------------------------------------------------------------------- credenciamento
+
+
+class TeacherVerificationIn(BaseModel):
+    """Declaração privada do professor; nunca aceita estado de revisão ou publicação."""
+
+    model_config = _STRICT
+
+    qualification_kind: TeacherQualificationKind
+    birth_date: date
+    institution: Annotated[Text, Field(min_length=2, max_length=160)]
+    qualification: Annotated[Text, Field(min_length=2, max_length=200)]
+    professional_experience: Annotated[Text, Field(min_length=10, max_length=2000)]
+    curriculum_summary: Annotated[Text, Field(min_length=10, max_length=4000)]
+    financial_tax_id_kind: Literal["cpf", "cnpj"]
+    financial_tax_id_last4: Annotated[str, Field(pattern=r"^[0-9]{4}$")]
+    terms_version: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$")]
+
+
+class TeacherVerificationDocumentIn(BaseModel):
+    """Registra metadados de um objeto já enviado ao bucket privado do próprio titular."""
+
+    model_config = _STRICT
+
+    document_kind: TeacherDocumentKind
+    storage_path: Annotated[
+        str,
+        Field(
+            min_length=42,
+            max_length=160,
+            pattern=r"^[0-9a-f-]{36}/[0-9a-f-]{36}\.(pdf|png|jpe?g)$",
+        ),
+    ]
+
+
+class TeacherVerificationDocumentOut(BaseModel):
+    document_kind: TeacherDocumentKind
+    version: int
+    status: TeacherDocumentStatus
+    uploaded_at: datetime
+
+
+class TeacherVerificationOut(BaseModel):
+    status: TeacherCredentialStatus
+    qualification_kind: TeacherQualificationKind
+    institution: str
+    qualification: str
+    submitted_at: datetime | None
+    review_reason: str | None
+    terms_version: str
+    terms_accepted_at: datetime
+    documents: list[TeacherVerificationDocumentOut]
+
+
+class TrustEvidenceOut(BaseModel):
+    validator: str
+    requirement: str
+    mandatory: bool
+    result: Literal["passed", "failed", "unavailable", "inconclusive"]
+    source: str
+    reason_code: str
+    observed_at: datetime
+
+
+class TrustDecisionOut(BaseModel):
+    id: UUID
+    decision: str
+    reasons: list[str]
+    actor_kind: Literal["service", "human"]
+    rules_version: str | None
+    decided_at: datetime
+    contestable: bool
+
+
+class TrustContestationOut(BaseModel):
+    status: Literal["open", "resolved"]
+    created_at: datetime
+    resolution: str | None
+    resolved_at: datetime | None
+
+
+class TrustDocumentOut(BaseModel):
+    kind: TeacherDocumentKind
+    version: int
+    status: TeacherDocumentStatus
+    inspection_status: Literal["pending", "passed", "failed"]
+    inspection_code: str | None
+    review_reason: str | None
+    uploaded_at: datetime
+
+
+class TeacherVerificationProgressOut(BaseModel):
+    """Progresso real: evidências e decisão do motor. Sem percentuais estimados."""
+
+    status: TeacherCredentialStatus
+    review_reason: str | None
+    submitted_at: datetime | None
+    processing: bool
+    decision: TrustDecisionOut | None
+    evidence: list[TrustEvidenceOut]
+    contestation: TrustContestationOut | None
+    documents: list[TrustDocumentOut]
+
+
+class TeacherVerificationContestIn(BaseModel):
+    model_config = _STRICT
+
+    reason: Annotated[Text, Field(min_length=20, max_length=2000)]
 
 
 # ------------------------------------------------------------------------------- catálogo

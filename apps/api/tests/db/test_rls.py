@@ -3,6 +3,8 @@
 import psycopg
 import pytest
 
+from tests.db.conftest import credential_approved
+
 PERSONAL_TABLES = [
     "public.profiles",
     "public.account_roles",
@@ -280,6 +282,7 @@ def test_teacher_profile_visible_only_after_approval_and_publication(
     assert len(as_user(a).rows(select, (a,))) == 1
 
     # Aprovação sem publicação: ainda invisível.
+    credential_approved(admin, a)
     admin.execute(
         "update public.teacher_profiles set verification_status = 'approved', verified_at = now() "
         "where user_id = %s",
@@ -301,6 +304,7 @@ def test_publication_requires_approval_constraint(users, commit_as, admin) -> No
     a = users.create()
     users.grant_role(a, "teacher")
     commit_as(a).execute(TEACHER_INSERT, (a, BIO))
+    credential_approved(admin, a)  # isola o CHECK do gatilho de credenciamento
     with pytest.raises(psycopg.errors.CheckViolation):
         admin.execute(
             "update public.teacher_profiles set is_published = true, published_at = now() "
@@ -343,6 +347,7 @@ def test_teacher_subjects_ownership_and_visibility(users, as_user, commit_as, ad
 
     select = "select * from public.teacher_subjects where teacher_id = %s"
     assert as_user(b).rows(select, (a,)) == []  # A não publicado
+    credential_approved(admin, a)
     admin.execute(
         "update public.teacher_profiles set verification_status = 'approved', verified_at = now(), "
         "is_published = true, published_at = now() where user_id = %s",

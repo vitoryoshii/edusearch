@@ -8,6 +8,7 @@
 # - database: sobe SOMENTE o PostgreSQL local do Supabase CLI (imagem oficial, Docker do runner),
 #   que cria o schema do zero aplicando supabase/migrations; roda o lint do Supabase, os testes de
 #   RLS/integridade/hook e da API contra esse banco, e os lints do Security Advisor (splinter).
+# - trust-cron: testes do Worker agendado do Trust Engine (Node, sem rede nem segredos).
 #
 # Nada aqui usa segredos ou toca o projeto remoto: sem SUPABASE_ACCESS_TOKEN, sem `supabase link`,
 # sem `db push`. As credenciais postgres/postgres são as padrão do banco LOCAL e descartável.
@@ -18,6 +19,7 @@ on:
     paths:
       - "apps/api/**"
       - "supabase/**"
+      - "workers/trust-cron/**"
       - ".github/workflows/backend-ci.yml"
   push:
     branches: [main]
@@ -70,6 +72,19 @@ jobs:
         run: ruff format --check .
       - name: Testes (testes de banco são pulados aqui)
         run: pytest -q -rs
+
+  trust-cron:
+    name: Trust cron Worker — testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Testes (fetch falso; sem rede, sem segredos)
+        working-directory: workers/trust-cron
+        run: node --experimental-strip-types --test test/dispatch.test.ts
 
   database:
     name: Banco — migrations, RLS e Security Advisor

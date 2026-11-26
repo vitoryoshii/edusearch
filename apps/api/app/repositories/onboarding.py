@@ -9,7 +9,13 @@ from uuid import UUID
 
 import psycopg
 
-from app.schemas.onboarding import StudentProfileIn, TeacherProfileIn
+from app.schemas.onboarding import (
+    StudentProfileIn,
+    TeacherProfileIn,
+    TeacherVerificationDocumentIn,
+    TeacherVerificationIn,
+)
+from app.trust.inspection import InspectionResult
 
 
 class UnknownSubjectsError(Exception):
@@ -191,6 +197,66 @@ class OnboardingRepository:
                 (*values, user_id),
             )
         self._replace_subjects("teacher_subjects", "teacher_id", user_id, list(ids.values()))
+
+    # --------------------------------------------------------------- credenciamento
+
+    def teacher_verification(self) -> dict[str, Any] | None:
+        return self._conn.execute("select * from private.teacher_verification_summary()").fetchone()
+
+    def upsert_teacher_verification(self, data: TeacherVerificationIn) -> dict[str, Any]:
+        row = self._conn.execute(
+            "select * from private.teacher_verification_upsert("
+            "%s::private.teacher_qualification_kind, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                data.qualification_kind,
+                data.birth_date,
+                data.institution,
+                data.qualification,
+                data.professional_experience,
+                data.curriculum_summary,
+                data.financial_tax_id_kind,
+                data.financial_tax_id_last4,
+                data.terms_version,
+            ),
+        ).fetchone()
+        assert row is not None  # noqa: S101 — função sempre retorna o dossiê persistido
+        return row
+
+    def register_teacher_verification_document(
+        self, data: TeacherVerificationDocumentIn, inspection: InspectionResult | None
+    ) -> dict[str, Any]:
+        row = self._conn.execute(
+            "select * from private.teacher_verification_register_document("
+            "%s::private.teacher_document_kind, %s, %s, %s, %s, %s)",
+            (
+                data.document_kind,
+                data.storage_path,
+                inspection.sha256 if inspection else None,
+                inspection.detected_content_type if inspection else None,
+                inspection.size if inspection else None,
+                inspection.signature_present if inspection else None,
+            ),
+        ).fetchone()
+        assert row is not None  # noqa: S101
+        return row
+
+    def teacher_verification_progress(self) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "select private.teacher_verification_progress() as data"
+        ).fetchone()
+        return row["data"] if row else None
+
+    def contest_teacher_verification(self, reason: str) -> dict[str, Any]:
+        row = self._conn.execute(
+            "select private.teacher_verification_contest(%s) as data", (reason,)
+        ).fetchone()
+        assert row is not None  # noqa: S101
+        return row["data"]
+
+    def submit_teacher_verification(self) -> dict[str, Any]:
+        row = self._conn.execute("select * from private.teacher_verification_submit()").fetchone()
+        assert row is not None  # noqa: S101
+        return row
 
     # ------------------------------------------------------------------ disciplinas
 

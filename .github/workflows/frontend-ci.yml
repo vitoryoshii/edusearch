@@ -219,6 +219,11 @@ jobs:
         timeout-minutes: 6
         run: node apps/web/scripts/payments.mjs http://localhost:5194 "$RUNNER_TEMP/auth-screens/pagamentos" 2>&1 | tee "$RUNNER_TEMP/logs/payments.log"
 
+      - name: Jornada de credenciamento (dados, termos, upload privado, validação sem percentuais, pendência sem fonte oficial, contestação, aprovação, axe, 320–1440 px)
+        if: success() || failure()
+        timeout-minutes: 5
+        run: node apps/web/scripts/credentialing.mjs http://localhost:5194 "$RUNNER_TEMP/auth-screens/credenciamento" 2>&1 | tee "$RUNNER_TEMP/logs/credentialing.log"
+
       - name: Servidor do Admin com autenticação simulada na porta 5195
         if: success() || failure()
         env:
@@ -254,7 +259,7 @@ jobs:
         run: |
           {
             echo "## Testes de navegador"
-            for t in smoke a11y auth persistence agenda payments admin-e2e legal-browser; do
+            for t in smoke a11y auth persistence agenda payments credentialing admin-e2e legal-browser; do
               f="$RUNNER_TEMP/logs/$t.log"
               [ -f "$f" ] || { echo "- **$t**: não executado"; continue; }
               ok=$(grep -c "  ✓ " "$f" || true)

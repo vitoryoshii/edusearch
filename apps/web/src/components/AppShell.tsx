@@ -17,6 +17,7 @@ import {
   MoreIcon,
   SearchIcon,
   SettingsIcon,
+  ShieldIcon,
   SparkleIcon,
   UserIcon,
   UsersIcon,
@@ -46,6 +47,7 @@ const NAV_ICONS: Record<NavIconKey, IconComponent> = {
   graduation: GraduationIcon,
   wallet: WalletIcon,
   settings: SettingsIcon,
+  shield: ShieldIcon,
 };
 
 /** Menu da conta real: depende dos papéis PERSISTIDOS no servidor (lib/navigation.ts). */

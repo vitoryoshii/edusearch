@@ -130,7 +130,54 @@ class Users:
                 "delete from private.notification_outbox where recipient_user_id = any(%s)",
                 (self.created,),
             )
+            # Trust Engine e auditoria do credenciamento também usam RESTRICT.
+            self._admin.execute(
+                "delete from private.teacher_verification_evidence where job_id in ("
+                "select id from private.teacher_verification_jobs where teacher_id = any(%s))",
+                (self.created,),
+            )
+            # Revisores humanos (FK RESTRICT) também são usuários efêmeros dos testes.
+            self._admin.execute(
+                "delete from private.teacher_verification_documents "
+                "where teacher_id = any(%s) or reviewer_id = any(%s)",
+                (self.created, self.created),
+            )
+            self._admin.execute(
+                "update private.teacher_verifications set reviewer_id = null "
+                "where reviewer_id = any(%s)",
+                (self.created,),
+            )
+            self._admin.execute(
+                "delete from private.teacher_verification_contestations where teacher_id = any(%s)",
+                (self.created,),
+            )
+            for table in (
+                "private.teacher_credential_legacy_review",
+                "private.teacher_verification_decisions",
+                "private.teacher_verification_jobs",
+                "private.teacher_verification_audit_log",
+            ):
+                self._admin.execute(
+                    f"delete from {table} where teacher_id = any(%s)",  # noqa: S608
+                    (self.created,),
+                )
             self._admin.execute("delete from auth.users where id = any(%s)", (self.created,))
+
+
+def credential_approved(admin: psycopg.Connection, teacher_id: uuid.UUID) -> None:
+    """FIXTURE DE TESTE: registra um credenciamento aprovado direto no banco descartável.
+
+    Em produção, somente o Trust Engine (com evidências suficientes) chega a este estado.
+    """
+    admin.execute(
+        "insert into private.teacher_verifications (teacher_id, status, qualification_kind, "
+        "birth_date, institution, qualification, terms_version, terms_accepted_at, submitted_at, "
+        "reviewed_at) values (%s, 'approved', 'graduated', '1990-01-01', 'Instituição de teste', "
+        "'Licenciatura de teste', 'teacher-terms-2026-11', now(), now(), now()) "
+        "on conflict (teacher_id) do update set status = 'approved', "
+        "submitted_at = coalesce(private.teacher_verifications.submitted_at, now())",
+        (teacher_id,),
+    )
 
 
 @pytest.fixture

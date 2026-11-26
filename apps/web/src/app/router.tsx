@@ -29,6 +29,7 @@ const AccountLessons = lazy(() => import("../pages/account/Lessons"));
 // Pagamentos Pix (Fase 5): redirecionam para /conta se VITE_STAGE_PAYMENTS=off.
 const AccountPayment = lazy(() => import("../pages/account/Payment"));
 const AccountPayments = lazy(() => import("../pages/account/Payments"));
+const AccountCredentialing = lazy(() => import("../pages/account/Credentialing"));
 const GoogleCalendarReturn = lazy(() => import("../pages/account/GoogleCalendarReturn"));
 
 const StudentHome = lazy(() => import("../pages/student/Home"));
@@ -67,6 +68,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   "/conta/boas-vindas": "Boas-vindas",
   "/conta/cadastro/aluno": "Cadastro de aluno",
   "/conta/cadastro/professor": "Cadastro de professor",
+  "/conta/credenciamento": "Credenciamento",
   "/aluno": "Início do aluno",
   "/aluno/buscar": "Buscar professores",
   "/aluno/assistente": "Assistente EduSearch",
@@ -159,6 +161,7 @@ const routes: RouteObject[] = [
           { path: "pagamentos", element: <AccountPayments /> },
           { path: "pagamentos/:id", element: <AccountPayment /> },
           { path: "perfil-profissional", element: <AccountProfessionalProfile /> },
+          { path: "credenciamento", element: <AccountCredentialing /> },
           { path: "agenda/google/retorno", element: <GoogleCalendarReturn /> },
         ],
       },

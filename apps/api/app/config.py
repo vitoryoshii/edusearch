@@ -4,6 +4,7 @@ Nenhum segredo tem valor padrão. Ver ``apps/api/.env.example``.
 """
 
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -87,6 +88,23 @@ class Settings(BaseSettings):
     resend_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
     notifications_dispatch_secret: SecretStr | None = None
     notifications_batch_size: int = Field(default=10, ge=1, le=100)
+    # Trust Engine do credenciamento: sem segredo, o endpoint interno recusa toda chamada.
+    trust_dispatch_secret: SecretStr | None = None
+    trust_batch_size: int = Field(default=10, ge=1, le=25)
+    # Orçamento por chamada do dispatcher: abaixo do maxDuration da função (Vercel Hobby = 10 s).
+    trust_dispatch_budget_seconds: float = Field(default=8.0, ge=1, le=55)
+    # Fontes externas de verificação. Somente "none" está implementado: sem integração homologada,
+    # identidade e formação ficam pendentes (nunca aprovadas por declaração).
+    trust_identity_provider: Literal["none"] = "none"
+    trust_academic_registry: Literal["none"] = "none"
+    # Versão vigente dos termos profissionais; deve coincidir com o frontend.
+    teacher_terms_version: str = Field(
+        default="teacher-terms-2026-11", pattern=r"^[a-z0-9][a-z0-9._-]{0,79}$"
+    )
+    # Chave PUBLICÁVEL do Supabase (não é segredo): usada com o token do titular para baixar o
+    # próprio documento e inspecionar o conteúdo. Sem ela, documentos ficam com inspeção pendente.
+    supabase_publishable_key: str | None = None
+    document_inspection_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
     # Autorização operacional EXPLÍCITA para cobrar de verdade.
     payments_production_approved: bool = False
     payments_hold_seconds: int = Field(default=900, ge=300, le=3600)
@@ -133,6 +151,9 @@ class Settings(BaseSettings):
         secret = self.abacatepay_webhook_secret
         if secret is not None and len(secret.get_secret_value()) < 32:
             raise ValueError("API_ABACATEPAY_WEBHOOK_SECRET precisa ter ao menos 32 caracteres")
+        trust_secret = self.trust_dispatch_secret
+        if trust_secret is not None and len(trust_secret.get_secret_value()) < 32:
+            raise ValueError("API_TRUST_DISPATCH_SECRET precisa ter ao menos 32 caracteres")
         return self
 
     @property

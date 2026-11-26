@@ -19,6 +19,7 @@ from app.crypto import TokenCipher, generate_key
 from app.db import Database
 from app.google_calendar import CALENDAR_SCOPE, GoogleCalendarClient
 from app.main import create_app
+from tests.db.conftest import credential_approved
 from tests.test_onboarding_api import STUDENT, TEACHER
 
 FULL_WEEK = [
@@ -143,6 +144,7 @@ def local_at(days: int, hour: int = 14) -> datetime:
 
 def publish(admin, teacher_id) -> None:
     """Passo de OPERAÇÃO (fora da API): aprovar e publicar o professor de teste."""
+    credential_approved(admin, teacher_id)
     admin.execute(
         "update public.teacher_profiles set verification_status = 'approved', verified_at = now(),"
         " is_published = true, published_at = now() where user_id = %s",
