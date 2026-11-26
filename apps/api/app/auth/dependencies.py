@@ -63,6 +63,19 @@ def require_user(
 CurrentUser = Annotated[AuthenticatedUser, Depends(require_user)]
 
 
+def get_bearer_token(
+    _user: CurrentUser,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> str:
+    """Token já VERIFICADO do titular, para chamadas ao Storage sob a RLS do próprio usuário."""
+    if credentials is None:
+        raise missing_credentials()
+    return credentials.credentials
+
+
+BearerToken = Annotated[str, Depends(get_bearer_token)]
+
+
 def get_user_roles(
     user: CurrentUser, database: Annotated[BaseDatabase, Depends(get_database)]
 ) -> set[str]:

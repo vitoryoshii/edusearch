@@ -9,6 +9,7 @@ import re
 import unicodedata
 from datetime import date, datetime
 from typing import Annotated, Literal, Self
+from uuid import UUID
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
@@ -26,7 +27,14 @@ ExperienceRange = Literal["menos-1", "1-3", "3-5", "5-mais"]
 LessonDuration = Literal[30, 45, 60, 90]
 TeacherQualificationKind = Literal["graduated", "specialist", "university_student", "tutor"]
 TeacherCredentialStatus = Literal[
-    "draft", "submitted", "under_review", "changes_requested", "approved", "rejected", "suspended"
+    "draft",
+    "submitted",
+    "pending_external",
+    "under_review",
+    "changes_requested",
+    "approved",
+    "rejected",
+    "suspended",
 ]
 TeacherDocumentKind = Literal["identity", "academic_proof", "curriculum"]
 TeacherDocumentStatus = Literal["quarantined", "accepted", "rejected"]
@@ -221,6 +229,62 @@ class TeacherVerificationOut(BaseModel):
     terms_version: str
     terms_accepted_at: datetime
     documents: list[TeacherVerificationDocumentOut]
+
+
+class TrustEvidenceOut(BaseModel):
+    validator: str
+    requirement: str
+    mandatory: bool
+    result: Literal["passed", "failed", "unavailable", "inconclusive"]
+    source: str
+    reason_code: str
+    observed_at: datetime
+
+
+class TrustDecisionOut(BaseModel):
+    id: UUID
+    decision: str
+    reasons: list[str]
+    actor_kind: Literal["service", "human"]
+    rules_version: str | None
+    decided_at: datetime
+    contestable: bool
+
+
+class TrustContestationOut(BaseModel):
+    status: Literal["open", "resolved"]
+    created_at: datetime
+    resolution: str | None
+    resolved_at: datetime | None
+
+
+class TrustDocumentOut(BaseModel):
+    kind: TeacherDocumentKind
+    version: int
+    status: TeacherDocumentStatus
+    inspection_status: Literal["pending", "passed", "failed"]
+    inspection_code: str | None
+    review_reason: str | None
+    uploaded_at: datetime
+
+
+class TeacherVerificationProgressOut(BaseModel):
+    """Progresso real: evidências e decisão do motor. Sem percentuais estimados."""
+
+    status: TeacherCredentialStatus
+    review_reason: str | None
+    submitted_at: datetime | None
+    processing: bool
+    decision: TrustDecisionOut | None
+    evidence: list[TrustEvidenceOut]
+    contestation: TrustContestationOut | None
+    documents: list[TrustDocumentOut]
+
+
+class TeacherVerificationContestIn(BaseModel):
+    model_config = _STRICT
+
+    reason: Annotated[Text, Field(min_length=20, max_length=2000)]
 
 
 # ------------------------------------------------------------------------------- catálogo

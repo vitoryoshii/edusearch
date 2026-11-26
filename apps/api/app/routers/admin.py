@@ -135,3 +135,42 @@ def administrators(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict:
     return _list("administrators", user, service, limit, offset, None)
+
+
+class TrustResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    # Aprovar não é uma resolução humana: somente o Trust Engine aprova.
+    resolution: Literal["reprocess", "request_changes", "reject", "uphold"]
+    justification: str = Field(min_length=3, max_length=500)
+
+
+@router.get("/trust", responses=_ERRORS)
+def trust_overview(user: CurrentUser, service: Service) -> dict:
+    return service.trust_overview(user)
+
+
+@router.get("/trust/teachers/{teacher_id}", responses=_ERRORS)
+def trust_teacher(teacher_id: UUID, user: CurrentUser, service: Service) -> dict:
+    return service.trust_teacher(user, teacher_id)
+
+
+@router.post(
+    "/trust/contestations/{contestation_id}/resolve",
+    responses={**_ERRORS, 422: {"model": ErrorResponse}},
+)
+def trust_resolve(
+    contestation_id: UUID, payload: TrustResolution, user: CurrentUser, service: Service
+) -> dict:
+    return service.trust_resolve_contestation(
+        user, contestation_id, payload.resolution, payload.justification
+    )
+
+
+@router.post(
+    "/trust/teachers/{teacher_id}/reprocess",
+    responses={**_ERRORS, 422: {"model": ErrorResponse}},
+)
+def trust_reprocess(
+    teacher_id: UUID, payload: TeacherAction, user: CurrentUser, service: Service
+) -> dict:
+    return service.trust_reprocess(user, teacher_id, payload.justification)

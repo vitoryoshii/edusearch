@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.auth.dependencies import CurrentUser
+from app.auth.dependencies import BearerToken, CurrentUser
 from app.schemas.common import ErrorResponse
 from app.schemas.onboarding import (
     StudentProfileIn,
@@ -10,10 +10,12 @@ from app.schemas.onboarding import (
     SubjectOut,
     TeacherProfileIn,
     TeacherProfileOut,
+    TeacherVerificationContestIn,
     TeacherVerificationDocumentIn,
     TeacherVerificationDocumentOut,
     TeacherVerificationIn,
     TeacherVerificationOut,
+    TeacherVerificationProgressOut,
 )
 from app.services.onboarding import OnboardingService, get_onboarding_service
 
@@ -84,10 +86,10 @@ def put_teacher_verification(
     responses=_WRITE_ERRORS,
 )
 def post_teacher_verification_document(
-    payload: TeacherVerificationDocumentIn, user: CurrentUser, service: Service
+    payload: TeacherVerificationDocumentIn, user: CurrentUser, token: BearerToken, service: Service
 ) -> TeacherVerificationDocumentOut:
-    """Registra objeto privado enviado ao Storage pelo próprio titular após validar metadados."""
-    return service.register_teacher_verification_document(user, payload)
+    """Registra objeto privado do titular após inspecionar o conteúdo real (tipo, tamanho, hash)."""
+    return service.register_teacher_verification_document(user, payload, token)
 
 
 @router.post(
@@ -96,8 +98,32 @@ def post_teacher_verification_document(
     responses=_WRITE_ERRORS,
 )
 def post_teacher_verification_submit(user: CurrentUser, service: Service) -> TeacherVerificationOut:
-    """Envia dossiê completo para revisão humana e remove publicação até nova decisão."""
+    """Envia o dossiê ao Trust Engine e remove publicação até nova decisão."""
     return service.submit_teacher_verification(user)
+
+
+@router.get(
+    "/v1/me/teacher-verification/progress",
+    response_model=TeacherVerificationProgressOut,
+    responses=_ERRORS,
+)
+def get_teacher_verification_progress(
+    user: CurrentUser, service: Service
+) -> TeacherVerificationProgressOut:
+    """Estado, evidências e decisão mais recente do Trust Engine (sem dados pessoais)."""
+    return service.get_teacher_verification_progress(user)
+
+
+@router.post(
+    "/v1/me/teacher-verification/contest",
+    response_model=TeacherVerificationProgressOut,
+    responses={**_WRITE_ERRORS, 409: {"model": ErrorResponse}},
+)
+def post_teacher_verification_contest(
+    payload: TeacherVerificationContestIn, user: CurrentUser, service: Service
+) -> TeacherVerificationProgressOut:
+    """Contesta a decisão mais recente; a revisão humana nunca aprova por conta própria."""
+    return service.contest_teacher_verification(user, payload)
 
 
 @router.get(

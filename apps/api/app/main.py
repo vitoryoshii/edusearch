@@ -17,9 +17,21 @@ from app.db import BaseDatabase, Database
 from app.errors import ApiError, install_error_handlers
 from app.google_calendar import GoogleCalendarClient
 from app.notifications import NotificationDispatcher, ResendClient
-from app.routers import admin, health, internal_notifications, me, onboarding, payments, scheduling
+from app.routers import (
+    admin,
+    health,
+    internal_notifications,
+    internal_trust,
+    me,
+    onboarding,
+    payments,
+    scheduling,
+)
 from app.services.payments import build_gateway
 from app.services.scheduling import build_calendar_client
+from app.trust.dispatcher import VerificationDispatcher
+from app.trust.inspection import StorageDocumentInspector
+from app.trust.providers import build_academic_registry, build_identity_provider
 
 logger = logging.getLogger("edusearch.api")
 
@@ -145,6 +157,27 @@ def create_app(
                 timeout=settings.resend_timeout_seconds,
             ),
         )
+    # Trust Engine: aprova somente com todos os requisitos obrigatórios comprovados.
+    app.state.trust_dispatcher = (
+        VerificationDispatcher(
+            db,
+            identity_provider=build_identity_provider(settings.trust_identity_provider),
+            academic_registry=build_academic_registry(settings.trust_academic_registry),
+            terms_version=settings.teacher_terms_version,
+            budget_seconds=settings.trust_dispatch_budget_seconds,
+        )
+        if db is not None
+        else None
+    )
+    app.state.document_inspector = (
+        StorageDocumentInspector(
+            settings.supabase_url,
+            settings.supabase_publishable_key,
+            timeout=settings.document_inspection_timeout_seconds,
+        )
+        if settings.supabase_url and settings.supabase_publishable_key
+        else None
+    )
     if clock is not None:
         app.state.clock = clock
 
@@ -178,6 +211,7 @@ def create_app(
     app.include_router(scheduling.router)
     app.include_router(payments.router)
     app.include_router(internal_notifications.router)
+    app.include_router(internal_trust.router)
     app.include_router(admin.router)
     return app
 

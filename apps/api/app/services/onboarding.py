@@ -3,12 +3,12 @@
 from typing import Annotated, Literal, Protocol
 
 import psycopg
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from app.auth.dependencies import get_database
 from app.auth.jwt import AuthenticatedUser
 from app.db import BaseDatabase, as_connection_role
-from app.errors import ApiError, forbidden, not_found
+from app.errors import ApiError, forbidden, not_found, service_unavailable
 from app.repositories.onboarding import OnboardingRepository, UnknownSubjectsError
 from app.repositories.profiles import ProfileRepository
 from app.schemas.me import MeResponse
@@ -18,12 +18,20 @@ from app.schemas.onboarding import (
     SubjectOut,
     TeacherProfileIn,
     TeacherProfileOut,
+    TeacherVerificationContestIn,
     TeacherVerificationDocumentIn,
     TeacherVerificationDocumentOut,
     TeacherVerificationIn,
     TeacherVerificationOut,
+    TeacherVerificationProgressOut,
 )
 from app.services.profiles import account_suspended, build_me, load_profile
+from app.trust.inspection import (
+    DocumentNotFoundError,
+    InspectionResult,
+    InspectionUnavailableError,
+    StorageDocumentInspector,
+)
 
 Role = Literal["student", "teacher"]
 
@@ -46,9 +54,15 @@ class OnboardingService(Protocol):
         self, user: AuthenticatedUser, data: TeacherVerificationIn
     ) -> TeacherVerificationOut: ...
     def register_teacher_verification_document(
-        self, user: AuthenticatedUser, data: TeacherVerificationDocumentIn
+        self, user: AuthenticatedUser, data: TeacherVerificationDocumentIn, token: str
     ) -> TeacherVerificationDocumentOut: ...
     def submit_teacher_verification(self, user: AuthenticatedUser) -> TeacherVerificationOut: ...
+    def get_teacher_verification_progress(
+        self, user: AuthenticatedUser
+    ) -> TeacherVerificationProgressOut: ...
+    def contest_teacher_verification(
+        self, user: AuthenticatedUser, data: TeacherVerificationContestIn
+    ) -> TeacherVerificationProgressOut: ...
     def list_subjects(self) -> list[SubjectOut]: ...
 
 
@@ -112,6 +126,21 @@ def _verification_error(exc: psycopg.Error) -> ApiError:
             "verification_not_submittable",
             "Dossiê não pode ser enviado neste estado.",
         ),
+        "document_content_mismatch": (
+            422,
+            "document_content_mismatch",
+            "O conteúdo do arquivo não corresponde ao objeto enviado.",
+        ),
+        "contestation_reason_invalid": (
+            422,
+            "contestation_reason_invalid",
+            "Explique a contestação com 20 a 2000 caracteres.",
+        ),
+        "contestation_not_allowed": (
+            409,
+            "contestation_not_allowed",
+            "Não há decisão contestável neste momento.",
+        ),
     }
     if message in codes:
         status, code, detail = codes[message]
@@ -119,9 +148,50 @@ def _verification_error(exc: psycopg.Error) -> ApiError:
     raise exc
 
 
+_INSPECTION_MESSAGES = {
+    "inspection.empty": "O arquivo está vazio.",
+    "inspection.too_large": "O arquivo excede 10 MiB.",
+    "inspection.unknown_format": "O conteúdo não é um PDF, PNG ou JPEG válido.",
+    "inspection.pdf_truncated": "O PDF está incompleto ou corrompido.",
+    "inspection.pdf_encrypted": "Envie o PDF sem senha ou criptografia.",
+    "inspection.pdf_active_content": "O PDF contém scripts ou anexos e não pode ser aceito.",
+    "inspection.image_truncated": "A imagem está incompleta ou corrompida.",
+}
+
+
 class DbOnboardingService:
-    def __init__(self, database: BaseDatabase) -> None:
+    def __init__(
+        self, database: BaseDatabase, inspector: StorageDocumentInspector | None = None
+    ) -> None:
         self._db = database
+        self._inspector = inspector
+
+    def _inspect(
+        self, user: AuthenticatedUser, data: TeacherVerificationDocumentIn, token: str
+    ) -> InspectionResult | None:
+        """Inspeciona o conteúdo real. Sem inspetor configurado, o documento fica pendente."""
+        if not data.storage_path.startswith(f"{user.id}/"):
+            raise ApiError(422, "invalid_document_path", "Caminho de documento inválido.")
+        if self._inspector is None:
+            return None
+        try:
+            result = self._inspector.inspect(data.storage_path, token)
+        except DocumentNotFoundError as exc:
+            raise ApiError(
+                403, "document_not_owned", "O documento não pertence à sua conta."
+            ) from exc
+        except InspectionUnavailableError as exc:
+            raise service_unavailable(
+                "document_inspection_unavailable",
+                "Não foi possível verificar o arquivo agora. Tente novamente.",
+            ) from exc
+        if not result.ok:
+            raise ApiError(
+                422,
+                "document_content_rejected",
+                _INSPECTION_MESSAGES.get(result.code, "Arquivo recusado na verificação."),
+            )
+        return result
 
     # ------------------------------------------------------------------ papel
 
@@ -256,13 +326,16 @@ class DbOnboardingService:
                 return self._teacher_verification_row(repo)
 
     def register_teacher_verification_document(
-        self, user: AuthenticatedUser, data: TeacherVerificationDocumentIn
+        self, user: AuthenticatedUser, data: TeacherVerificationDocumentIn, token: str
     ) -> TeacherVerificationDocumentOut:
+        inspection = self._inspect(user, data, token)
         with self._db.user_transaction(user) as conn:
             self._guard(conn, user, "teacher", write=True)
             with as_connection_role(conn):
                 try:
-                    row = OnboardingRepository(conn).register_teacher_verification_document(data)
+                    row = OnboardingRepository(conn).register_teacher_verification_document(
+                        data, inspection
+                    )
                 except psycopg.Error as exc:
                     raise _verification_error(exc) from exc
                 return TeacherVerificationDocumentOut(**row)
@@ -278,6 +351,35 @@ class DbOnboardingService:
                     raise _verification_error(exc) from exc
                 return self._teacher_verification_row(repo)
 
+    def _progress(self, repo: OnboardingRepository) -> TeacherVerificationProgressOut:
+        data = repo.teacher_verification_progress()
+        if data is None:
+            raise not_found(
+                "teacher_verification_not_found", "Dossiê de credenciamento ainda não iniciado."
+            )
+        return TeacherVerificationProgressOut(**data)
+
+    def get_teacher_verification_progress(
+        self, user: AuthenticatedUser
+    ) -> TeacherVerificationProgressOut:
+        with self._db.user_transaction(user) as conn:
+            self._guard(conn, user, "teacher")
+            with as_connection_role(conn):
+                return self._progress(OnboardingRepository(conn))
+
+    def contest_teacher_verification(
+        self, user: AuthenticatedUser, data: TeacherVerificationContestIn
+    ) -> TeacherVerificationProgressOut:
+        with self._db.user_transaction(user) as conn:
+            self._guard(conn, user, "teacher", write=True)
+            with as_connection_role(conn):
+                repo = OnboardingRepository(conn)
+                try:
+                    repo.contest_teacher_verification(data.reason)
+                except psycopg.Error as exc:
+                    raise _verification_error(exc) from exc
+                return self._progress(repo)
+
     # ------------------------------------------------------------------ catálogo
 
     def list_subjects(self) -> list[SubjectOut]:
@@ -286,6 +388,7 @@ class DbOnboardingService:
 
 
 def get_onboarding_service(
+    request: Request,
     database: Annotated[BaseDatabase, Depends(get_database)],
 ) -> OnboardingService:
-    return DbOnboardingService(database)
+    return DbOnboardingService(database, getattr(request.app.state, "document_inspector", None))

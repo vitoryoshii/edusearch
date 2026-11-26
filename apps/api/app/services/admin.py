@@ -81,6 +81,14 @@ class AdminService:
             # Não converte falhas de banco genéricas; só evita enumerar professor inexistente.
             if getattr(exc, "sqlstate", None) == "P0002":
                 raise not_found("teacher_not_found", "Professor não encontrado.") from exc
+            if getattr(exc, "sqlstate", None) == "22023" and "trust_credential_required" in str(
+                exc
+            ):
+                raise ApiError(
+                    422,
+                    "trust_credential_required",
+                    "O professor ainda não tem credenciamento aprovado pelo Trust Engine.",
+                ) from exc
             if getattr(exc, "sqlstate", None) == "22023" and "teacher_transition_invalid" in str(
                 exc
             ):
@@ -89,6 +97,65 @@ class AdminService:
                 ) from exc
             raise
         return row["data"]
+
+    # ---------------------------------------------------------------- Trust Engine
+
+    def trust_overview(self, user: AuthenticatedUser) -> dict[str, Any]:
+        self._permission(user, "teachers.read")
+        with self._db.service_transaction() as conn:
+            row = conn.execute(
+                "select private.admin_trust_overview(%s) as data", (user.id,)
+            ).fetchone()
+        return row["data"]
+
+    def trust_teacher(self, user: AuthenticatedUser, teacher_id: UUID) -> dict[str, Any]:
+        self._permission(user, "teachers.read")
+        try:
+            with self._db.service_transaction() as conn:
+                row = conn.execute(
+                    "select private.admin_trust_teacher(%s, %s) as data", (user.id, teacher_id)
+                ).fetchone()
+        except Exception as exc:
+            if getattr(exc, "sqlstate", None) == "P0002":
+                raise not_found("teacher_not_found", "Dossiê não encontrado.") from exc
+            raise
+        return row["data"]
+
+    def _trust_write(self, sql: str, params: tuple[Any, ...]) -> dict[str, Any]:
+        try:
+            with self._db.service_transaction() as conn:
+                row = conn.execute(sql, params).fetchone()
+        except Exception as exc:
+            state = getattr(exc, "sqlstate", None)
+            if state == "P0002":
+                raise not_found("trust_resource_not_found", "Registro não encontrado.") from exc
+            if state == "22023":
+                code = str(getattr(getattr(exc, "diag", None), "message_primary", "") or "")
+                raise ApiError(422, code or "trust_action_invalid", "Ação inválida.") from exc
+            raise
+        return row["data"]
+
+    def trust_resolve_contestation(
+        self,
+        user: AuthenticatedUser,
+        contestation_id: UUID,
+        resolution: str,
+        justification: str,
+    ) -> dict[str, Any]:
+        self._permission(user, "teachers.reject")
+        return self._trust_write(
+            "select private.admin_trust_resolve_contestation(%s, %s, %s, %s, %s) as data",
+            (user.id, contestation_id, resolution, justification, uuid4()),
+        )
+
+    def trust_reprocess(
+        self, user: AuthenticatedUser, teacher_id: UUID, justification: str
+    ) -> dict[str, Any]:
+        self._permission(user, "teachers.reject")
+        return self._trust_write(
+            "select private.admin_trust_reprocess(%s, %s, %s, %s) as data",
+            (user.id, teacher_id, justification, uuid4()),
+        )
 
     def operational_list(
         self, user: AuthenticatedUser, kind: str, limit: int, offset: int, query: str | None

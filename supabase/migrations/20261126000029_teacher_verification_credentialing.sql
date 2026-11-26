@@ -5,7 +5,8 @@
 -- documentos. A publicação continua fail-closed e depende da decisão administrativa posterior.
 
 create type private.teacher_credential_status as enum (
-  'draft', 'submitted', 'under_review', 'changes_requested', 'approved', 'rejected', 'suspended'
+  'draft', 'submitted', 'pending_external', 'under_review', 'changes_requested', 'approved',
+  'rejected', 'suspended'
 );
 
 create type private.teacher_qualification_kind as enum (
@@ -44,7 +45,8 @@ create table private.teacher_verifications (
     (terms_version is null) = (terms_accepted_at is null)
   ),
   constraint teacher_verification_submitted_consistent check (
-    (status in ('submitted', 'under_review', 'approved', 'rejected', 'suspended')) = (submitted_at is not null)
+    (status in ('submitted', 'pending_external', 'under_review', 'approved', 'rejected', 'suspended'))
+      = (submitted_at is not null)
   )
 );
 alter table private.teacher_verifications enable row level security;

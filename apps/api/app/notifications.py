@@ -37,6 +37,12 @@ TEMPLATE_VARIABLES: dict[str, frozenset[str]] = {
     "edusearch-seguranca-acesso-v1": frozenset(
         {"DATA_HORA", "LOCAL_APROXIMADO", "NOME", "TIPO_EVENTO"}
     ),
+    # Credenciamento (Trust Engine). MOTIVO é um código estável, traduzido no template.
+    "edusearch-credenciamento-recebido-v1": frozenset({"NOME"}),
+    "edusearch-credenciamento-correcao-v1": frozenset({"NOME", "MOTIVO"}),
+    "edusearch-credenciamento-aprovado-v1": frozenset({"NOME"}),
+    "edusearch-credenciamento-nao-aprovado-v1": frozenset({"NOME", "MOTIVO"}),
+    "edusearch-credenciamento-contestacao-v1": frozenset({"NOME"}),
 }
 
 
