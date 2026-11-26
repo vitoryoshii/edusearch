@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+  "name": "edusearch-trust-cron",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-26",
+  // Sem rota nem workers.dev: o Worker só existe para o gatilho agendado.
+  "workers_dev": false,
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": { "EDUSEARCH_API_URL": "https://api.edusearch.com.br" }
+  // TRUST_DISPATCH_SECRET: `wrangler secret put TRUST_DISPATCH_SECRET` (nunca em vars/Git).
+}
