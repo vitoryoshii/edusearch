@@ -136,6 +136,17 @@ class Users:
                 "select id from private.teacher_verification_jobs where teacher_id = any(%s))",
                 (self.created,),
             )
+            # Revisores humanos (FK RESTRICT) também são usuários efêmeros dos testes.
+            self._admin.execute(
+                "delete from private.teacher_verification_documents "
+                "where teacher_id = any(%s) or reviewer_id = any(%s)",
+                (self.created, self.created),
+            )
+            self._admin.execute(
+                "update private.teacher_verifications set reviewer_id = null "
+                "where reviewer_id = any(%s)",
+                (self.created,),
+            )
             self._admin.execute(
                 "delete from private.teacher_verification_contestations where teacher_id = any(%s)",
                 (self.created,),

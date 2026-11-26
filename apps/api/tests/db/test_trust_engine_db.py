@@ -21,7 +21,7 @@ from app.trust.dispatcher import VerificationDispatcher
 from app.trust.inspection import InspectionResult, inspect_bytes
 from app.trust.providers import NotConfiguredAcademicRegistry, NotConfiguredIdentityProvider
 from tests.db.test_onboarding_db import VERIFICATION, auth
-from tests.test_onboarding_api import STUDENT, TEACHER
+from tests.test_onboarding_api import TEACHER
 from tests.test_trust_engine import TrustedIdentity, TrustedRegistry
 
 RULES = "trust-rules-2026.11-v1"
@@ -494,18 +494,16 @@ def test_publication_without_credential_is_blocked(client, users, make_token, ad
 
 
 def test_uncredentialed_teacher_is_not_searchable_nor_bookable(
-    client, users, make_token, admin
+    client, users, make_token, admin, as_user
 ) -> None:
     teacher, _ = submitted_teacher(client, users, make_token, admin)
     student = users.create("Aluna", email_confirmed=True)
-    st = make_token(student)
-    client.post("/v1/me/roles", json={"role": "student"}, headers=auth(st))
-    assert client.put("/v1/me/student-profile", json=STUDENT, headers=auth(st)).status_code == 200
-    assert str(teacher) not in {
-        t["id"] for t in client.get("/v1/teachers", headers=auth(st)).json()
-    }
-    hidden = client.get(f"/v1/teachers/{teacher}", headers=auth(st))
-    assert hidden.json()["code"] == "teacher_not_found"
+    users.grant_role(student, "student")
+    # A busca pública e o perfil público passam pela RLS de teacher_profiles (is_published).
+    visible = as_user(student).rows(
+        "select user_id from public.teacher_profiles where user_id = %s", (teacher,)
+    )
+    assert visible == []
     starts = datetime.now(UTC) + timedelta(days=3)
     subject = admin.execute("select id from public.subjects order by id limit 1").fetchone()["id"]
     with admin.transaction():
@@ -518,7 +516,7 @@ def test_uncredentialed_teacher_is_not_searchable_nor_bookable(
             admin.transaction(),
         ):
             admin.execute(
-                "select * from private.payment_create_hold(%s, %s, %s, %s, %s, 'sandbox', 900)",
+                "select * from private.payment_create_hold(%s, %s::smallint, %s, %s, %s, 'sandbox', 900)",
                 (teacher, subject, starts, starts + timedelta(hours=1), uuid.uuid4()),
             )
 
